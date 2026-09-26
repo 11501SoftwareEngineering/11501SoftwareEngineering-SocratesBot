@@ -5,7 +5,7 @@ services:
     restart: always
     environment:
       POSTGRES_USER: "postgres"
-      POSTGRES_DB: "default"
+      POSTGRES_DB: "postgres"
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     volumes:
       - postgres_data_prod:/var/lib/postgresql
@@ -64,8 +64,6 @@ volumes:
 networks:
   db-network:
     driver: bridge
-    # internal: true only blocks egress from container
-    internal: true
     driver_opts:
       com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"
 
