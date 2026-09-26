@@ -31,6 +31,7 @@ env/
 .env.local
 .env.*.local
 !.env.example
+.env.db
 
 # IDE & OS
 .vscode/
@@ -47,3 +48,38 @@ yarn-error.log*
 .next/
 dist/
 out/
+
+
+# --- Operating System ---
+Thumbs.db # Windows thumbnail cache
+.DS_Store # macOS hidden file
+.localized # macOS localization file
+Icon? # macOS icon files
+
+# --- Temporary Files and Archives ---
+/tmp/ # Temporary folder
+*.tmp # Temporary files
+*.zip # Zip archives
+*.tar # Tar archives
+*.gz # Gzip archives
+
+
+# --- General ---
+.DS_Store # macOS files
+.vscode/ # VS Code settings
+*.log # Log files
+npm-debug.log* # npm debug logs
+pnpm-debug.log* # pnpm debug logs
+
+# --- Build and Distribution ---
+/dist/ # Common directory for compiled/built code
+/build/ # Another common build directory
+/node_modules/ # Node.js dependency folder
+*.o # Object files
+*.a # Static libraries
+*.dll # Windows dynamic link libraries
+*.so # Shared object files
+
+*password*
+*pass*
+!*example*
