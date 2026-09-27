@@ -7,8 +7,9 @@
     - Makefile
 
 2. 複製環境設定檔：
+    在專案根目錄:
     ```bash
-    cp .env.example .env
+    cp backend/.env.example backend/.env
     cp devops/prod/db_default_user_password_example.txt devops/prod/db_default_user_password.txt
     ```
 
@@ -41,7 +42,9 @@
 ```bash
 uv run fastapi dev app/main.py
 ```
-到 http://localhost:8000 應該就可以看到了
+API 文件:
+http://localhost:8000/docs 
+http://localhost:8000/redoc
 
 ## Python 環境
 請不要直接使用 python 或 python3 指令，用 `uv run <.py file>`。這樣才會使用 uv 的建立環境
