@@ -7,9 +7,19 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Local environment files
+.env
+.env.local
+.env.*.local
+.env.db
+!.env.example
+
 node_modules
 .DS_Store
+.next
+build
 dist
+out
 dist-ssr
 coverage
 *.local
