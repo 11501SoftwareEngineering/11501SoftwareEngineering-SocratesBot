@@ -65,11 +65,11 @@ jobs:
       - name: Generate OpenAPI specification
         working-directory: backend
         env:
-          APP_ENV: production
+          APP_ENV: dev
           APP_NAME: Squicrates
           APP_HOST: 127.0.0.1
           APP_PORT: "8000"
-          CORS_ORIGINS: "[]"
+          CORS_ORIGINS: '["http://localhost:5173"]'
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
