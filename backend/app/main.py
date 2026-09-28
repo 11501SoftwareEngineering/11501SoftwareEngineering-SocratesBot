@@ -12,7 +12,9 @@ from app.core.middleware import RequestLoggingMiddleware
 from app.core.migration import run_migrations
 from app.core.redis import close_redis
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s"
+)
 
 
 @asynccontextmanager
