@@ -25,16 +25,9 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str]
 
     # Database (PostgreSQL)
-    POSTGRES_USER: NonEmptyStr
-    POSTGRES_PASSWORD: NonEmptyStr
-    POSTGRES_DB: NonEmptyStr
-    POSTGRES_HOST: NonEmptyStr
-    POSTGRES_PORT: int
-    DATABASE_URL: NonEmptyStr
+    DATABASE_URL: Annotated[SecretStr, Field(min_length=1)]
 
     # Redis
-    REDIS_HOST: NonEmptyStr
-    REDIS_PORT: int
     REDIS_URL: NonEmptyStr
 
     # Security & JWT

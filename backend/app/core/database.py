@@ -20,7 +20,7 @@ class Base(DeclarativeBase):
 
 
 engine = create_async_engine(
-    settings.DATABASE_URL,
+    settings.DATABASE_URL.get_secret_value(),
     echo=settings.APP_ENV == "development",
     pool_pre_ping=True,
 )
