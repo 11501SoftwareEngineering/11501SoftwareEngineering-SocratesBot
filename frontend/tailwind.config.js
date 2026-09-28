@@ -11,6 +11,25 @@ export default {
   			sans: ['var(--font-sans)'],
   			heading: ['var(--font-heading)']
   		},
+  		// 對應 Figma「Text styles」面板裡的 5 個命名樣式（字級/行高，單位 px）。
+  		// 用法：text-header / text-h1-title / text-footer / text-h2-title / text-body
+  		// 這樣寫比 text-[32px] leading-[16px] 這種寫死的任意值更好維護，
+  		// 之後設計稿改字級，只要改這裡一個地方。
+  		fontSize: {
+  			'header': ['24px', '24px'],     // Figma: Header_text
+  			'h1-title': ['32px', '16px'],   // Figma: h1_title（注意行高比字級小，是設計稿刻意的）
+  			'footer': ['16px', '16px'],     // Figma: Footer_text
+  			'h2-title': ['16px', '20px'],   // Figma: h2_title
+  			'body': ['12px', '19.5px'],     // Figma: Body
+  		},
+  		// 對應 Figma「Effect styles」面板裡的 2 個命名樣式。
+  		// 用法：shadow-elevated（按鈕/卡片的外陰影）、shadow-input（輸入框的內陰影）
+  		boxShadow: {
+  			// Figma "Shadow"：兩層 drop shadow 疊加
+  			'elevated': '0px 2px 3px 0px rgba(0,0,0,0.1), 0px 2px 2px -1px rgba(0,0,0,0.1)',
+  			// Figma "input"：一層 inner shadow
+  			'input': 'inset 1.5px 1.5px 4px 0px rgba(0,0,0,0.25)',
+  		},
   		borderRadius: {
   			lg: 'var(--radius)',
   			md: 'calc(var(--radius) - 2px)',

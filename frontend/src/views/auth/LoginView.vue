@@ -43,7 +43,7 @@ async function handleLogin() {
 
 <template>
   <div class="flex justify-center px-4 py-12">
-    <div class="flex w-full max-w-[626px] flex-col items-center gap-5 rounded-2xl border border-border bg-card px-[68px] py-[27px] shadow-[0px_2px_3px_0px_rgba(0,0,0,0.1),0px_2px_2px_-1px_rgba(0,0,0,0.1)]">
+    <div class="flex w-full max-w-[626px] flex-col items-center gap-5 rounded-2xl border border-border bg-card px-[68px] py-[27px] shadow-elevated">
       <!-- TODO(設計組): Figma 現在放的是正式的吉祥物截圖，麻煩請輸出透明背景的 SVG/PNG
            圖檔給前端，換掉下面這個佔位方塊。 -->
       <div class="flex w-full justify-center pt-[30px]">
@@ -55,16 +55,16 @@ async function handleLogin() {
       <form class="flex w-full flex-col gap-8" @submit.prevent="handleLogin">
         <div class="flex w-full flex-col gap-8 pl-8">
           <div class="flex w-full items-center gap-4">
-            <label for="login-account" class="w-20 shrink-0 font-heading text-2xl text-foreground">帳號：</label>
+            <label for="login-account" class="w-[108px] shrink-0 font-heading text-h1-title text-foreground">帳號：</label>
             <Input id="login-account" v-model="account" class="flex-1" placeholder="請輸入帳號" autocomplete="username" />
           </div>
 
           <div class="flex w-full flex-col gap-1">
             <div class="flex w-full items-center gap-4">
-              <label for="login-password" class="w-20 shrink-0 font-heading text-2xl text-foreground">密碼：</label>
+              <label for="login-password" class="w-[108px] shrink-0 font-heading text-h1-title text-foreground">密碼：</label>
               <Input id="login-password" v-model="password" type="password" class="flex-1" placeholder="請輸入密碼" autocomplete="current-password" />
             </div>
-            <p v-if="errorMessage" class="w-full text-right text-sm text-destructive">
+            <p v-if="errorMessage" class="w-full text-right text-h2-title text-destructive">
               {{ errorMessage }}
             </p>
           </div>
@@ -83,7 +83,7 @@ async function handleLogin() {
           <!-- TODO(前端組): 忘記密碼流程還沒有對應頁面/API，先放可 hover 的文字佔位。
                Figma 這裡 hover 時「顏色不變、只加底線」，所以用 hover:underline，
                不要加 hover:text-* 之類會變色的 class。 -->
-          <button type="button" class="text-sm text-muted-foreground hover:underline">
+          <button type="button" class="text-h2-title text-muted-foreground hover:underline">
             忘記密碼?
           </button>
         </div>
