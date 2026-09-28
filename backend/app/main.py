@@ -19,7 +19,8 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    # 僅開發環境自動 migration；正式環境請於部署流程手動執行 alembic upgrade head
+    # 開發環境自動執行 migration
+    # 正式環境請於部署流程手動執行 alembic upgrade head
     if settings.APP_ENV == "development":
         await run_migrations()
     yield
