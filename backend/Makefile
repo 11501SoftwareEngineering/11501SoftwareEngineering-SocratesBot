@@ -1,9 +1,9 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup dev fix check test db db-down
+.PHONY: help setup dev gen fix check test db db-down
 
 help:
-	@echo "Backend commands: make setup, dev, fix, check, test, db, db-down"
+	@echo "Backend commands: make setup, dev, gen, fix, check, test, db, db-down"
 
 setup:
 	uv sync --locked
@@ -11,6 +11,9 @@ setup:
 
 dev:
 	uv run --locked fastapi dev app/main.py
+
+gen:
+	uv run --locked python -m scripts.generate_openapi
 
 fix:
 	uv run --locked ruff check --fix .
