@@ -13,18 +13,17 @@
     cp devops/prod/db_default_user_password_example.txt devops/prod/db_default_user_password.txt
     ```
 
-3. 建立 Python 虛擬環境與套件安裝
+3. 在 repo 根目錄安裝鎖定的 Python 套件並啟用 pre-commit：
     ```bash
-    cd backend
-    uv sync
+    make -C backend setup
     ```
-    uv 會讀取 pyproject.toml 與 uv.lock，建立虛擬環境 backend/.venv 並自動安裝套件。
+    `make -C backend setup` 會依 `backend/uv.lock` 安裝套件並安裝 Git hook。提交時 Ruff 會修正 backend Python 的 lint 與格式問題，Gitleaks 會掃描整個 repo 的 staged 內容。
 
 ## 啟動開發伺服器
 1. 啟動 docker 容器，裡面有 PostgreSQL 和 Redis. 
     在專案根目錄執行：
     ```bash
-    make db
+    make -C backend db
     ```
 
     檢查容器狀態：
@@ -34,13 +33,12 @@
 
     關閉容器
     ```bash
-    make db-down
+    make -C backend db-down
     ```
 
-2. 啟動 fastapi
-到後端資料夾下執行
+2. 啟動 FastAPI：
 ```bash
-uv run fastapi dev app/main.py
+make -C backend dev
 ```
 API 文件:
 http://localhost:8000/docs 
@@ -48,6 +46,10 @@ http://localhost:8000/redoc
 
 確認 PostgreSQL 與 Redis 連線狀態:
 http://localhost:8000/api/v1/health
+
+## 開發前檢查
+
+在 repo 根目錄執行 `make -C backend fix` 自動修正 backend Python；送出 PR 前執行 `make -C backend check`，確認 Ruff、格式與快速後端測試都通過。CI 會以唯讀方式重跑檢查。
 
 ## 資料庫遷移
 **要修改資料庫前，請先告知其他人改動的欄位並進行討論。**
