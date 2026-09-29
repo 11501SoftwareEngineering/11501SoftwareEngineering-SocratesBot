@@ -1,0 +1,6 @@
+ignore_patterns:
+  - .github/workflows/**
+
+code_review:
+  pull_request_opened:
+    code_review: false

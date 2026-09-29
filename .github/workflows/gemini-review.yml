@@ -1,0 +1,275 @@
+name: Gemini after quality gates
+
+on:
+  workflow_run:
+    workflows: [Quality Gates]
+    types: [completed]
+
+permissions:
+  actions: read
+  checks: read
+  contents: none
+  pull-requests: read
+
+concurrency:
+  group: gemini-after-quality-gates-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  request-review:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && vars.ENABLE_GEMINI_AFTER_GATES == 'true' }}
+    name: Request current-SHA Gemini review
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      checks: read
+      contents: none
+      pull-requests: write
+    steps:
+      - name: Resolve the exact pull request and request Gemini review
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const run = context.payload.workflow_run;
+            const eventRepository = context.payload.repository;
+
+            if (
+              run.name !== "Quality Gates" ||
+              run.event !== "pull_request" ||
+              run.status !== "completed" ||
+              run.conclusion !== "success" ||
+              !run.head_sha ||
+              !run.head_branch ||
+              !run.head_repository?.full_name
+            ) {
+              core.notice("Gemini skipped: this is not a successful pull-request Quality Gates run.");
+              return;
+            }
+
+            if (eventRepository.full_name.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) {
+              core.notice("Gemini skipped: the workflow run belongs to another base repository.");
+              return;
+            }
+
+            const sourceWorkflow = await github.rest.actions.getWorkflow({
+              owner,
+              repo,
+              workflow_id: run.workflow_id,
+            });
+            if (
+              sourceWorkflow.data.path !== ".github/workflows/quality-gates.yml" ||
+              sourceWorkflow.data.name !== "Quality Gates"
+            ) {
+              core.notice("Gemini skipped: the source workflow path or name did not match.");
+              return;
+            }
+
+            const repository = await github.rest.repos.get({ owner, repo });
+            const defaultBranch = repository.data.default_branch;
+            const [headOwner] = run.head_repository.full_name.split("/");
+            const candidates = await github.paginate(github.rest.pulls.list, {
+              owner,
+              repo,
+              state: "open",
+              base: defaultBranch,
+              head: `${headOwner}:${run.head_branch}`,
+              per_page: 100,
+            });
+            const matchingPullRequests = candidates.filter((pullRequest) =>
+              pullRequest.base.repo?.full_name?.toLowerCase() === `${owner}/${repo}`.toLowerCase() &&
+              pullRequest.base.ref === defaultBranch &&
+              pullRequest.head.repo?.full_name?.toLowerCase() === run.head_repository.full_name.toLowerCase() &&
+              pullRequest.head.ref === run.head_branch &&
+              pullRequest.head.sha === run.head_sha
+            );
+
+            if (matchingPullRequests.length !== 1) {
+              core.notice(`Gemini skipped: found ${matchingPullRequests.length} exact open pull requests for this SHA.`);
+              return;
+            }
+
+            const pullRequest = matchingPullRequests[0];
+            const changedFiles = await github.paginate(github.rest.pulls.listFiles, {
+              owner,
+              repo,
+              pull_number: pullRequest.number,
+              per_page: 100,
+            });
+            if (changedFiles.length >= 3000) {
+              core.notice("Gemini skipped: GitHub truncated the pull request file list.");
+              return;
+            }
+
+            const protectedPolicyFiles = changedFiles.filter(({ filename }) =>
+              filename === ".github/workflows/quality-gates.yml" ||
+              filename.startsWith(".github/codeql/") ||
+              filename.startsWith(".gemini/") ||
+              filename === ".sonarcloud.properties" ||
+              filename === "backend/pyproject.toml" ||
+              filename === ".pre-commit-config.yaml"
+            );
+            if (protectedPolicyFiles.length > 0) {
+              core.notice(`Gemini skipped: this pull request changes quality-gate policy: ${protectedPolicyFiles.map(({ filename }) => filename).join(", ")}.`);
+              return;
+            }
+
+            const expectedJobs = [
+              "Backend quality",
+              "Secret scan",
+              "CodeQL analysis",
+            ];
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner,
+              repo,
+              run_id: run.id,
+              per_page: 100,
+            });
+
+            for (const name of expectedJobs) {
+              const matches = jobs.filter((job) => job.name === name);
+              if (
+                matches.length !== 1 ||
+                matches[0].status !== "completed" ||
+                matches[0].conclusion !== "success"
+              ) {
+                core.notice(`Gemini skipped: required job "${name}" is missing or not successful.`);
+                return;
+              }
+            }
+
+            let codeScanningPassed = false;
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+              const checks = await github.rest.checks.listForRef({
+                owner,
+                repo,
+                ref: run.head_sha,
+                filter: "latest",
+                per_page: 100,
+              });
+              const scanResults = checks.data.check_runs
+                .filter((check) =>
+                  check.name === "CodeQL" && check.app?.name === "GitHub Advanced Security"
+                )
+                .sort((left, right) =>
+                  new Date(right.completed_at ?? right.started_at ?? right.created_at).getTime() -
+                  new Date(left.completed_at ?? left.started_at ?? left.created_at).getTime()
+                );
+              const scanResult = scanResults[0];
+
+              if (scanResult?.status === "completed") {
+                if (scanResult.conclusion !== "success") {
+                  core.notice("Gemini skipped: the CodeQL scan did not pass for this SHA.");
+                  return;
+                }
+                codeScanningPassed = true;
+                break;
+              }
+
+              if (attempt < 7) {
+                await new Promise((resolve) => setTimeout(resolve, 10000));
+              }
+            }
+
+            if (!codeScanningPassed) {
+              core.notice("Gemini skipped: the CodeQL check is missing or still pending.");
+              return;
+            }
+
+            let sonarAnalysisPassed = false;
+            for (let attempt = 0; attempt < 40; attempt += 1) {
+              const checks = await github.rest.checks.listForRef({
+                owner,
+                repo,
+                ref: run.head_sha,
+                filter: "latest",
+                per_page: 100,
+              });
+              const sonarResults = checks.data.check_runs
+                .filter((check) =>
+                  check.name === "SonarCloud Code Analysis" &&
+                  check.app?.slug === "sonarqubecloud"
+                )
+                .sort((left, right) =>
+                  new Date(right.completed_at ?? right.started_at ?? right.created_at).getTime() -
+                  new Date(left.completed_at ?? left.started_at ?? left.created_at).getTime()
+                );
+              const sonarResult = sonarResults[0];
+
+              if (sonarResult?.status === "completed") {
+                if (sonarResult.conclusion !== "success") {
+                  core.notice(
+                    `Gemini skipped: SonarCloud automatic analysis did not pass for this SHA (${sonarResult.conclusion ?? "no conclusion"}).`
+                  );
+                  return;
+                }
+                sonarAnalysisPassed = true;
+                break;
+              }
+
+              if (attempt < 39) {
+                await new Promise((resolve) => setTimeout(resolve, 15000));
+              }
+            }
+
+            if (!sonarAnalysisPassed) {
+              core.notice("Gemini skipped: SonarCloud automatic analysis is missing or still pending after 10 minutes.");
+              return;
+            }
+
+            const currentPullRequest = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pullRequest.number,
+            });
+            if (
+              currentPullRequest.data.state !== "open" ||
+              currentPullRequest.data.base.ref !== defaultBranch ||
+              currentPullRequest.data.base.repo?.full_name?.toLowerCase() !== `${owner}/${repo}`.toLowerCase() ||
+              currentPullRequest.data.head.repo?.full_name?.toLowerCase() !== run.head_repository.full_name.toLowerCase() ||
+              currentPullRequest.data.head.ref !== run.head_branch ||
+              currentPullRequest.data.head.sha !== run.head_sha
+            ) {
+              core.notice("Gemini skipped: the pull request changed or closed while checks were being verified.");
+              return;
+            }
+
+            const marker = `<!-- gemini-after-quality-gates:${run.head_sha} -->`;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: pullRequest.number,
+              per_page: 100,
+            });
+            const alreadyRequested = comments.some((comment) =>
+              comment.user?.login === "github-actions[bot]" && comment.body?.includes(marker)
+            );
+            if (alreadyRequested) {
+              core.notice("Gemini review was already requested for this pull request SHA.");
+              return;
+            }
+
+            const finalPullRequest = await github.rest.pulls.get({
+              owner,
+              repo,
+              pull_number: pullRequest.number,
+            });
+            if (
+              finalPullRequest.data.state !== "open" ||
+              finalPullRequest.data.base.ref !== defaultBranch ||
+              finalPullRequest.data.base.repo?.full_name?.toLowerCase() !== `${owner}/${repo}`.toLowerCase() ||
+              finalPullRequest.data.head.repo?.full_name?.toLowerCase() !== run.head_repository.full_name.toLowerCase() ||
+              finalPullRequest.data.head.ref !== run.head_branch ||
+              finalPullRequest.data.head.sha !== run.head_sha
+            ) {
+              core.notice("Gemini skipped: the pull request head changed before the review request was posted.");
+              return;
+            }
+
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pullRequest.number,
+              body: `/gemini review\n\n${marker}`,
+            });
