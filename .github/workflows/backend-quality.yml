@@ -44,17 +44,17 @@ jobs:
         working-directory: backend
         run: |
           uv python install 3.13
-          uv sync --locked
+          uv sync --locked --no-build
 
       - name: Check lint and formatting
         working-directory: backend
         run: |
-          uv run --locked ruff check .
-          uv run --locked ruff format --check .
+          uv run --locked --no-build ruff check .
+          uv run --locked --no-build ruff format --check .
 
       - name: Run backend unit tests with coverage
         working-directory: backend
-        run: uv run --locked pytest tests/api -q --cov=app --cov-report=xml:coverage.xml
+        run: uv run --locked --no-build pytest tests/api -q --cov=app --cov-report=xml:coverage.xml
 
       - name: Run backend integration tests
         working-directory: backend
@@ -78,7 +78,7 @@ jobs:
           ACCESS_TOKEN_EXPIRE_MINUTES: "60"
           OPENAI_API_KEY: ""
           ANTHROPIC_API_KEY: ""
-        run: uv run --locked pytest tests/integration -q
+        run: uv run --locked --no-build pytest tests/integration -q
 
       - name: Upload backend coverage
         if: always()
