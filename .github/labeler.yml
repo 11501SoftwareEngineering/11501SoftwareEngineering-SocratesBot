@@ -65,7 +65,6 @@ security:
   - changed-files:
       - any-glob-to-any-file:
           - .gitleaks.toml
-          - .gemini/**
           - .github/codeql/**
           - .github/workflows/quality-gates.yml
           - scripts/gitleaks-staged.sh
