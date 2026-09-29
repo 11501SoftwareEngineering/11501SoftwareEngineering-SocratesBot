@@ -12,7 +12,6 @@
     cp backend/.env.example backend/.env
     cp devops/prod/db_default_user_password_example.txt devops/prod/db_default_user_password.txt
     ```
-    > `POSTGRES_PASSWORD` 需與 `devops/prod/db_default_user_password.txt` 內容相同。
 
 3. 建立 Python 虛擬環境與套件安裝
     ```bash
