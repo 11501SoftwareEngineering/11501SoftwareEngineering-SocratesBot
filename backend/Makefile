@@ -1,9 +1,9 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup dev gen fix check test db db-down db-revision db-upgrade db-downgrade db-current
+.PHONY: help setup dev fix check test db db-down db-revision db-upgrade db-downgrade db-current
 
 help:
-	@echo "Backend commands: make setup, dev, gen, fix, check, test, db, db-down"
+	@echo "Backend commands: make setup, dev, fix, check, test, db, db-down"
 	@echo 'Migration commands: make db-revision message="description", db-upgrade, db-downgrade, db-current'
 
 setup:
@@ -12,9 +12,6 @@ setup:
 
 dev:
 	uv run --locked fastapi dev app/main.py
-
-gen:
-	uv run --locked python -m scripts.generate_openapi
 
 fix:
 	uv run --locked ruff check --fix .

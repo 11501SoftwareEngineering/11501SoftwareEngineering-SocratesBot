@@ -44,10 +44,6 @@ API 文件:
 http://localhost:8000/docs 
 http://localhost:8000/redoc
 
-## OpenAPI 規格
-
-在 repo 根目錄執行 `make -C backend gen`，會依目前 FastAPI routes 產生 `backend/openapi.json`。CI 也會執行這個目標，並在 backend checks 通過後上傳 `openapi-spec` artifact，供前端取得規格並自行用 `openapi-typescript` 產生 SDK。產生的 JSON 不提交到 Git；修改 API 後，請用 `make -C backend gen` 更新本機檔案。
-
 確認 PostgreSQL 與 Redis 連線狀態:
 http://localhost:8000/api/v1/health
 

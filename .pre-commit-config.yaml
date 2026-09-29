@@ -1,12 +1,6 @@
 repos:
   - repo: local
     hooks:
-      - id: generate-openapi
-        name: Generate OpenAPI specification
-        entry: make -C backend gen
-        language: system
-        pass_filenames: false
-        files: ^backend/(app|scripts)/.*\.py$|^backend/Makefile$
       - id: ruff-check
         name: Ruff check and autofix
         entry: uv run --project backend ruff check --fix
