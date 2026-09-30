@@ -11,7 +11,8 @@ export { default as Button } from './Button.vue'
  *   Figma State=Hover 則交給瀏覽器原生的 :hover 處理，不用另外做一個 variant。
  *   Figma Size=Large -> size="lg"；Size=Small -> size="default" / "sm"。
  *   注意：Figma 按鈕的文字比一般網頁習慣大很多——Large 是 32px（設計稿裡叫 h1_title），
- *   Small 是 24px，不是網頁常見的 14-16px，size="lg" 已經改成 text-[32px]，
+ *   Small 是 24px（設計稿裡叫 Header_text），不是網頁常見的 14-16px。
+ *   這兩個字級已經改成用 tailwind.config.js 裡的 text-h1-title / text-header，
  *   不要因為「看起來很大」就自己改小，這是設計稿刻意的風格。
  * 按鈕文字用 --primary-foreground / --secondary-foreground（已在 main.css 設成深色 #4F595D），
  * 這是 Figma 特意設計成「淺色底 + 深色字」，不是白字，記得不要改回白色。
@@ -32,9 +33,9 @@ export const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground data-[size=lg]:border-border data-[size=lg]:shadow-[0px_2px_3px_0px_rgba(0,0,0,0.1),0px_2px_2px_-1px_rgba(0,0,0,0.1)] hover:brightness-90',
+        default: 'bg-primary text-primary-foreground data-[size=lg]:border-border data-[size=lg]:shadow-elevated hover:brightness-90',
         outline: 'border-border bg-background hover:bg-muted hover:text-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 aria-expanded:bg-muted aria-expanded:text-foreground shadow-xs',
-        secondary: 'bg-secondary text-secondary-foreground data-[size=lg]:border-border data-[size=lg]:shadow-[0px_2px_3px_0px_rgba(0,0,0,0.1),0px_2px_2px_-1px_rgba(0,0,0,0.1)] hover:brightness-90',
+        secondary: 'bg-secondary text-secondary-foreground data-[size=lg]:border-border data-[size=lg]:shadow-elevated hover:brightness-90',
         ghost: 'text-foreground hover:text-muted-foreground aria-expanded:text-foreground',
         destructive: 'bg-destructive/10 hover:bg-destructive/20 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/20 text-destructive focus-visible:border-destructive/40 dark:hover:bg-destructive/30',
         link: 'text-primary underline-offset-4 hover:underline',
@@ -42,8 +43,8 @@ export const buttonVariants = cva(
       size: {
         'default': 'h-9 gap-1.5 px-2.5 in-data-[slot=button-group]:rounded-md has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
         'xs': 'h-6 gap-1 rounded-[min(var(--radius-md),8px)] px-2 text-xs in-data-[slot=button-group]:rounded-md has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*=size-])]:size-3',
-        'sm': 'h-auto min-h-8 gap-1 rounded-[min(var(--radius-md),10px)] px-4 py-1.5 text-[24px] leading-none in-data-[slot=button-group]:rounded-md has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5',
-        'lg': 'h-auto min-h-11 gap-2 px-8 py-4 text-[32px] leading-none has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4',
+        'sm': 'h-auto min-h-8 gap-1 rounded-[min(var(--radius-md),10px)] px-4 py-1.5 text-header in-data-[slot=button-group]:rounded-md has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5',
+        'lg': 'h-auto min-h-11 gap-2 px-8 py-4 text-h1-title has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4',
         'icon': 'size-9',
         'icon-xs': 'size-6 rounded-[min(var(--radius-md),8px)] in-data-[slot=button-group]:rounded-md [&_svg:not([class*=size-])]:size-3',
         'icon-sm': 'size-8 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-md',

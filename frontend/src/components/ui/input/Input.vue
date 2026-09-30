@@ -36,8 +36,8 @@ const modelValue = defineModel<string>()
         'flex h-[52px] w-full rounded-lg px-4 py-3 text-base',
         // 顏色：背景色 #F7F6F2 = bg-background，外框 #EBE9E1 = border-border
         'bg-background text-foreground border border-border',
-        // Figma 的 input 內陰影（inset 1.5px 1.5px 4px rgba(0,0,0,0.25)）
-        'shadow-[inset_1.5px_1.5px_4px_0px_rgba(0,0,0,0.25)]',
+        // Figma 的 input 內陰影 -> 對應 tailwind.config.js 的 boxShadow.input（同一個 Figma Effect style）
+        'shadow-input',
         'placeholder:text-muted-foreground/70',
         // hover / Active(focus)：邊框轉為文字主色 #4F595D = border-foreground
         'transition-colors hover:border-foreground focus-visible:border-foreground focus-visible:outline-none',
