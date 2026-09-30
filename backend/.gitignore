@@ -1,9 +1,11 @@
-# Python
+# Python bytecode and compiled extensions
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+
+# Python packaging and build outputs
 build/
 develop-eggs/
 dist/
@@ -20,7 +22,7 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual environments (uv / venv)
+# Virtual environments
 .venv/
 venv/
 ENV/
