@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup dev fix check test db db-down db-revision db-upgrade db-downgrade db-current
+.PHONY: help setup dev fix check test db-prod db-prod-down db-dev db-dev-down db-revision db-upgrade db-downgrade db-current
 
 help:
 	@echo "Backend commands: make setup, dev, fix, check, test, db, db-down"
@@ -25,11 +25,17 @@ check:
 test:
 	uv run --locked pytest tests/api -q
 
-db:
+db-prod:
 	docker-compose -f ../devops/prod/docker-compose.db.yml up
 
-db-down:
+db-prod-down:
 	docker-compose -f ../devops/prod/docker-compose.db.yml down
+
+db-dev:
+	docker-compose -f ../devops/dev/docker-compose.db.yml up
+
+db-dev-down:
+	docker-compose -f ../devops/dev/docker-compose.db.yml down
 
 db-revision:
 	@test -n "$(message)" || { echo 'Usage: make db-revision message="description"' >&2; exit 2; }
