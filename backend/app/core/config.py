@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -25,10 +25,32 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str]
 
     # Database (PostgreSQL)
-    DATABASE_URL: Annotated[SecretStr, Field(min_length=1)]
+    POSTGRES_USER: Annotated[SecretStr, Field(min_length=1)]
+    POSTGRES_DB: Annotated[SecretStr, Field(min_length=1)]
+    POSTGRES_PASSWORD: Annotated[SecretStr, Field(min_length=1)]
+    POSTGRES_HOST: Annotated[SecretStr, Field(min_length=1)] = "localhost"
+    POSTGRES_PORT: Annotated[SecretStr, Field(min_length=1)] = 5432
+
+    @computed_field
+    def DATABASE_URL(self) -> SecretStr:
+        user = self.POSTGRES_USER.get_secret_value()
+        password = self.POSTGRES_PASSWORD.get_secret_value()
+        db = self.POSTGRES_DB.get_secret_value()
+        host = self.POSTGRES_HOST.get_secret_value()
+        port = self.POSTGRES_PORT.get_secret_value()
+        return SecretStr(
+            f"postgresql+asyncpg://{user}:{password}" f"@{host}:{port}/{db}"
+        )
 
     # Redis
-    REDIS_URL: NonEmptyStr
+    REDIS_HOST: Annotated[SecretStr, Field(min_length=1)] = "localhost"
+    REDIS_PORT: Annotated[SecretStr, Field(min_length=1)] = 6379
+
+    @computed_field
+    def REDIS_URL(self) -> SecretStr:
+        host = self.REDIS_HOST.get_secret_value()
+        port = self.REDIS_PORT.get_secret_value()
+        return SecretStr(f"redis://{host}:{port}/0")
 
     # Security & JWT
     JWT_SECRET_KEY: Annotated[SecretStr, Field(min_length=32)]
