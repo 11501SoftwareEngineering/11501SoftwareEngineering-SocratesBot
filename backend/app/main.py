@@ -12,12 +12,15 @@ from app.core.middleware import RequestLoggingMiddleware
 from app.core.migration import run_migrations
 from app.core.redis import close_redis
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s"
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    # 僅開發環境自動 migration；正式環境請於部署流程手動執行 alembic upgrade head
+    # 開發環境自動執行 migration
+    # 正式環境請於部署流程手動執行 alembic upgrade head
     if settings.APP_ENV == "development":
         await run_migrations()
     yield

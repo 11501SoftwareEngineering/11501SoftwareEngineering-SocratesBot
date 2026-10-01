@@ -5,9 +5,8 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from alembic import context
-
 import app.models  # noqa: F401  # load all models
+from alembic import context
 from app.core.config import settings
 from app.core.database import Base
 
@@ -16,11 +15,15 @@ from app.core.database import Base
 config = context.config
 
 # read database URL from .env
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL.get_secret_value().replace("%", "%%"))
+config.set_main_option(
+    "sqlalchemy.url", settings.DATABASE_URL.get_secret_value().replace("%", "%%")
+)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-if config.config_file_name is not None and config.attributes.get("configure_logger", True):
+if config.config_file_name is not None and config.attributes.get(
+    "configure_logger", True
+):
     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
