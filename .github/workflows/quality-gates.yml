@@ -62,7 +62,7 @@ jobs:
             --volume "${GITHUB_WORKSPACE}:${GITHUB_WORKSPACE}:ro" \
             --workdir "${GITHUB_WORKSPACE}" \
             ghcr.io/gitleaks/gitleaks:v8.29.1@sha256:aa036a2f4bdfe3cc3c55fa4326308efabb4a6be498c883c864fd1d0d5585438a \
-            git --redact --no-banner --log-opts="--all ${BASE_SHA}..${HEAD_SHA}" "${GITHUB_WORKSPACE}"
+            git --redact --no-banner --log-opts="${BASE_SHA}..${HEAD_SHA}" "${GITHUB_WORKSPACE}"
 
   codeql:
     name: CodeQL analysis
