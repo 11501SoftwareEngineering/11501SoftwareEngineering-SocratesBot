@@ -1,7 +1,10 @@
-from app.core.database import Base
+"""Import all models in this package, it used by alembic to do the DB initialization."""
 
-# 新增的 model 請在這裡 import 讓 Alembic autogenerate 能偵測到
-# 例如:
-# from app.models.user import User
+import glob
+from os.path import basename, dirname, isfile, join
 
-__all__ = ["Base"]
+modules = glob.glob(join(dirname(__file__), "*.py"))
+__all__ = [
+    basename(f)[:-3] for f in modules if isfile(f) and not f.endswith("__init__.py")
+]
+from . import *  # noqa

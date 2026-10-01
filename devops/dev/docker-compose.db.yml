@@ -1,25 +1,21 @@
 services:
   db:
     image: postgres:18-alpine
-    container_name: squicrates-postgres-prod
+    container_name: squicrates-postgres-dev
     restart: always
-    environment:
-      POSTGRES_USER: "postgres"
-      POSTGRES_DB: "postgres"
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    env_file:
+      - ../../backend/.env
     volumes:
-      - postgres_data_prod:/var/lib/postgresql
+      - postgres_data_dev:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - db-network-prod
+      - db-network-dev
     ports:
       - 127.0.0.1:5432:5432
-    secrets:
-          - db_password
     cap_drop:
       - ALL
     cap_add:
@@ -37,17 +33,17 @@ services:
 
   redis:
     image: redis:8-alpine
-    container_name: squicrates-redis-prod
+    container_name: squicrates-redis-dev
     restart: always
     volumes:
-      - redis_data_prod:/data
+      - redis_data_dev:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - db-network-prod
+      - db-network-dev
     ports:
       - 127.0.0.1:6379:6379
     cap_drop:
@@ -57,16 +53,12 @@ services:
     read_only: true
 
 volumes:
-  postgres_data_prod:
-  redis_data_prod:
+  postgres_data_dev:
+  redis_data_dev:
 
 
 networks:
-  db-network-prod:
+  db-network-dev:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"
-
-secrets:
-  db_password:
-    file: ./db_default_user_password.txt
