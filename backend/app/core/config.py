@@ -38,9 +38,7 @@ class Settings(BaseSettings):
         db = self.POSTGRES_DB.get_secret_value()
         host = self.POSTGRES_HOST.get_secret_value()
         port = self.POSTGRES_PORT.get_secret_value()
-        return SecretStr(
-            f"postgresql+asyncpg://{user}:{password}" f"@{host}:{port}/{db}"
-        )
+        return SecretStr(f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}")
 
     # Redis
     REDIS_HOST: Annotated[SecretStr, Field(min_length=1)] = "localhost"
