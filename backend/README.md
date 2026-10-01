@@ -10,7 +10,6 @@
     在專案根目錄:
     ```bash
     cp backend/.env.example backend/.env
-    cp devops/prod/db_default_user_password_example.txt devops/prod/db_default_user_password.txt
     ```
 
 3. 建立 Python 虛擬環境與套件安裝
@@ -24,7 +23,7 @@
 1. 啟動 docker 容器，裡面有 PostgreSQL 和 Redis. 
     在專案根目錄執行：
     ```bash
-    make db
+    make db-dev
     ```
 
     檢查容器狀態：
@@ -34,7 +33,7 @@
 
     關閉容器
     ```bash
-    make db-down
+    make db-dev-down
     ```
 
 2. 啟動 fastapi
@@ -52,7 +51,7 @@ http://localhost:8000/api/v1/health
 ## 資料庫遷移
 **要修改資料庫前，請先告知其他人改動的欄位並進行討論。**
 
-在 `backend/` 下執行，連線字串自動讀取 `.env` 的 `DATABASE_URL`。  
+在 `backend/` 下執行，連線字串自動讀取 `config.py` 的 `DATABASE_URL`。  
 新增的 model 需在 `app/models/__init__.py` import，autogenerate 才偵測得到。  
 
 `APP_ENV=development` 時，啟動 FastAPI 會自動 upgrade head。  
