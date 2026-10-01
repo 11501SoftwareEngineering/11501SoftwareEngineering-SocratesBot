@@ -1,0 +1,28 @@
+# Create these repository labels before enabling label-pr.yml.
+- name: backend
+  color: "0e8a16"
+  description: Backend source, tests, or configuration
+- name: documentation
+  color: "0075ca"
+  description: Improvements or additions to documentation
+- name: frontend
+  color: "fbca04"
+  description: Frontend source or configuration
+- name: tests
+  color: "bfd4f2"
+  description: Test code or test infrastructure
+- name: ci
+  color: "1f6feb"
+  description: Continuous integration or developer tooling
+- name: dependencies
+  color: "0366d6"
+  description: Dependency manifests or lockfiles
+- name: database
+  color: "5319e7"
+  description: Database schema, migrations, or services
+- name: devops
+  color: "6f42c1"
+  description: Deployment or infrastructure configuration
+- name: security
+  color: "d73a4a"
+  description: Security analysis or secret-scanning configuration
