@@ -1,9 +1,9 @@
 import asyncio
 import logging
 
-from alembic import command
 from alembic.config import Config
 
+from alembic import command
 from app.core.config import BACKEND_DIR
 
 logger = logging.getLogger(__name__)
