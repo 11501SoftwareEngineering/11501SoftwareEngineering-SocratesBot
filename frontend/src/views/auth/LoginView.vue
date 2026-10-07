@@ -4,13 +4,8 @@ import { useRouter } from 'vue-router'
 import { authApi } from '@/api/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { getApiErrorMessage } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
 
-// 對應 Figma「Login_test」畫面（node 125:62）。
-// 這版是照 Login_test 的 auto layout 結構重刻的：卡片內用 flex 分成
-// 「Logo 區 / 欄位區 / 按鈕區」三段，欄位區整體往左內縮一點（對應 Figma 的 pl-34），
-// 按鈕跟忘記密碼則整組靠右對齊（對應 Figma 的 items-end）。
 const authStore = useAuthStore()
 const router = useRouter()
 
@@ -34,7 +29,7 @@ async function handleLogin() {
     else if (res.data.role === 'TEACHER') router.push('/teacher/dashboard')
     else router.push('/admin/users')
   } catch (err) {
-    errorMessage.value = getApiErrorMessage(err, '帳號或密碼錯誤')
+    errorMessage.value = '帳號或密碼錯誤'
   } finally {
     isSubmitting.value = false
   }
@@ -42,51 +37,50 @@ async function handleLogin() {
 </script>
 
 <template>
-  <div class="flex justify-center px-4 py-12">
-    <div class="flex w-full max-w-[626px] flex-col items-center gap-5 rounded-2xl border border-border bg-card px-[68px] py-[27px] shadow-[0px_2px_3px_0px_rgba(0,0,0,0.1),0px_2px_2px_-1px_rgba(0,0,0,0.1)]">
-      <!-- TODO(設計組): Figma 現在放的是正式的吉祥物截圖，麻煩請輸出透明背景的 SVG/PNG
-           圖檔給前端，換掉下面這個佔位方塊。 -->
-      <div class="flex w-full justify-center pt-[30px]">
-        <div class="flex h-44 w-44 items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground">
-          Logo 佔位
-        </div>
+  <div class="min-h-screen flex items-center justify-center bg-background px-4">
+    <div class="w-full max-w-[500px] flex flex-col items-center gap-8 rounded-2xl border border-border bg-card px-10 py-12 shadow-elevated">
+      
+      <!-- Logo 區 -->
+      <div class="flex justify-center w-full">
+        <img src="@/assets/LOGO.svg" alt="Logo" class="h-32 w-32 object-contain" />
       </div>
 
-      <form class="flex w-full flex-col gap-8" @submit.prevent="handleLogin">
-        <div class="flex w-full flex-col gap-8 pl-8">
-          <div class="flex w-full items-center gap-4">
-            <label for="login-account" class="w-20 shrink-0 font-heading text-2xl text-foreground">帳號：</label>
-            <Input id="login-account" v-model="account" class="flex-1" placeholder="請輸入帳號" autocomplete="username" />
-          </div>
-
-          <div class="flex w-full flex-col gap-1">
-            <div class="flex w-full items-center gap-4">
-              <label for="login-password" class="w-20 shrink-0 font-heading text-2xl text-foreground">密碼：</label>
-              <Input id="login-password" v-model="password" type="password" class="flex-1" placeholder="請輸入密碼" autocomplete="current-password" />
-            </div>
-            <p v-if="errorMessage" class="w-full text-right text-sm text-destructive">
-              {{ errorMessage }}
-            </p>
-          </div>
+      <!-- 登入表單 -->
+      <form class="flex w-full flex-col gap-6" @submit.prevent="handleLogin">
+        
+        <!-- 帳號欄位 -->
+        <div class="flex items-center gap-4">
+          <label for="login-account" class="w-16 shrink-0 font-heading text-lg font-medium text-foreground text-right">帳號：</label>
+          <Input id="login-account" v-model="account" class="flex-1 shadow-input" placeholder="請輸入帳號" autocomplete="username" />
         </div>
 
-        <div class="flex w-full flex-col items-end gap-2 pt-2">
+        <!-- 密碼欄位 -->
+        <div class="flex flex-col gap-1">
           <div class="flex items-center gap-4">
-            <Button type="button" variant="ghost" size="lg">
+            <label for="login-password" class="w-16 shrink-0 font-heading text-lg font-medium text-foreground text-right">密碼：</label>
+            <Input id="login-password" v-model="password" type="password" class="flex-1 shadow-input" placeholder="請輸入密碼" autocomplete="current-password" />
+          </div>
+          <p v-if="errorMessage" class="w-full text-right text-sm text-destructive pr-1">
+            {{ errorMessage }}
+          </p>
+        </div>
+
+        <!-- 按鈕與忘記密碼區 -->
+        <div class="flex w-full flex-col items-end gap-2 pt-4">
+          <div class="flex items-center gap-4">
+            <!-- 加入 @click 觸發切換至註冊頁面 -->
+            <Button type="button" variant="ghost" class="text-muted-foreground hover:text-primary" @click="router.push('/register')">
               註冊
             </Button>
-            <Button type="submit" size="lg" :disabled="isSubmitting">
+            <Button type="submit" size="lg" class="w-24 bg-primary text-primary-foreground shadow-elevated hover:opacity-90" :disabled="isSubmitting">
               {{ isSubmitting ? '登入中...' : '登入' }}
             </Button>
           </div>
-
-          <!-- TODO(前端組): 忘記密碼流程還沒有對應頁面/API，先放可 hover 的文字佔位。
-               Figma 這裡 hover 時「顏色不變、只加底線」，所以用 hover:underline，
-               不要加 hover:text-* 之類會變色的 class。 -->
-          <button type="button" class="text-sm text-muted-foreground hover:underline">
+          <button type="button" class="text-sm text-muted-foreground hover:underline pr-2">
             忘記密碼?
           </button>
         </div>
+
       </form>
     </div>
   </div>
