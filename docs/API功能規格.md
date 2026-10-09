@@ -367,3 +367,24 @@
     - 未登入或憑證過期
     - 非管理員無權存取
     - 查無此老師帳號
+
+
+## 公開公告（前端串接約定）
+
+以下記錄前端預期的資料格式，實際路徑與欄位需依提供的 API 確認。
+
+### 取得公告列表
+- 功能說明：公告首頁取得已發布公告，未登入也可存取。
+- 呼叫方式：GET /system/announcements（完整路徑 /api/v1/system/announcements）。
+- 認證：不需要 Bearer Token。
+- 輸入參數：無。
+- 成功回傳：200，JSON 陣列，依 published_at 由新到舊排列；無公告回傳 []。
+- 欄位：id（唯一字串）、title（標題字串）、content（純文字內容字串）、published_at（含時區的 ISO 8601 日期時間）。
+- 日期顯示：以 Asia/Taipei 時區顯示 YYYY-MM-DD。
+- 錯誤：非 2xx 狀態碼，錯誤本文使用 detail 字串。
+- 前端函式：src/api/announcements.ts 的 announcementsApi.getAnnouncements()。
+- GET 資料與載入／錯誤狀態使用 @tanstack/vue-query 的 useQuery，不放 Pinia；提供載入中、無公告、錯誤與 refetch 重試。
+
+```json
+[{"id":"announcement-1","title":"系統維護公告","content":"維護期間服務暫停。","published_at":"2026-10-05T09:00:00+08:00"}]
+```
