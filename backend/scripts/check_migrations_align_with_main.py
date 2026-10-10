@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import os
 import re
 import subprocess
 import sys
@@ -104,6 +105,26 @@ def file_at_worktree(path: str) -> str:
     return (Path(_repo_root()) / path).read_text(encoding="utf-8")
 
 
+def list_version_paths_index() -> list[str]:
+    """List Alembic version .py paths present in the git index (staged tree)."""
+    out = _run_git("ls-files", "--cached", "--", VERSIONS_PREFIX)
+    if not out:
+        return []
+    return sorted(
+        _validate_versions_path(line)
+        for line in out.splitlines()
+        if line.endswith(".py") and "__pycache__" not in line
+    )
+
+
+def file_at_index(path: str) -> str:
+    """Return migration file contents from the git index (stage 0)."""
+    path = _validate_versions_path(path)
+    # :0:path is the staged blob; resolve then cat-file (no show option injection).
+    blob = _run_git("rev-parse", "--verify", "--quiet", f":0:{path}")
+    return _run_git("cat-file", "-p", blob, strip=False)
+
+
 def parse_revision_meta(content: str) -> tuple[str, str | tuple[str, ...] | None]:
     """Parse revision and down_revision from a migration module source."""
     tree = ast.parse(content)
@@ -165,10 +186,30 @@ def build_graph(
 ) -> dict[str, str | tuple[str, ...] | None]:
     """Build revision -> down_revision from (path, content) migration pairs."""
     graph: dict[str, str | tuple[str, ...] | None] = {}
-    for _path, content in files:
+    owners: dict[str, str] = {}
+    for path, content in files:
         rev, down = parse_revision_meta(content)
+        if rev in graph:
+            msg = f"duplicate revision id {rev!r} in {owners[rev]} and {path}"
+            raise ValueError(msg)
         graph[rev] = down
+        owners[rev] = path
     return graph
+
+
+def missing_down_revisions(
+    graph: dict[str, str | tuple[str, ...] | None],
+) -> list[str]:
+    """Return 'child -> missing_parent' edges whose parent is not in the graph."""
+    missing: list[str] = []
+    for rev, down in graph.items():
+        if down is None:
+            continue
+        parents = (down,) if isinstance(down, str) else down
+        for parent in parents:
+            if parent not in graph:
+                missing.append(f"{rev} -> {parent}")
+    return missing
 
 
 def find_heads(graph: dict[str, str | tuple[str, ...] | None]) -> set[str]:
@@ -203,17 +244,24 @@ def ancestors(rev: str, graph: dict[str, str | tuple[str, ...] | None]) -> set[s
     return seen
 
 
+def _default_head_reader() -> tuple[list[str], Callable[[str], str]]:
+    """Resolve default head side: git index under pre-commit, else worktree."""
+    # pre-commit sets PRE_COMMIT=1; the index is what the commit will contain.
+    if os.environ.get("PRE_COMMIT"):
+        return list_version_paths_index(), file_at_index
+    return list_version_paths_worktree(), file_at_worktree
+
+
 def check(base_ref: str, head_ref: str | None = None) -> int:
     """Verify head migrations align with base_ref; return process exit code.
 
-    When head_ref is None (default), the head side is the working tree on disk.
-    That matches pre-commit (files not yet in HEAD) and a clean CI checkout.
+    When head_ref is None (default): use the git index if PRE_COMMIT is set
+    (pre-commit fidelity), otherwise the working tree on disk (local/CI).
     Pass an explicit git ref to compare a committed tip instead.
     """
     main_paths = list_version_paths(base_ref)
     if head_ref is None:
-        head_paths = list_version_paths_worktree()
-        read_head: Callable[[str], str] = file_at_worktree
+        head_paths, read_head = _default_head_reader()
     else:
         resolved_head = head_ref
 
@@ -244,8 +292,21 @@ def check(base_ref: str, head_ref: str | None = None) -> int:
     main_files = [(p, file_at_ref(base_ref, p)) for p in main_paths]
     head_files = [(p, read_head(p)) for p in head_paths]
 
-    main_graph = build_graph(main_files)
-    head_graph = build_graph(head_files)
+    try:
+        main_graph = build_graph(main_files)
+        head_graph = build_graph(head_files)
+    except ValueError as exc:
+        print(f"::error::{exc}")
+        return 1
+
+    for label, graph in ((base_ref, main_graph), ("this branch", head_graph)):
+        missing = missing_down_revisions(graph)
+        if missing:
+            print(
+                f"::error::Migration graph on {label} references missing "
+                f"down_revision parent(s): {missing}"
+            )
+            return 1
 
     main_heads = find_heads(main_graph)
     head_heads = find_heads(head_graph)
@@ -302,7 +363,7 @@ def main() -> int:
         default=None,
         help=(
             "Git ref for the branch tip to check. "
-            "Default: working tree on disk (correct for pre-commit before commit)."
+            "Default: git index when PRE_COMMIT is set, else working tree on disk."
         ),
     )
     args = parser.parse_args()

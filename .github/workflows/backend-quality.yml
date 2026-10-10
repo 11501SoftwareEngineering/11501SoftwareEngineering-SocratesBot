@@ -60,7 +60,7 @@ jobs:
 
       - name: Run backend unit tests with coverage
         working-directory: backend
-        run: uv run --locked --no-build pytest tests/api -q --cov=app --cov-report=xml:coverage.xml
+        run: uv run --locked --no-build pytest tests/api tests/migration_check -q --cov=app --cov-report=xml:coverage.xml
 
       - name: Run backend integration tests
         working-directory: backend
