@@ -12,12 +12,12 @@ from collections.abc import Iterable
 
 VERSIONS_PREFIX = "backend/alembic/versions/"
 # Safe git ref for --base / HEAD: no leading dash, no shell metacharacters.
-# Covers HEAD, refs/heads/..., origin/main, etc. in one alternative.
 _GIT_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/\-]*$")
 _VERSIONS_PATH_RE = re.compile(rf"^{re.escape(VERSIONS_PREFIX)}[A-Za-z0-9._/\-]+\.py$")
 
 
 def _validate_git_ref(ref: str) -> str:
+    """Reject git refs that could inject argv or path traversal."""
     if not _GIT_REF_RE.fullmatch(ref) or ".." in ref:
         msg = f"unsafe or invalid git ref: {ref!r}"
         raise ValueError(msg)
@@ -25,6 +25,7 @@ def _validate_git_ref(ref: str) -> str:
 
 
 def _validate_versions_path(path: str) -> str:
+    """Reject migration paths outside versions/ or with unsafe characters."""
     if not _VERSIONS_PATH_RE.fullmatch(path) or ".." in path:
         msg = f"unsafe or invalid migration path: {path!r}"
         raise ValueError(msg)
@@ -32,6 +33,7 @@ def _validate_versions_path(path: str) -> str:
 
 
 def _repo_root() -> str:
+    """Return the git repository root (works from backend/ or repo root)."""
     # Resolve once without -C so the script works from backend/ or repo root.
     root = subprocess.check_output(
         ["git", "rev-parse", "--show-toplevel"],
@@ -43,6 +45,7 @@ def _repo_root() -> str:
 
 
 def _run_git(*args: str) -> str:
+    """Run git with a fixed argv list from the repository root; return stdout."""
     if not args:
         raise ValueError("git argv must not be empty")
     for arg in args:
@@ -56,6 +59,7 @@ def _run_git(*args: str) -> str:
 
 
 def list_version_paths(ref: str) -> list[str]:
+    """List validated Alembic version .py paths present at the given git ref."""
     ref = _validate_git_ref(ref)
     out = _run_git("ls-tree", "-r", "--name-only", ref, "--", VERSIONS_PREFIX)
     if not out:
@@ -68,6 +72,7 @@ def list_version_paths(ref: str) -> list[str]:
 
 
 def file_at_ref(ref: str, path: str) -> str:
+    """Return the contents of a migration file at ref:path via cat-file."""
     ref = _validate_git_ref(ref)
     path = _validate_versions_path(path)
     # Resolve blob via rev-parse then cat-file so path cannot inject show options.
@@ -76,6 +81,7 @@ def file_at_ref(ref: str, path: str) -> str:
 
 
 def parse_revision_meta(content: str) -> tuple[str, str | tuple[str, ...] | None]:
+    """Parse revision and down_revision from a migration module source."""
     tree = ast.parse(content)
     revision: str | None = None
     down: str | tuple[str, ...] | None = None
@@ -111,6 +117,7 @@ def parse_revision_meta(content: str) -> tuple[str, str | tuple[str, ...] | None
 
 
 def _parse_down_revision(node: ast.expr) -> str | tuple[str, ...] | None:
+    """Parse a down_revision AST expression into str, tuple, or None."""
     if isinstance(node, ast.Constant):
         if node.value is None:
             return None
@@ -132,6 +139,7 @@ def _parse_down_revision(node: ast.expr) -> str | tuple[str, ...] | None:
 def build_graph(
     files: Iterable[tuple[str, str]],
 ) -> dict[str, str | tuple[str, ...] | None]:
+    """Build revision -> down_revision from (path, content) migration pairs."""
     graph: dict[str, str | tuple[str, ...] | None] = {}
     for _path, content in files:
         rev, down = parse_revision_meta(content)
@@ -140,6 +148,7 @@ def build_graph(
 
 
 def find_heads(graph: dict[str, str | tuple[str, ...] | None]) -> set[str]:
+    """Return revision ids that are not referenced as any down_revision."""
     referenced: set[str] = set()
     for down in graph.values():
         if down is None:
@@ -152,6 +161,7 @@ def find_heads(graph: dict[str, str | tuple[str, ...] | None]) -> set[str]:
 
 
 def ancestors(rev: str, graph: dict[str, str | tuple[str, ...] | None]) -> set[str]:
+    """Return rev and all reachable down_revision ancestors in the graph."""
     seen: set[str] = set()
     stack = [rev]
     while stack:
@@ -170,12 +180,15 @@ def ancestors(rev: str, graph: dict[str, str | tuple[str, ...] | None]) -> set[s
 
 
 def check(base_ref: str, head_ref: str = "HEAD") -> int:
+    """Verify head_ref migrations align with base_ref; return process exit code."""
     main_paths = list_version_paths(base_ref)
     head_paths = list_version_paths(head_ref)
 
     main_set = set(main_paths)
     head_set = set(head_paths)
 
+    # 1) Baseline files on base_ref must still exist on the branch, byte-identical
+    #    (no rewriting history of migrations already on main).
     for path in sorted(main_set):
         if path not in head_set:
             print(f"::error::Missing migration file from {base_ref}: {path}")
@@ -189,6 +202,7 @@ def check(base_ref: str, head_ref: str = "HEAD") -> int:
             )
             return 1
 
+    # 2) Build revision graphs and require exactly one Alembic head on each side.
     main_files = [(p, file_at_ref(base_ref, p)) for p in main_paths]
     head_files = [(p, file_at_ref(head_ref, p)) for p in head_paths]
 
@@ -215,6 +229,8 @@ def check(base_ref: str, head_ref: str = "HEAD") -> int:
     main_head = next(iter(main_heads))
     branch_head = next(iter(head_heads))
 
+    # 3) Same head as base → nothing new; otherwise branch head must descend
+    #    from base head (linear extension, no silent fork).
     if branch_head == main_head:
         print(f"Alembic head matches {base_ref} ({main_head}); no new revisions.")
         return 0
@@ -236,6 +252,7 @@ def check(base_ref: str, head_ref: str = "HEAD") -> int:
 
 
 def main() -> int:
+    """CLI entry: validate --base and run the alignment check."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base",
