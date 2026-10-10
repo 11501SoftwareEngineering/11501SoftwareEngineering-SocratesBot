@@ -48,28 +48,23 @@ http://localhost:8000/api/v1/health
 
 ## 開發前檢查
 
-在 repo 根目錄執行 `make -C backend fix` 自動修正 backend Python；送出 PR 前執行 `make -C backend check`，確認 Ruff、格式與快速後端測試都通過。CI 會以唯讀方式重跑檢查。
+在 repo 根目錄執行 `make -C backend fix` 自動修正 backend Python；送出 PR 前執行 `make -C backend check`，確認 Ruff、格式、`db-migration-check`，以及快速後端測試都通過。CI 會分開跑 Ruff 與 `db-migration-check`；pre-commit 在變更 `backend/alembic/` 時也會跑 `db-migration-check`。
 
 ## 資料庫遷移
 **要修改資料庫前，請先告知其他人改動的欄位並進行討論。**
 
-在 `backend/` 下執行，連線字串自動讀取 `config.py` 的 `DATABASE_URL`。  
+連線字串自動讀取 `config.py` 的 `DATABASE_URL`。  
 新增的 model 需在 `app/models/__init__.py` import，autogenerate 才偵測得到。  
 
 `APP_ENV=development` 時，啟動 FastAPI 會自動 upgrade head。  
 
 ```bash
-# 依 models 變更產生 migration 腳本（產生後請檢查內容）
-uv run alembic revision --autogenerate -m "描述"
-
-# 套用到最新版本
-uv run alembic upgrade head
-
-# 退回上一版
-uv run alembic downgrade -1
-
-# 查看目前版本
-uv run alembic current
+make -C backend db-revision message="描述變更"   # autogenerate，產生後請人工檢查
+make -C backend db-upgrade                        # upgrade head
+make -C backend db-downgrade                      # 退回一版
+make -C backend db-current                        # 目前 DB revision
+make -C backend db-heads                          # 目前 migration head（應只有一個）
+make -C backend db-migration-check                # 檢查是否對齊 origin/main
 ```
 
 ## Python 環境
