@@ -8,7 +8,8 @@ import ast
 import re
 import subprocess
 import sys
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from pathlib import Path
 
 VERSIONS_PREFIX = "backend/alembic/versions/"
 # Safe git ref for --base / HEAD: no leading dash, no shell metacharacters.
@@ -44,7 +45,7 @@ def _repo_root() -> str:
     return root
 
 
-def _run_git(*args: str) -> str:
+def _run_git(*args: str, strip: bool = True) -> str:
     """Run git with a fixed argv list from the repository root; return stdout."""
     if not args:
         raise ValueError("git argv must not be empty")
@@ -52,10 +53,11 @@ def _run_git(*args: str) -> str:
         if "\x00" in arg:
             raise ValueError("git argv must not contain NUL")
     # argv list form (no shell); -C keeps pathspecs repo-root-relative.
-    return subprocess.check_output(
+    out = subprocess.check_output(
         ["git", "-C", _repo_root(), *args],
         text=True,
-    ).strip()
+    )
+    return out.strip() if strip else out
 
 
 def list_version_paths(ref: str) -> list[str]:
@@ -77,7 +79,29 @@ def file_at_ref(ref: str, path: str) -> str:
     path = _validate_versions_path(path)
     # Resolve blob via rev-parse then cat-file so path cannot inject show options.
     blob = _run_git("rev-parse", "--verify", "--quiet", f"{ref}:{path}")
-    return _run_git("cat-file", "-p", blob)
+    # Preserve exact blob bytes as text (do not strip trailing newlines).
+    return _run_git("cat-file", "-p", blob, strip=False)
+
+
+def list_version_paths_worktree() -> list[str]:
+    """List Alembic version .py paths present in the working tree on disk."""
+    root = Path(_repo_root())
+    versions = root / VERSIONS_PREFIX
+    if not versions.is_dir():
+        return []
+    paths: list[str] = []
+    for path in sorted(versions.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        rel = path.relative_to(root).as_posix()
+        paths.append(_validate_versions_path(rel))
+    return paths
+
+
+def file_at_worktree(path: str) -> str:
+    """Return migration file contents from the working tree on disk."""
+    path = _validate_versions_path(path)
+    return (Path(_repo_root()) / path).read_text(encoding="utf-8")
 
 
 def parse_revision_meta(content: str) -> tuple[str, str | tuple[str, ...] | None]:
@@ -179,10 +203,24 @@ def ancestors(rev: str, graph: dict[str, str | tuple[str, ...] | None]) -> set[s
     return seen
 
 
-def check(base_ref: str, head_ref: str = "HEAD") -> int:
-    """Verify head_ref migrations align with base_ref; return process exit code."""
+def check(base_ref: str, head_ref: str | None = None) -> int:
+    """Verify head migrations align with base_ref; return process exit code.
+
+    When head_ref is None (default), the head side is the working tree on disk.
+    That matches pre-commit (files not yet in HEAD) and a clean CI checkout.
+    Pass an explicit git ref to compare a committed tip instead.
+    """
     main_paths = list_version_paths(base_ref)
-    head_paths = list_version_paths(head_ref)
+    if head_ref is None:
+        head_paths = list_version_paths_worktree()
+        read_head: Callable[[str], str] = file_at_worktree
+    else:
+        resolved_head = head_ref
+
+        def read_head(path: str) -> str:
+            return file_at_ref(resolved_head, path)
+
+        head_paths = list_version_paths(resolved_head)
 
     main_set = set(main_paths)
     head_set = set(head_paths)
@@ -194,7 +232,7 @@ def check(base_ref: str, head_ref: str = "HEAD") -> int:
             print(f"::error::Missing migration file from {base_ref}: {path}")
             return 1
         main_body = file_at_ref(base_ref, path)
-        head_body = file_at_ref(head_ref, path)
+        head_body = read_head(path)
         if main_body != head_body:
             print(
                 f"::error::Migration file changed relative to {base_ref}: {path} "
@@ -204,7 +242,7 @@ def check(base_ref: str, head_ref: str = "HEAD") -> int:
 
     # 2) Build revision graphs and require exactly one Alembic head on each side.
     main_files = [(p, file_at_ref(base_ref, p)) for p in main_paths]
-    head_files = [(p, file_at_ref(head_ref, p)) for p in head_paths]
+    head_files = [(p, read_head(p)) for p in head_paths]
 
     main_graph = build_graph(main_files)
     head_graph = build_graph(head_files)
@@ -252,16 +290,25 @@ def check(base_ref: str, head_ref: str = "HEAD") -> int:
 
 
 def main() -> int:
-    """CLI entry: validate --base and run the alignment check."""
+    """CLI entry: validate --base/--head and run the alignment check."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base",
         default="origin/main",
         help="Git ref for the default branch migration baseline (default: origin/main)",
     )
+    parser.add_argument(
+        "--head",
+        default=None,
+        help=(
+            "Git ref for the branch tip to check. "
+            "Default: working tree on disk (correct for pre-commit before commit)."
+        ),
+    )
     args = parser.parse_args()
     try:
         base = _validate_git_ref(args.base)
+        head = _validate_git_ref(args.head) if args.head is not None else None
     except ValueError as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
@@ -270,9 +317,18 @@ def main() -> int:
     except subprocess.CalledProcessError:
         print(f"::error::Base ref not found: {base}", file=sys.stderr)
         return 1
+    if head is not None:
+        try:
+            _run_git("rev-parse", "--verify", head)
+        except subprocess.CalledProcessError:
+            print(f"::error::Head ref not found: {head}", file=sys.stderr)
+            return 1
     try:
-        return check(base)
+        return check(base, head_ref=head)
     except ValueError as exc:
+        print(f"::error::{exc}", file=sys.stderr)
+        return 1
+    except OSError as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
 

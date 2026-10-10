@@ -5,7 +5,9 @@ from scripts.check_migrations_align_with_main import (
     _validate_versions_path,
     ancestors,
     build_graph,
+    file_at_worktree,
     find_heads,
+    list_version_paths_worktree,
     parse_revision_meta,
 )
 
@@ -80,3 +82,11 @@ def test_accept_safe_git_refs() -> None:
 def test_reject_unsafe_versions_paths(path: str) -> None:
     with pytest.raises(ValueError):
         _validate_versions_path(path)
+
+
+def test_worktree_lists_and_reads_existing_versions() -> None:
+    paths = list_version_paths_worktree()
+    assert paths
+    assert all(p.startswith("backend/alembic/versions/") for p in paths)
+    body = file_at_worktree(paths[0])
+    assert "revision" in body

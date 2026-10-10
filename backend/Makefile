@@ -64,4 +64,4 @@ db-heads:
 
 db-migration-check:
 	git fetch origin main
-	python3 scripts/check_migrations_align_with_main.py --base origin/main
+	uv run --locked scripts/check_migrations_align_with_main.py --base origin/main
