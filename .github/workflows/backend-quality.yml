@@ -36,6 +36,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
 
       - name: Set up uv
         uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
@@ -52,9 +54,13 @@ jobs:
           uv run --locked --no-build ruff check .
           uv run --locked --no-build ruff format --check .
 
+      - name: Check Alembic migrations align with main
+        working-directory: backend
+        run: make db-migration-check
+
       - name: Run backend unit tests with coverage
         working-directory: backend
-        run: uv run --locked --no-build pytest tests/api -q --cov=app --cov-report=xml:coverage.xml
+        run: uv run --locked --no-build pytest tests/api tests/migration_check -q --cov=app --cov-report=xml:coverage.xml
 
       - name: Run backend integration tests
         working-directory: backend

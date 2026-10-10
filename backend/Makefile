@@ -1,10 +1,18 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup dev fix check test db-prod db-prod-down db-dev db-dev-down db-revision db-upgrade db-downgrade db-current
+.PHONY: help setup dev fix check test \
+	db-prod db-prod-down db-dev db-dev-down \
+	db-revision db-upgrade db-downgrade db-current db-heads \
+	db-migration-check
 
 help:
-	@echo "Backend commands: make setup, dev, fix, check, test, db, db-down"
-	@echo 'Migration commands: make db-revision message="description", db-upgrade, db-downgrade, db-current'
+	@echo "App: setup, dev, fix, check, test"
+	@echo "Docker: db-dev, db-dev-down, db-prod, db-prod-down"
+	@echo 'Migrations: db-revision message="...", db-upgrade, db-downgrade, db-current, db-heads'
+	@echo "CI gate: db-migration-check (Alembic chain vs origin/main)"
+	@echo ""
+	@echo "From repo root: make -C backend db-upgrade"
+	@echo "                make -C backend db-migration-check"
 
 setup:
 	uv sync --locked
@@ -20,7 +28,8 @@ fix:
 check:
 	uv run --locked ruff check .
 	uv run --locked ruff format --check .
-	uv run --locked pytest tests/api -q
+	$(MAKE) db-migration-check
+	uv run --locked pytest tests/api tests/migration_check -q
 
 test:
 	uv run --locked pytest tests/api -q
@@ -49,3 +58,10 @@ db-downgrade:
 
 db-current:
 	uv run --locked alembic current
+
+db-heads:
+	uv run --locked alembic heads
+
+db-migration-check:
+	git fetch origin main
+	uv run --locked scripts/check_migrations_align_with_main.py --base origin/main
