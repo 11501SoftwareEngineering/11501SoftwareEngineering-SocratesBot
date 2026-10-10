@@ -20,10 +20,10 @@ fix:
 check:
 	uv run --locked ruff check .
 	uv run --locked ruff format --check .
-	uv run --locked pytest tests/api -q
+	uv run --locked pytest tests/api tests/unit -q
 
 test:
-	uv run --locked pytest tests/api -q
+	uv run --locked pytest tests/api tests/unit -q
 
 db-prod:
 	docker-compose -f ../devops/prod/docker-compose.db.yml up
