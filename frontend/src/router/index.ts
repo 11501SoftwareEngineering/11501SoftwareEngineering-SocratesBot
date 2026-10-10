@@ -16,6 +16,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/auth/LoginView.vue'),
     meta: { requiresAuth: false },
   },
+  {
+    path: '/teacher/courses',
+    name: 'TeacherCourses',
+    component: () => import('@/views/teacher/TeacherCourses.vue'),
+    meta: { requiresAuth: true }
+  },
   // 學生端路由
   {
     path: '/student',
