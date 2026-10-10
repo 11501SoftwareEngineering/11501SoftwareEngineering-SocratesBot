@@ -25,6 +25,7 @@ const errorMessage = ref('')
       <div class="flex justify-between items-center mb-6 gap-4">
         <div class="relative flex-1">
           <input 
+            id="search"
             v-model="searchQuery" 
             type="text" 
             placeholder="搜尋..." 
