@@ -1,4 +1,8 @@
+import pytest
+
 from scripts.check_migrations_align_with_main import (
+    _validate_git_ref,
+    _validate_versions_path,
     ancestors,
     build_graph,
     find_heads,
@@ -41,3 +45,38 @@ def test_branch_extends_main_head() -> None:
     assert main_head == "m1"
     assert branch_head == "m2"
     assert main_head in ancestors(branch_head, branch_graph)
+
+
+@pytest.mark.parametrize(
+    "ref",
+    [
+        "--output=/tmp/x",
+        "origin/main;rm -rf /",
+        "HEAD~1$(whoami)",
+        "../main",
+        "-c",
+    ],
+)
+def test_reject_unsafe_git_refs(ref: str) -> None:
+    with pytest.raises(ValueError):
+        _validate_git_ref(ref)
+
+
+def test_accept_safe_git_refs() -> None:
+    assert _validate_git_ref("origin/main") == "origin/main"
+    assert _validate_git_ref("HEAD") == "HEAD"
+    assert _validate_git_ref("refs/heads/main") == "refs/heads/main"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "backend/alembic/versions/../config.py",
+        "backend/secrets.py",
+        "backend/alembic/versions/x.py:foo",
+        "-evil.py",
+    ],
+)
+def test_reject_unsafe_versions_paths(path: str) -> None:
+    with pytest.raises(ValueError):
+        _validate_versions_path(path)

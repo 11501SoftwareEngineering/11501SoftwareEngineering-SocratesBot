@@ -5,30 +5,74 @@ from __future__ import annotations
 
 import argparse
 import ast
+import re
 import subprocess
 import sys
 from collections.abc import Iterable
 
 VERSIONS_PREFIX = "backend/alembic/versions/"
+# Safe git ref for --base / HEAD: no leading dash, no shell metacharacters.
+# Covers HEAD, refs/heads/..., origin/main, etc. in one alternative.
+_GIT_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/\-]*$")
+_VERSIONS_PATH_RE = re.compile(rf"^{re.escape(VERSIONS_PREFIX)}[A-Za-z0-9._/\-]+\.py$")
+
+
+def _validate_git_ref(ref: str) -> str:
+    if not _GIT_REF_RE.fullmatch(ref) or ".." in ref:
+        msg = f"unsafe or invalid git ref: {ref!r}"
+        raise ValueError(msg)
+    return ref
+
+
+def _validate_versions_path(path: str) -> str:
+    if not _VERSIONS_PATH_RE.fullmatch(path) or ".." in path:
+        msg = f"unsafe or invalid migration path: {path!r}"
+        raise ValueError(msg)
+    return path
+
+
+def _repo_root() -> str:
+    # Resolve once without -C so the script works from backend/ or repo root.
+    root = subprocess.check_output(
+        ["git", "rev-parse", "--show-toplevel"],
+        text=True,
+    ).strip()
+    if not root or "\x00" in root:
+        raise ValueError("could not resolve git repository root")
+    return root
 
 
 def _run_git(*args: str) -> str:
-    return subprocess.check_output(["git", *args], text=True).strip()
+    if not args:
+        raise ValueError("git argv must not be empty")
+    for arg in args:
+        if "\x00" in arg:
+            raise ValueError("git argv must not contain NUL")
+    # argv list form (no shell); -C keeps pathspecs repo-root-relative.
+    return subprocess.check_output(
+        ["git", "-C", _repo_root(), *args],
+        text=True,
+    ).strip()
 
 
 def list_version_paths(ref: str) -> list[str]:
+    ref = _validate_git_ref(ref)
     out = _run_git("ls-tree", "-r", "--name-only", ref, "--", VERSIONS_PREFIX)
     if not out:
         return []
     return sorted(
-        line
+        _validate_versions_path(line)
         for line in out.splitlines()
         if line.endswith(".py") and "__pycache__" not in line
     )
 
 
 def file_at_ref(ref: str, path: str) -> str:
-    return _run_git("show", f"{ref}:{path}")
+    ref = _validate_git_ref(ref)
+    path = _validate_versions_path(path)
+    # Resolve blob via rev-parse then cat-file so path cannot inject show options.
+    blob = _run_git("rev-parse", "--verify", "--quiet", f"{ref}:{path}")
+    return _run_git("cat-file", "-p", blob)
 
 
 def parse_revision_meta(content: str) -> tuple[str, str | tuple[str, ...] | None]:
@@ -200,11 +244,20 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
-        _run_git("rev-parse", "--verify", args.base)
-    except subprocess.CalledProcessError:
-        print(f"::error::Base ref not found: {args.base}", file=sys.stderr)
+        base = _validate_git_ref(args.base)
+    except ValueError as exc:
+        print(f"::error::{exc}", file=sys.stderr)
         return 1
-    return check(args.base)
+    try:
+        _run_git("rev-parse", "--verify", base)
+    except subprocess.CalledProcessError:
+        print(f"::error::Base ref not found: {base}", file=sys.stderr)
+        return 1
+    try:
+        return check(base)
+    except ValueError as exc:
+        print(f"::error::{exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
