@@ -87,11 +87,11 @@ jobs:
           OPENAI_API_KEY: ""
           ANTHROPIC_API_KEY: ""
         run: |
-          uv run --locked --no-build pytest tests/integration -q --cov=app --cov-append --cov-report=
+          uv run --locked --no-build pytest tests/integration -q --cov=app --cov-report=
           {
-            echo "## Backend test coverage (unit + integration)"
+            echo "## Backend integration test coverage"
             echo ""
-            echo "Includes \`tests/api\`, \`tests/unit\`, and \`tests/integration\`."
+            echo "Includes \`tests/integration\` only."
             echo ""
             uv run --locked --no-build coverage report --format=markdown
           } >> "$GITHUB_STEP_SUMMARY"
