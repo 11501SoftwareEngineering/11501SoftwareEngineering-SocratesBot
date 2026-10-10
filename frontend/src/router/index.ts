@@ -20,7 +20,7 @@ const routes: RouteRecordRaw[] = [
     path: '/teacher',
     name: 'TeacherHome',
     component: () => import('@/views/teacher/TeacherHome.vue'),
-    meta: { requiresAuth: false } 
+    meta: { requiresAuth: true } 
   },
   // 學生端路由
   {
