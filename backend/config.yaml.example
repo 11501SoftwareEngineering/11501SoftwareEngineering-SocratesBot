@@ -1,0 +1,3 @@
+# Copy to config.yaml (gitignored). Non-secret local app config.
+# Super-admin via account_id list (login /users/me still returns role as USER|TEACHER)
+SUPER_ADMIN_ACCOUNTS: []
