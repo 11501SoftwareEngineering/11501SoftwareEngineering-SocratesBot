@@ -24,6 +24,7 @@ const errorMessage = ref('')
       <!-- 搜尋列與新增教師按鈕 -->
       <div class="flex justify-between items-center mb-6 gap-4">
         <div class="relative flex-1">
+          <label for="search" class="sr-only">搜尋</label>
           <input 
             id="search"
             v-model="searchQuery" 
