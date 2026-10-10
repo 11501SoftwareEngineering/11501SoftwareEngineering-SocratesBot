@@ -53,11 +53,21 @@ class Settings(BaseSettings):
     # Security & JWT
     JWT_SECRET_KEY: Annotated[SecretStr, Field(min_length=32)]
     JWT_ALGORITHM: NonEmptyStr
-    ACCESS_TOKEN_EXPIRE_MINUTES: int
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    REFRESH_REUSE_GRACE_SECONDS: int = 10
+    DEFAULT_LANGUAGE_CODE: NonEmptyStr = "zh-TW"
+    # Cookie flags: SameSite=None for cross-origin SPA; Secure off in development.
+    COOKIE_SAMESITE: NonEmptyStr = "none"
 
     # LLM API
     OPENAI_API_KEY: SecretStr
     ANTHROPIC_API_KEY: SecretStr
+
+    @property
+    def cookie_secure(self) -> bool:
+        """HttpOnly auth cookies use Secure except local/dev/test HTTP."""
+        return self.APP_ENV not in {"development", "test"}
 
 
 @lru_cache
