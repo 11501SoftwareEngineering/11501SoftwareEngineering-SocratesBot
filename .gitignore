@@ -71,3 +71,9 @@ Icon?
 /*.a
 /*.dll
 /*.so
+
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
