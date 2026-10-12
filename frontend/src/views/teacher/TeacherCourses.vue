@@ -2,29 +2,24 @@
 import { ref } from 'vue'
 
 const searchQuery = ref('')
-// 依照 Figma 老師課程頁面的資料結構
 const listData = ref([
-  { id: 1, name: '課程名稱', code: '課程代碼: XXXXXXX' },
-  { id: 2, name: '課程名稱', code: '課程代碼: XXXXXXX' },
-  { id: 3, name: '課程名稱', code: '課程代碼: XXXXXXX' },
+  { id: 1, title: '問題標題範例', details: '年級層 : X-X  回合數 : X  已完成人數 : X/X' },
+  { id: 2, title: '問題標題範例', details: '年級層 : X-X  回合數 : X  已完成人數 : X/X' },
+  { id: 3, title: '問題標題範例', details: '年級層 : X-X  回合數 : X  已完成人數 : X/X' },
 ])
 const errorMessage = ref('')
 </script>
 
 <template>
-  <!-- 外層置中與最大寬度容器 -->
   <div class="min-h-screen bg-background py-8 px-4">
     <div class="max-w-3xl mx-auto">
-      
-      <!-- 頁面主標題 -->
-      <h1 class="text-h1-title font-bold text-foreground mb-6">我的課程</h1>
+      <h1 class="text-h1-title font-bold text-foreground mb-6">問題列表</h1>
 
-      <!-- 搜尋列與新增課程按鈕 -->
       <div class="flex justify-between items-center mb-6 gap-4">
         <div class="relative flex-1">
-          <label for="search" class="sr-only">搜尋</label>
+          <label for="search-courses" class="sr-only">搜尋</label>
           <input 
-            id="search"
+            id="search-courses"
             v-model="searchQuery" 
             type="text" 
             placeholder="搜尋..." 
@@ -32,16 +27,14 @@ const errorMessage = ref('')
           />
         </div>
         <button class="px-4 py-2 bg-[#6b8e83] text-white rounded-md shadow-elevated hover:opacity-90 transition text-sm font-medium whitespace-nowrap">
-          + 新增課程
+          + 新增問題
         </button>
       </div>
 
-      <!-- 錯誤訊息提示 -->
       <div v-if="errorMessage" class="mb-6 p-4 bg-destructive/10 text-destructive rounded-md shadow-input">
         {{ errorMessage }}
       </div>
 
-      <!-- 課程列表區塊 -->
       <div class="space-y-3">
         <div 
           v-for="item in listData" 
@@ -49,16 +42,15 @@ const errorMessage = ref('')
           class="bg-card p-4 rounded-lg shadow-elevated border border-border flex justify-between items-center"
         >
           <div>
-            <h3 class="text-card-foreground font-medium text-base">{{ item.name }}</h3>
-            <p class="text-muted-foreground text-xs mt-1">{{ item.code }}</p>
+            <h3 class="text-card-foreground font-medium text-base">{{ item.title }}</h3>
+            <p class="text-muted-foreground text-xs mt-1">{{ item.details }}</p>
           </div>
           <div class="flex gap-2">
             <button class="px-3 py-1 bg-stone-200 text-stone-700 rounded text-xs hover:bg-stone-300 transition">編輯</button>
-            <button class="px-3 py-1 bg-rose-200 text-rose-700 rounded text-xs hover:bg-rose-300 transition">刪除課程</button>
+            <button class="px-3 py-1 bg-rose-200 text-rose-700 rounded text-xs hover:bg-rose-300 transition">刪除</button>
           </div>
         </div>
       </div>
-
     </div>
   </div>
 </template>
