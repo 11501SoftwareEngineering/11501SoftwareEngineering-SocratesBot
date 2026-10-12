@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import uuid
-
-import jwt
 from fastapi import HTTPException, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +13,6 @@ from app.core.cookies import (
 from app.core.enums import UserRole
 from app.core.security import (
     create_access_token,
-    decode_access_token,
     generate_opaque_token,
     verify_password,
 )
@@ -165,25 +161,3 @@ async def get_current_user_profile(current_user: User) -> CurrentUserResponse:
         role=UserRole(current_user.role),
         preferred_language=user.preferred_language_code(current_user),
     )
-
-
-def parse_user_id_from_token(token: str) -> uuid.UUID:
-    """Decode a JWT and return the subject user id.
-
-    Args:
-        token: Raw access JWT string.
-
-    Returns:
-        UUID parsed from the token ``sub`` claim.
-
-    Raises:
-        HTTPException: 401 if the token is invalid, expired, or ``sub`` is bad.
-    """
-    try:
-        payload = decode_access_token(token)
-        return uuid.UUID(str(payload["sub"]))
-    except (jwt.PyJWTError, KeyError, ValueError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated or token expired",
-        ) from exc
