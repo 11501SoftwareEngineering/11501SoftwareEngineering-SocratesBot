@@ -5,6 +5,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.enums import UserRole
@@ -113,9 +114,10 @@ async def create_user(
         RuntimeError: If the user cannot be reloaded after commit.
     """
     language = await ensure_default_language(db)
+    password_digest = await run_in_threadpool(hash_password, password)
     user = User(account_id=account_id, name=name, role=role.value)
     user.password = UserPassword(
-        password_hash=hash_password(password),
+        password_hash=password_digest,
         must_change_password=must_change_password,
     )
     user.languages = [UserLanguage(language=language)]

@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import HTTPException, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from app.core.cookies import (
     REFRESH_COOKIE,
@@ -12,6 +13,7 @@ from app.core.cookies import (
 )
 from app.core.enums import UserRole
 from app.core.security import (
+    DUMMY_PASSWORD_HASH,
     create_access_token,
     generate_opaque_token,
     verify_password,
@@ -90,12 +92,15 @@ async def login_user(
         HTTPException: 401 if the account is missing or the password is wrong.
     """
     current_user = await user.get_user_by_account(db, payload.account)
-    if current_user is None or current_user.password is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid account or password",
-        )
-    if not verify_password(payload.password, current_user.password.password_hash):
+    stored_hash = (
+        current_user.password.password_hash
+        if current_user is not None and current_user.password is not None
+        else DUMMY_PASSWORD_HASH
+    )
+    password_ok = await run_in_threadpool(
+        verify_password, payload.password, stored_hash
+    )
+    if current_user is None or current_user.password is None or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid account or password",

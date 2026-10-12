@@ -12,6 +12,9 @@ from app.core.enums import UserRole
 
 password_hash = PasswordHash.recommended()
 
+# Used when the account is missing so login still pays verify cost (timing).
+DUMMY_PASSWORD_HASH = password_hash.hash("timing-equalizer-not-a-real-password")
+
 
 def generate_opaque_token() -> str:
     """Return a high-entropy opaque token for refresh/CSRF cookies."""
