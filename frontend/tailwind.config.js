@@ -10,6 +10,7 @@ export default {
         heading: ['var(--font-heading)'],
       },
       fontSize: {
+        'body-lg': ['18px', { lineHeight: '1.6', fontWeight: '400', letterSpacing: '0em' }],
         header: [
           '22px',
           {
@@ -110,7 +111,9 @@ export default {
           5: 'hsl(var(--chart-5))',
         },
       },
+      borderWidth: { thin: '0.8px' },
       spacing: {
+        'course-top': '47px',
         'site-header': '66px',
         'site-logo': '42px',
         navigation: '34px',
@@ -120,9 +123,15 @@ export default {
         'announcement-content': '13px',
       },
       maxWidth: {
+        page: '1000px',
+        'course-search': '804px',
+        account: '83px',
         announcements: '1000px',
       },
       minHeight: {
+        'site-header': '66px',
+        'course-panel': '797px',
+        'course-topic': '96.3px',
         announcement: '98px',
       },
     },

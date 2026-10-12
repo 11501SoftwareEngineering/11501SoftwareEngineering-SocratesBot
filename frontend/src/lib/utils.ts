@@ -13,6 +13,7 @@ const mergeClasses = extendTailwindMerge({
         'text-footer',
         'text-h2-title',
         'text-body',
+        'text-body-lg',
         'text-caption',
       ],
       shadow: ['shadow-elevated', 'shadow-input'],

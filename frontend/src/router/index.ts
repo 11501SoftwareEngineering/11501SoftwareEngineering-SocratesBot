@@ -27,6 +27,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/student/CourseListView.vue'),
       },
       {
+        path: 'courses/:courseId',
+        name: 'StudentCourse',
+        component: () => import('@/views/student/CourseView.vue'),
+        meta: { requiresAuth: true, roles: ['STUDENT'] },
+      },
+      {
         path: 'chat/:questionId',
         name: 'StudentChat',
         component: () => import('@/views/student/ChatView.vue'),

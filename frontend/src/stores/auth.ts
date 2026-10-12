@@ -41,7 +41,7 @@ export const useAuthStore = defineStore(
       try {
         const res = await apiClient.get<User>('/users/me')
         user.value = res.data
-      } catch (error) {
+      } catch {
         logout()
       }
     }
@@ -58,5 +58,5 @@ export const useAuthStore = defineStore(
   },
   {
     persist: true,
-  }
+  },
 )

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useRoute } from 'vue-router'
+const route = useRoute()
 // 對應 Figma Footer 元件（node 21:31）。
 // 五個連結目前都還沒有對應的頁面／路由，所以先用純文字呈現，
 // 之後哪個組員做好那個頁面，再把對應項目換成 <RouterLink>。
@@ -12,7 +14,8 @@ const links = ['隱私權', '版權', '開發者', '聯絡我們', 'Bug']
     <span
       v-for="link in links"
       :key="link"
-      class="cursor-default font-heading text-footer text-foreground"
+      class="cursor-default font-heading text-footer"
+      :class="route.path.startsWith('/student/') ? 'text-muted-foreground' : 'text-foreground'"
     >
       {{ link }}
     </span>
