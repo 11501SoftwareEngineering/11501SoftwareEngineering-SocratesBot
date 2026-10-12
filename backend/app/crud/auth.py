@@ -56,6 +56,22 @@ async def create_refresh_token(db: AsyncSession, user_id: uuid.UUID) -> str:
     return raw
 
 
+async def get_user_id_for_refresh(
+    db: AsyncSession, raw_refresh: str
+) -> uuid.UUID | None:
+    """Return the user id for a refresh token hash, even if revoked or expired.
+
+    Used by logout so a just-rotated cookie still maps to the user and can
+    revoke-all (including the successor refresh).
+    """
+    row = await db.scalar(
+        select(RefreshToken).where(
+            RefreshToken.token_hash == hash_token(raw_refresh),
+        )
+    )
+    return row.user_id if row is not None else None
+
+
 async def get_active_user_id_for_refresh(
     db: AsyncSession, raw_refresh: str
 ) -> uuid.UUID | None:

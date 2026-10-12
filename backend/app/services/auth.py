@@ -132,7 +132,7 @@ async def logout_user(
     """
     raw = request.cookies.get(REFRESH_COOKIE)
     if raw:
-        user_id = await auth.get_active_user_id_for_refresh(db, raw)
+        user_id = await auth.get_user_id_for_refresh(db, raw)
         if user_id is not None:
             await auth.revoke_all_for_user(db, user_id)
     clear_auth_cookies(response)
