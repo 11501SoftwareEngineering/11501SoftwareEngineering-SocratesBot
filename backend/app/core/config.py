@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: NonEmptyStr
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
-    REFRESH_REUSE_GRACE_SECONDS: int = 10
+    REFRESH_REUSE_GRACE_SECONDS: int = 3
     DEFAULT_LANGUAGE_CODE: NonEmptyStr = "zh-TW"
     # Cookie flags: SameSite=None for cross-origin SPA; Secure off in development.
     COOKIE_SAMESITE: NonEmptyStr = "none"
