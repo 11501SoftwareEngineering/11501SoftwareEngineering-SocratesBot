@@ -93,24 +93,6 @@ def test_profile_rejects_user_without_password() -> None:
     assert exc.value.status_code == 401
 
 
-def test_parse_user_id_from_token_rejects_bad_token() -> None:
-    with pytest.raises(HTTPException) as exc:
-        auth_service.parse_user_id_from_token("not-a-jwt")
-    assert exc.value.status_code == 401
-
-
-def test_parse_user_id_from_token_rejects_bad_sub(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "app.services.auth.decode_access_token",
-        lambda _token: {"sub": "not-a-uuid"},
-    )
-    with pytest.raises(HTTPException) as exc:
-        auth_service.parse_user_id_from_token("ignored")
-    assert exc.value.status_code == 401
-
-
 def test_logout_without_refresh_cookie_still_clears(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -101,6 +101,10 @@ def auth_client(client: TestClient, store: FakeStore, monkeypatch: pytest.Monkey
         store.refresh_by_raw[raw] = user_id
         return raw
 
+    async def fake_get_user_id(_db, raw_refresh: str):
+        # Logout looks up even revoked/expired hashes; fake store only keeps live ones.
+        return store.refresh_by_raw.get(raw_refresh)
+
     async def fake_get_active_user_id(_db, raw_refresh: str):
         return store.refresh_by_raw.get(raw_refresh)
 
@@ -130,6 +134,7 @@ def auth_client(client: TestClient, store: FakeStore, monkeypatch: pytest.Monkey
         "app.crud.user.preferred_language_code", fake_preferred_language_code
     )
     monkeypatch.setattr("app.crud.auth.create_refresh_token", fake_create_refresh)
+    monkeypatch.setattr("app.crud.auth.get_user_id_for_refresh", fake_get_user_id)
     monkeypatch.setattr(
         "app.crud.auth.get_active_user_id_for_refresh", fake_get_active_user_id
     )
