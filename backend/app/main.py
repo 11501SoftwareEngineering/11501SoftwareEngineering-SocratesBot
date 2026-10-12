@@ -37,12 +37,14 @@ app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
 
 @app.exception_handler(AuthRequired)
 async def auth_required_handler(_request: Request, exc: AuthRequired) -> JSONResponse:
-    """Return 401 and expire auth cookies (HTTPException drops Response cookies)."""
+    """Return 401; clear auth cookies only when refresh session is dead."""
     response = JSONResponse(
         status_code=401,
         content={"detail": exc.detail},
+        headers={"WWW-Authenticate": "Bearer"},
     )
-    clear_auth_cookies(response)
+    if exc.clear_cookies:
+        clear_auth_cookies(response)
     return response
 
 

@@ -82,11 +82,11 @@ async def get_current_user(
 
     renew_cookie = await auth.renew_with_lock(refresh_cookie)
     if renew_cookie.outcome is RenewOutcome.REJECTED or renew_cookie.user_id is None:
-        raise AuthRequired()
+        raise AuthRequired(clear_cookies=True)
 
     current_user = await user.get_user_by_id(db, renew_cookie.user_id)
     if current_user is None:
-        raise AuthRequired()
+        raise AuthRequired(clear_cookies=True)
 
     access_jwt = create_access_token(
         subject=current_user.id, role=UserRole(current_user.role)
