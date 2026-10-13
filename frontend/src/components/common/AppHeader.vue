@@ -39,7 +39,7 @@ function handleLogout() {
         : 'flex h-site-header items-center justify-between'
     "
   >
-    <RouterLink to="/" class="flex w-fit items-center gap-2.5 self-center">
+    <RouterLink to="/announcements" class="flex w-fit items-center gap-2.5 self-center">
       <span aria-hidden="true" class="size-site-logo shrink-0 rounded-md bg-background" />
       <span class="whitespace-nowrap font-heading text-h1-title text-primary-foreground"
         >問導魷</span

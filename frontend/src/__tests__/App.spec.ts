@@ -41,7 +41,7 @@ describe('App', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path: '/', component: AnnouncementsView },
+        { path: '/', alias: '/announcements', component: AnnouncementsView },
         { path: '/login', component: { template: '<div />' } },
       ],
     })
@@ -81,7 +81,7 @@ describe('App', () => {
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
-        { path: '/', component: { template: '<div />' } },
+        { path: '/', alias: '/announcements', component: AnnouncementsView },
         { path: '/student/courses', name: 'StudentCourses', component: { template: '<div />' } },
         { path: '/student/courses/:courseId', name: 'StudentCourse', component: CourseView },
         {
@@ -110,5 +110,9 @@ describe('App', () => {
     expect(wrapper.find('header nav').text()).toContain('公民思辨')
     expect(wrapper.find('header nav a').attributes('href')).toBe('/student/courses')
     expect(studentApi.getCourseTopics).toHaveBeenCalledTimes(1)
+    vi.mocked(announcementsApi.getAnnouncements).mockResolvedValueOnce({ data: [] } as never)
+    await wrapper.find('header a[href="/announcements"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper?.find('main h1').text()).toBe('公告'))
+    expect(router.currentRoute.value.path).toBe('/announcements')
   })
 })

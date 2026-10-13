@@ -35,6 +35,18 @@ pnpm install
 pnpm dev
 ```
 
+### 學生課程頁假資料預覽
+
+在 `frontend` 目錄執行：
+
+```sh
+pnpm dev:preview
+```
+
+開啟 http://127.0.0.1:5176/，會以示範學生身分先顯示課程問題列表，無需帳號密碼或後端。可測試搜尋、清除、手機版排版，點左上角「問導魷」切換到公告頁。
+
+此指令使用獨立的本地預覽伺服器與假資料；`pnpm dev` 仍使用正常 API。正式 `pnpm build` 不會載入預覽程式。題目頁與「我的課程」目前沿用既有路由，其完整功能另由對應頁面實作。按 Ctrl+C 停止預覽。
+
 ### Type-Check, Compile and Minify for Production
 
 ```sh
