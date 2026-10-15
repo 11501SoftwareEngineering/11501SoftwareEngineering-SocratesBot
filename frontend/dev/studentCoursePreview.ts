@@ -50,12 +50,9 @@ const previewPlugin: Plugin = {
         tag: 'script',
         injectTo: 'head-prepend',
         children: `
-        if (location.pathname !== '/login') {
+        if (location.pathname.startsWith('/student/')) {
           localStorage.setItem('auth', JSON.stringify(${JSON.stringify(auth)}));
           localStorage.setItem('access_token', ${JSON.stringify(auth.token)});
-        }
-        if (location.pathname === '/') {
-          history.replaceState(null, '', ${JSON.stringify(coursePath)});
         }
       `,
       },
@@ -86,7 +83,7 @@ const server = await createServer({
   server: { host: '127.0.0.1', port: 5176, strictPort: true },
 })
 await server.listen()
-console.log('前端假資料預覽：無需帳號密碼，首頁先顯示課程頁。')
-console.log('點左上角「問導魷」可切換到公告；Ctrl+C 停止預覽。')
+console.log('前端預覽首頁已恢復為公告。')
+console.log(`課程假資料預覽：${origin}${coursePath}（無需帳號密碼）；Ctrl+C 停止預覽。`)
 server.printUrls()
 server.bindCLIShortcuts({ print: true })
