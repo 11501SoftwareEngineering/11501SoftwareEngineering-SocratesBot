@@ -41,15 +41,6 @@ const course = {
     },
   ],
 }
-const announcements = [
-  {
-    id: 'preview-announcement',
-    title: '課程頁面預覽',
-    content: '這是前端示範資料，可用來檢查畫面與搜尋互動。',
-    published_at: '2026-10-13T09:00:00+08:00',
-  },
-]
-
 const previewPlugin: Plugin = {
   name: 'student-course-local-preview',
   apply: 'serve',
@@ -79,8 +70,6 @@ const previewPlugin: Plugin = {
 
       if (request.method === 'GET' && pathname === '/api/v1/student/courses/demo-course/topics') {
         response.end(JSON.stringify(course))
-      } else if (request.method === 'GET' && pathname === '/api/v1/system/announcements') {
-        response.end(JSON.stringify(announcements))
       } else {
         response.statusCode = 404
         response.end(JSON.stringify({ detail: '前端預覽模式未提供此 API' }))

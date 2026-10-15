@@ -17,7 +17,8 @@ const route = useRoute()
 const queryClient = useQueryClient()
 const isStudent = computed(() => authStore.isAuthenticated && authStore.userRole === 'STUDENT')
 const courseId = computed(() => {
-  if (!isStudent.value) return ''
+  const isCourseRoute = route.name === 'StudentCourse' || route.name === 'StudentChat'
+  if (!isStudent.value || !isCourseRoute) return ''
   const value = route.params.courseId ?? route.query.courseId
   return typeof value === 'string' ? value : ''
 })

@@ -1,17 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import App from '../App.vue'
 import AnnouncementsView from '@/views/common/AnnouncementsView.vue'
-import { announcementsApi } from '@/api/announcements'
 import CourseView from '@/views/student/CourseView.vue'
 import { studentApi } from '@/api/student'
-
-vi.mock('@/api/announcements', () => ({
-  announcementsApi: { getAnnouncements: vi.fn<typeof announcementsApi.getAnnouncements>() },
-}))
 
 vi.mock('@/api/student', () => ({
   studentApi: { getCourseTopics: vi.fn<typeof studentApi.getCourseTopics>() },
@@ -28,16 +23,6 @@ describe('App', () => {
   })
 
   it('renders the public announcements with the shared header and footer', async () => {
-    vi.mocked(announcementsApi.getAnnouncements).mockResolvedValueOnce({
-      data: [
-        {
-          id: 'home',
-          title: '首頁公告',
-          content: '公告內容',
-          published_at: '2026-10-05T00:00:00Z',
-        },
-      ],
-    } as never)
     const router = createRouter({
       history: createMemoryHistory(),
       routes: [
@@ -55,11 +40,11 @@ describe('App', () => {
       global: { plugins: [createPinia(), router, [VueQueryPlugin, { queryClient }]] },
     })
 
-    await vi.waitFor(() => expect(wrapper?.find('article').text()).toContain('首頁公告'))
+    await vi.waitFor(() => expect(wrapper?.find('article').text()).toContain('課程頁面預覽'))
     expect(wrapper.find('header').text()).toContain('問導魷')
     expect(wrapper.find('header a[href="/login"]').text()).toBe('登入')
     expect(wrapper.find('footer').text()).toContain('隱私權')
-    expect(announcementsApi.getAnnouncements).toHaveBeenCalledTimes(1)
+    expect(studentApi.getCourseTopics).not.toHaveBeenCalled()
   })
   it('shares the student course request between the header and page', async () => {
     vi.mocked(studentApi.getCourseTopics).mockResolvedValueOnce({
@@ -110,9 +95,14 @@ describe('App', () => {
     expect(wrapper.find('header nav').text()).toContain('公民思辨')
     expect(wrapper.find('header nav a').attributes('href')).toBe('/student/courses')
     expect(studentApi.getCourseTopics).toHaveBeenCalledTimes(1)
-    vi.mocked(announcementsApi.getAnnouncements).mockResolvedValueOnce({ data: [] } as never)
     await wrapper.find('header a[href="/announcements"]').trigger('click')
     await vi.waitFor(() => expect(wrapper?.find('main h1').text()).toBe('公告'))
     expect(router.currentRoute.value.path).toBe('/announcements')
+    expect(wrapper.find('article').text()).toContain('課程頁面預覽')
+    expect(studentApi.getCourseTopics).toHaveBeenCalledTimes(1)
+    await router.push('/announcements?courseId=another-course')
+    await flushPromises()
+    expect(wrapper.find('main h1').text()).toBe('公告')
+    expect(studentApi.getCourseTopics).toHaveBeenCalledTimes(1)
   })
 })

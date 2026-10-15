@@ -1,26 +1,6 @@
 <script setup lang="ts">
-import { useQuery } from '@tanstack/vue-query'
-import { announcementsApi } from '@/api/announcements'
-import { Button } from '@/components/ui/button'
+import { announcements } from '@/data/announcements'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { getApiErrorMessage } from '@/lib/utils'
-
-const {
-  data: announcements,
-  isPending,
-  isError,
-  isFetching,
-  error,
-  refetch,
-} = useQuery({
-  queryKey: ['announcements'],
-  queryFn: async () => {
-    const { data } = await announcementsApi.getAnnouncements()
-    return data
-  },
-  // Show the existing manual retry UI immediately after a failed request.
-  retry: false,
-})
 
 function formatDate(value: string) {
   // Display announcement dates in Asia/Taipei.
@@ -39,21 +19,9 @@ function formatDate(value: string) {
   <section
     class="mx-auto w-full max-w-announcements px-5 pb-16 pt-12 sm:pt-announcement-top"
     aria-labelledby="announcements-title"
-    :aria-busy="isFetching"
   >
     <h1 id="announcements-title" class="mb-announcement-gap font-heading text-h1-title">公告</h1>
-    <p v-if="isPending" role="status" class="text-body text-muted-foreground">公告載入中…</p>
-    <Card v-else-if="isError" class="rounded-2xl border-border p-6 shadow-elevated">
-      <p role="alert" class="mb-4 text-body text-destructive">
-        {{ getApiErrorMessage(error, '公告載入失敗，請稍後再試') }}
-      </p>
-      <Button variant="secondary" :disabled="isFetching" @click="refetch()">重新載入</Button>
-    </Card>
-    <p
-      v-else-if="announcements?.length === 0"
-      role="status"
-      class="text-body text-muted-foreground"
-    >
+    <p v-if="announcements.length === 0" role="status" class="text-body text-muted-foreground">
       目前沒有公告
     </p>
     <ul v-else class="space-y-announcement-gap">
