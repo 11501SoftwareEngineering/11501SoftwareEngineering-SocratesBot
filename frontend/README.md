@@ -35,19 +35,11 @@ pnpm install
 pnpm dev
 ```
 
-### 學生課程頁假資料預覽
+請在 `frontend` 目錄執行，並開啟終端機顯示的網址。首頁為公告；課程頁位於 `/student/courses/:courseId`，需要學生登入與既有課程 API。
 
-在 `frontend` 目錄執行：
-
-```sh
-pnpm dev:preview
-```
-
-開啟 http://127.0.0.1:5176/ 會顯示公告首頁。課程頁保留在學生課程路由，預覽時可直接開啟 http://127.0.0.1:5176/student/courses/demo-course，會以示範學生身分顯示課程問題列表，無需帳號密碼或後端。可測試搜尋、清除、手機版排版，點左上角「問導魷」返回公告頁。
+### 公告資料
 
 公告固定讀取 `src/data/announcements.ts`，可直接修改其中的文字與日期，不會發出公告 API 請求。
-
-此指令使用獨立的本地預覽伺服器提供課程假資料；`pnpm dev` 仍使用正常 API。正式 `pnpm build` 不會載入預覽程式。題目頁與「我的課程」目前沿用既有路由，其完整功能另由對應頁面實作。按 Ctrl+C 停止預覽。
 
 ### Type-Check, Compile and Minify for Production
 
