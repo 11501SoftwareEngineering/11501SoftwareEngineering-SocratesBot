@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { useQueryClient } from '@tanstack/vue-query'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -14,7 +13,6 @@ import { useAuthStore, type UserRole } from '@/stores/auth'
 
 const authStore = useAuthStore()
 const route = useRoute()
-const queryClient = useQueryClient()
 const isStudent = computed(() => authStore.isAuthenticated && authStore.userRole === 'STUDENT')
 const courseId = computed(() => {
   const isCourseRoute = route.name === 'StudentCourse' || route.name === 'StudentChat'
@@ -24,11 +22,6 @@ const courseId = computed(() => {
 })
 const { data: course } = useStudentCourse(courseId)
 const roleLabels: Record<UserRole, string> = { STUDENT: '學生', TEACHER: '老師', ADMIN: '管理員' }
-
-function handleLogout() {
-  queryClient.removeQueries({ queryKey: ['student'] })
-  authStore.logout()
-}
 </script>
 
 <template>
@@ -90,7 +83,7 @@ function handleLogout() {
         >
           <DropdownMenuItem
             class="cursor-pointer text-body focus:bg-muted focus:text-foreground"
-            @select="handleLogout"
+            @select="authStore.logout()"
             >登出</DropdownMenuItem
           >
         </DropdownMenuContent>
