@@ -1,3 +1,7 @@
+"""HTTP request timing / access logging middleware."""
+
+from __future__ import annotations
+
 import logging
 import time
 
@@ -9,6 +13,8 @@ logger = logging.getLogger("app.request")
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Log method, path, status, and latency; set ``X-Process-Time``."""
+
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
