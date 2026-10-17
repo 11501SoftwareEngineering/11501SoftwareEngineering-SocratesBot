@@ -183,6 +183,32 @@ def auth_client(client: TestClient, store: FakeStore, monkeypatch: pytest.Monkey
     app.dependency_overrides.pop(get_redis, None)
 
 
+def seed_user(
+    store: FakeStore,
+    *,
+    account_id: str,
+    password: str = "password1",
+    name: str = "User",
+    role: UserRole = UserRole.USER,
+    must_change_password: bool = False,
+) -> FakeUser:
+    """Insert a user into the fake store (bypasses public register)."""
+    user = FakeUser(
+        id=uuid.uuid4(),
+        account_id=account_id,
+        name=name,
+        role=role.value,
+        password=FakePassword(
+            password_hash=hash_password(password),
+            must_change_password=must_change_password,
+        ),
+        languages=[FakeUserLanguage(language=FakeLanguage(code="zh-TW"))],
+    )
+    store.users_by_account[account_id] = user
+    store.users_by_id[user.id] = user
+    return user
+
+
 def bearer_from(response) -> str:
     value = response.headers.get("authorization")
     assert value is not None

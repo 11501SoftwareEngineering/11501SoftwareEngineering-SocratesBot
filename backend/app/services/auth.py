@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from app.core.auth_policies import (
+    AUTH_UNAUTHORIZED_DETAIL,
     CURRENT_PASSWORD_INCORRECT_DETAIL,
     NEW_PASSWORD_SAME_AS_CURRENT_DETAIL,
 )
@@ -164,7 +165,7 @@ async def get_current_user_profile(current_user: User) -> CurrentUserResponse:
     if current_user.password is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated or token expired",
+            detail=AUTH_UNAUTHORIZED_DETAIL,
         )
     return CurrentUserResponse(
         account=current_user.account_id,
@@ -182,6 +183,9 @@ async def change_password(
 ) -> PasswordChangeResponse:
     """Verify the old password, set the new hash, and clear must-change.
 
+    Revokes all refresh tokens for the user so prior sessions cannot continue
+    after the password (and ``must_change_password`` flag) change.
+
     Args:
         db: Async SQLAlchemy session.
         current_user: Authenticated user with password relation loaded.
@@ -197,7 +201,7 @@ async def change_password(
     if current_user.password is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated or token expired",
+            detail=AUTH_UNAUTHORIZED_DETAIL,
         )
     old_ok = await run_in_threadpool(
         verify_password,
@@ -220,4 +224,5 @@ async def change_password(
         new_password=payload.new_password,
         must_change_password=False,
     )
+    await auth.revoke_all_for_user(db, current_user.id)
     return PasswordChangeResponse()

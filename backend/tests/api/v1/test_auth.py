@@ -13,13 +13,20 @@ from app.api import deps as deps_mod
 from app.core.auth_policies import (
     CURRENT_PASSWORD_INCORRECT_DETAIL,
     NEW_PASSWORD_SAME_AS_CURRENT_DETAIL,
+    PASSWORD_CHANGE_EXEMPT_PATHS,
 )
 from app.core.cookies import CSRF_COOKIE, REFRESH_COOKIE
 from app.core.enums import UserRole
 from app.core.exceptions import AuthRequired
 from app.core.security import create_access_token, hash_password, verify_password
 from app.crud.auth import RenewResult
-from tests.api.v1.conftest import FakePassword, FakeStore, FakeUser, bearer_from
+from tests.api.v1.conftest import (
+    FakePassword,
+    FakeStore,
+    FakeUser,
+    bearer_from,
+    seed_user,
+)
 
 
 def test_register_login_and_me(auth_client: TestClient) -> None:
@@ -210,7 +217,7 @@ def test_password_hash_roundtrip() -> None:
     assert isinstance(token, str) and token
 
 
-def test_change_password_success(auth_client: TestClient) -> None:
+def test_change_password_success(auth_client: TestClient, store: FakeStore) -> None:
     auth_client.post(
         "/api/v1/auth/register",
         json={"account": "pwduser", "password": "password1", "name": "Pwd"},
@@ -220,6 +227,7 @@ def test_change_password_success(auth_client: TestClient) -> None:
         json={"account": "pwduser", "password": "password1"},
     )
     bearer = bearer_from(login)
+    assert store.refresh_by_raw  # session established
 
     changed = auth_client.put(
         "/api/v1/auth/password",
@@ -228,6 +236,10 @@ def test_change_password_success(auth_client: TestClient) -> None:
     )
     assert changed.status_code == 200
     assert changed.json()["message"]
+    assert store.refresh_by_raw == {}  # prior refresh sessions revoked
+
+    # Cookie silent-renew must fail after revoke (no Authorization header).
+    assert auth_client.get("/api/v1/users/me").status_code == 401
 
     assert (
         auth_client.post(
@@ -243,6 +255,68 @@ def test_change_password_success(auth_client: TestClient) -> None:
         ).status_code
         == 200
     )
+
+
+def test_must_change_password_gate_cleared_after_change(
+    auth_client: TestClient,
+    store: FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Forced-change user is gated, then cleared after PUT /auth/password."""
+    seed_user(
+        store,
+        account_id="forced",
+        password="password1",
+        name="Forced",
+        must_change_password=True,
+    )
+    # Leave /auth/password exempt; make /users/me gated for this assertion.
+    monkeypatch.setattr(
+        "app.core.authz.PASSWORD_CHANGE_EXEMPT_PATHS",
+        frozenset(
+            path
+            for path in PASSWORD_CHANGE_EXEMPT_PATHS
+            if not path.endswith("/users/me")
+        ),
+    )
+
+    login = auth_client.post(
+        "/api/v1/auth/login",
+        json={"account": "forced", "password": "password1"},
+    )
+    assert login.status_code == 200
+    assert login.json()["must_change_password"] is True
+    bearer = bearer_from(login)
+
+    blocked = auth_client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": bearer},
+    )
+    assert blocked.status_code == 403
+    assert blocked.json()["detail"] == "Password change required"
+
+    changed = auth_client.put(
+        "/api/v1/auth/password",
+        headers={"Authorization": bearer},
+        json={"old_password": "password1", "new_password": "password2"},
+    )
+    assert changed.status_code == 200
+
+    # Re-login after revoke; flag must be clear and /me unblocked.
+    relogin = auth_client.post(
+        "/api/v1/auth/login",
+        json={"account": "forced", "password": "password2"},
+    )
+    assert relogin.status_code == 200
+    assert relogin.json()["must_change_password"] is False
+    new_bearer = bearer_from(relogin)
+
+    me = auth_client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": new_bearer},
+    )
+    assert me.status_code == 200
+    assert me.json()["must_change_password"] is False
 
 
 def test_change_password_wrong_old(auth_client: TestClient) -> None:
@@ -302,3 +376,19 @@ def test_change_password_validation(auth_client: TestClient) -> None:
     err = response.json()["detail"][0]
     assert err["loc"] == ["body", "new_password"]
     assert "input" not in err
+
+
+def test_register_422_redacts_password_on_sibling_field_error(
+    auth_client: TestClient,
+) -> None:
+    response = auth_client.post(
+        "/api/v1/auth/register",
+        json={"account": "nopath", "password": "password1"},
+    )
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert any(err.get("loc") == ["body", "name"] for err in detail)
+    for err in detail:
+        inp = err.get("input")
+        if isinstance(inp, dict):
+            assert "password" not in inp
