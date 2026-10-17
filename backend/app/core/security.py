@@ -21,6 +21,12 @@ def generate_opaque_token() -> str:
     return token_urlsafe(32)
 
 
+def generate_initial_password() -> str:
+    """Return a high-entropy initial password (URL-safe, >= 8 chars)."""
+    # token_urlsafe(12) → 16 chars; fits Register/Login password max 128.
+    return token_urlsafe(12)
+
+
 def hash_token(raw_token: str) -> str:
     """Return a SHA-256 hex digest of an opaque token (for DB storage)."""
     return sha256(raw_token.encode("utf-8")).hexdigest()

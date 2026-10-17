@@ -10,6 +10,7 @@ from app.core.auth_policies import (
     CURRENT_PASSWORD_INCORRECT_DETAIL,
     NEW_PASSWORD_SAME_AS_CURRENT_DETAIL,
 )
+from app.core.authz import is_reserved_super_admin_account
 from app.core.cookies import (
     REFRESH_COOKIE,
     clear_auth_cookies,
@@ -47,8 +48,14 @@ async def register_user(db: AsyncSession, payload: RegisterRequest) -> RegisterR
         ``RegisterResponse`` with account, name, role, and success message.
 
     Raises:
-        HTTPException: 400 if an account with the same ``account`` already exists.
+        HTTPException: 400 if the account is reserved for config elevation, or
+            an account with the same ``account`` already exists.
     """
+    if is_reserved_super_admin_account(payload.account):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account name reserved",
+        )
     existing_user = await user.get_user_by_account(db, payload.account)
     if existing_user is not None:
         raise HTTPException(
