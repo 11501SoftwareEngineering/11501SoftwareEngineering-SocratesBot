@@ -6,8 +6,9 @@ from configparser import ConfigParser
 
 import pytest
 from alembic.config import Config
+from alembic.util import compat
 
-import app.core.alembic_utf8  # noqa: F401
+from app.core import alembic_utf8
 from app.core.config import BACKEND_DIR
 
 
@@ -18,8 +19,23 @@ def test_cp950_cannot_decode_alembic_ini_utf8_comments() -> None:
         parser.read(BACKEND_DIR / "alembic.ini", encoding="cp950")
 
 
-def test_alembic_config_loads_ini_with_chinese_comments() -> None:
+def test_alembic_config_needs_utf8_patch_under_cp950(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fail under Alembic's locale-style CP950 read; succeed after our UTF-8 patch."""
+
+    def read_as_cp950(
+        file_config: ConfigParser,
+        file_argument: list[str],
+    ) -> list[str]:
+        return file_config.read(file_argument, encoding="cp950")
+
+    monkeypatch.setattr(compat, "read_config_parser", read_as_cp950)
+    broken = Config(BACKEND_DIR / "alembic.ini")
+    with pytest.raises(UnicodeDecodeError):
+        _ = broken.file_config
+
+    monkeypatch.setattr(compat, "read_config_parser", alembic_utf8._read_config_parser)
     config = Config(BACKEND_DIR / "alembic.ini")
     assert config.get_main_option("script_location")
-    ini_text = (BACKEND_DIR / "alembic.ini").read_text(encoding="utf-8")
-    assert "請勿" in ini_text
+    assert compat.read_config_parser is alembic_utf8._read_config_parser
