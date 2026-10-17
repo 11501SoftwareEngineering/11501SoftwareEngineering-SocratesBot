@@ -10,13 +10,33 @@
     在專案根目錄:
     ```bash
     cp backend/.env.example backend/.env
+    cp backend/config.yaml.example backend/config.yaml
     ```
+    `.env` 放密鑰；`config.yaml` 放非密鑰本機設定（見下方 Super Admin）。
 
 3. 在 repo 根目錄安裝鎖定的 Python 套件並啟用 pre-commit：
     ```bash
     make -C backend setup
     ```
     `make -C backend setup` 會依 `backend/uv.lock` 安裝套件並安裝 Git hook。提交時 Ruff 會修正 backend Python 的 lint 與格式問題，Gitleaks 會掃描整個 repo 的 staged 內容。
+
+## 設定 Super Admin
+
+管理員權限是靠 `backend/config.yaml` 的帳號名單提升，**不是**改資料庫的 `role`。login / `/users/me` 仍可能回 `USER` 或 `TEACHER`；名單內帳號才能打 `/admin/*`。
+
+1. 先用一般流程註冊並確認帳號的 `account_id`（註冊／登入用的帳號字串）。
+2. 編輯 `backend/config.yaml`（沒有就從 example 複製）：
+
+    ```yaml
+    # Schema: app.core.yaml_config.YamlConfig
+    SUPER_ADMIN_ACCOUNTS: [alice]
+    ```
+
+    把 `alice` 換成你的 `account_id`。不需要 admin 時設成 `[]`。
+3. **重啟** `make -C backend dev`（設定在行程啟動時載入，改檔後不會熱更新）。
+4. `config.yaml` 已 gitignore，不要 commit。
+
+格式範本：`backend/config.yaml.example`。
 
 ## 啟動開發伺服器
 1. 啟動 docker 容器，裡面有 PostgreSQL 和 Redis. 
