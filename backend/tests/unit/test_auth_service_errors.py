@@ -33,7 +33,7 @@ class _FakeUser:
     languages: list = field(default_factory=list)
 
 
-def test_register_integrity_error_maps_to_409(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_register_integrity_error_maps_to_400(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.services.auth.user.get_user_by_account",
         AsyncMock(return_value=None),
@@ -52,7 +52,7 @@ def test_register_integrity_error_maps_to_409(monkeypatch: pytest.MonkeyPatch) -
                 RegisterRequest(account="dup", password="password1", name="Dup"),
             )
         )
-    assert exc.value.status_code == 409
+    assert exc.value.status_code == 400
     db.rollback.assert_awaited_once()
 
 

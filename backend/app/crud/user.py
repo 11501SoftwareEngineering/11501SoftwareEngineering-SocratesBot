@@ -141,3 +141,70 @@ def preferred_language_code(user: User) -> str:
     if user.languages:
         return user.languages[0].language.code
     return settings.DEFAULT_LANGUAGE_CODE
+
+
+async def update_password(
+    db: AsyncSession,
+    user: User,
+    *,
+    new_password: str,
+    must_change_password: bool = False,
+) -> User:
+    """Replace the user's password hash and update the must-change flag.
+
+    Args:
+        db: Async SQLAlchemy session.
+        user: User with ``password`` relation loaded.
+        new_password: Plaintext password (hashed before storage).
+        must_change_password: Value to store after the update.
+
+    Returns:
+        Reloaded ``User`` with password and languages loaded.
+
+    Raises:
+        RuntimeError: If the user has no password row or cannot be reloaded.
+    """
+    if user.password is None:
+        raise RuntimeError("user has no password row")
+    user.password.password_hash = await run_in_threadpool(hash_password, new_password)
+    user.password.must_change_password = must_change_password
+    await db.commit()
+    loaded = await get_user_by_id(db, user.id)
+    if loaded is None:
+        raise RuntimeError("failed to reload user after password update")
+    return loaded
+
+
+async def list_users_by_role(db: AsyncSession, role: UserRole) -> list[User]:
+    """Return all users with the given system role, ordered by created_at.
+
+    Args:
+        db: Async SQLAlchemy session.
+        role: System role to filter on.
+
+    Returns:
+        Matching ``User`` rows (password/languages not required).
+    """
+    result = await db.execute(
+        select(User).where(User.role == role.value).order_by(User.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
+async def delete_teacher(db: AsyncSession, teacher: User) -> None:
+    """Delete a TEACHER only; password/language/refresh rows cascade in DB.
+
+    Regular ``USER`` accounts are not deleted through this path (no cascade
+    delete for general users).
+
+    Args:
+        db: Async SQLAlchemy session.
+        teacher: User row that must have role ``TEACHER``.
+
+    Raises:
+        ValueError: If ``teacher.role`` is not ``TEACHER``.
+    """
+    if teacher.role != UserRole.TEACHER.value:
+        raise ValueError("only TEACHER accounts may be deleted")
+    await db.delete(teacher)
+    await db.commit()
