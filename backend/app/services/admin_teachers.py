@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.authz import is_reserved_super_admin_account
+from app.core.authz import is_reserved_super_admin_account, is_super_admin
 from app.core.enums import UserRole
 from app.core.security import generate_initial_password
 from app.crud import user
@@ -86,13 +86,19 @@ async def delete_teacher(db: AsyncSession, teacher_id: UUID) -> TeacherDeleteRes
     are removed by Postgres ``ON DELETE CASCADE`` (ORM ``passive_deletes``).
 
     Raises:
-        HTTPException: 404 if missing or not a TEACHER.
+        HTTPException: 404 if missing or not a TEACHER; 403 if the teacher is
+            config-elevated via ``SUPER_ADMIN_ACCOUNTS``.
     """
     target = await user.get_user_by_id(db, teacher_id)
     if target is None or target.role != UserRole.TEACHER.value:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Teacher not found",
+        )
+    if is_super_admin(target):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot delete elevated admin account",
         )
     await user.delete_teacher(db, target)
     return TeacherDeleteResponse()

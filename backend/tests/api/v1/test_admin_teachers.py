@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.enums import UserRole
 from app.core.yaml_config import yaml_config
 from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
 
@@ -194,6 +195,33 @@ def test_delete_unknown_or_non_teacher(
         headers={"Authorization": admin_bearer},
     )
     assert not_teacher.status_code == 404
+
+
+def test_delete_elevated_teacher_forbidden(
+    elevated_client: TestClient,
+    store: FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admin_bearer = _seed_admin_and_login(elevated_client, store)
+    elevated_teacher = seed_user(
+        store,
+        account_id="elevated-teacher",
+        name="Elevated Teacher",
+        role=UserRole.TEACHER,
+    )
+    monkeypatch.setattr(
+        yaml_config,
+        "SUPER_ADMIN_ACCOUNTS",
+        ["admin", "elevated-teacher"],
+    )
+
+    response = elevated_client.delete(
+        f"/api/v1/admin/teachers/{elevated_teacher.id}",
+        headers={"Authorization": admin_bearer},
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Cannot delete elevated admin account"
+    assert "elevated-teacher" in store.users_by_account
 
 
 def test_teacher_must_change_password_gate(
