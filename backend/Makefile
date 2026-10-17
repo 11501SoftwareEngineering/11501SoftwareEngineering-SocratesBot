@@ -77,7 +77,8 @@ openapi-export:
 		-o "$(or $(OUT),../docs/openapi/openapi.json)"
 
 openapi-site:
-	@out="$(or $(OUT),../docs/openapi)"; \
+	@set -euo pipefail; \
+	out="$(or $(OUT),../docs/openapi)"; \
 	PYTHONPATH=. uv run --locked python scripts/build_api_docs_site.py --out "$$out"; \
 	if [ -z "$(OUT)" ]; then \
 	  site="$$(mktemp -d "${TMPDIR:-/tmp}/openapi-site.XXXXXX")"; \

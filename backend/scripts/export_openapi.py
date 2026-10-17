@@ -20,7 +20,8 @@ _REPO_ROOT = _BACKEND_DIR.parent
 _PLACEHOLDER = "openapi-export-unused"
 DUMMY_ENV: dict[str, str] = {
     "APP_ENV": "test",
-    "APP_NAME": "openapi-export",
+    # Product display name for Pages when backend/.env is absent (CI).
+    "APP_NAME": "SocratesBot",
     "APP_HOST": "127.0.0.1",
     "APP_PORT": "8000",
     "CORS_ORIGINS": "[]",
@@ -44,7 +45,13 @@ def _postgres_password_env_key() -> str:
 
 
 def ensure_export_env() -> None:
-    """Inject dummy Settings values when not already present (CI / no .env)."""
+    """Inject dummy Settings values only when ``backend/.env`` is absent.
+
+    When ``.env`` exists, Settings loads it at import — do not ``setdefault``
+    keys into ``os.environ`` first, or they shadow ``.env`` (e.g. ``APP_NAME``).
+    """
+    if (_BACKEND_DIR / ".env").is_file():
+        return
     for key, value in DUMMY_ENV.items():
         os.environ.setdefault(key, value)
     # Prefer a real env value when present; otherwise a non-secret placeholder.

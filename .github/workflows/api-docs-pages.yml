@@ -16,21 +16,33 @@ permissions:
 jobs:
   api-docs:
     # Pin to full commit SHA (Sonar / supply-chain); comment is the release tag.
-    uses: dytsou/fastAPI-docs-pages/.github/workflows/publish.yml@2343110e59872afd6d9f886d60522e85c55a7514 # v1.0.5
+    # Bumped after release of fastAPI-docs-pages v1.0.6 (require-pr + setup-uv).
+    uses: dytsou/fastAPI-docs-pages/.github/workflows/publish.yml@62568edc386a1fbe8136f9d1152b8287cf2e4c31 # v1.0.6
     with:
-      # publish.yml only runs a shell setup (no setup-uv action).
+      # publish.yml installs uv via SHA-pinned astral-sh/setup-uv.
       setup-command: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
-        export PATH="${HOME}/.local/bin:${PATH}"
         cd backend && uv python install 3.13 && uv sync --locked --no-build
-      # Run the exporter from the workflow workspace (PR/head has the script) against
-      # each tree's app code — origin/main may not have scripts/export_openapi.py yet.
+      # Prefer each tree's exporter + lockfile when present; workspace bootstrap
+      # only until origin/main ships scripts/export_openapi.py.
       export-command: |
-        PYTHONPATH="$API_DOCS_TREE_ROOT/backend" \
-          uv run --locked --project "$API_DOCS_WORKSPACE/backend" \
-          python "$API_DOCS_WORKSPACE/backend/scripts/export_openapi.py" \
-          -o "$API_DOCS_TREE_ROOT/backend/openapi.json"
+        tree_backend="$API_DOCS_TREE_ROOT/backend"
+        workspace_backend="$API_DOCS_WORKSPACE/backend"
+        if [ -f "$tree_backend/scripts/export_openapi.py" ]; then
+          (
+            cd "$tree_backend"
+            uv python install 3.13
+            uv sync --locked --no-build
+          )
+          PYTHONPATH="$tree_backend" \
+            uv run --locked --project "$tree_backend" \
+            python "$tree_backend/scripts/export_openapi.py" \
+            -o "$tree_backend/openapi.json"
+        else
+          PYTHONPATH="$tree_backend" \
+            uv run --locked --project "$workspace_backend" \
+            python "$workspace_backend/scripts/export_openapi.py" \
+            -o "$tree_backend/openapi.json"
+        fi
       openapi-path: backend/openapi.json
       title: SocratesBot API
       renderer: both
