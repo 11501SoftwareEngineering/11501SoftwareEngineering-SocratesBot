@@ -58,7 +58,7 @@ CI 會把與本機 `/docs` 同款的靜態 Swagger UI 發到 GitHub Pages（需�
 
 ```bash
 make -C backend openapi-export               # → docs/openapi/openapi.json
-make -C backend openapi-site                 # 建站並在 :8000 起 server → /docs/
+make -C backend openapi-site                 # 建站並在 :8080 起 server → /docs/
 make -C backend openapi-site PORT=9000       # 改 port
 make -C backend openapi-site OUT=/tmp/site   # 改輸出路徑（此時 URL 為 /）
 ```

@@ -7,7 +7,7 @@
 
 help:
 	@echo "App: setup, lock, dev, fix, check, test"
-	@echo "Docs: openapi-export, openapi-site [OUT=dir] [PORT=8000]"
+	@echo "Docs: openapi-export, openapi-site [OUT=dir] [PORT=8080]"
 	@echo "Docker: db-dev, db-dev-down, db-prod, db-prod-down"
 	@echo 'Migrations: db-revision message="...", db-upgrade, db-downgrade, db-current, db-heads'
 	@echo "CI gate: db-migration-check (Alembic chain vs origin/main)"
@@ -83,10 +83,10 @@ openapi-site:
 	if [ -z "$(OUT)" ]; then \
 	  site="$$(mktemp -d "${TMPDIR:-/tmp}/openapi-site.XXXXXX")"; \
 	  ln -s "$$(cd "$$out" && pwd -P)" "$$site/docs"; \
-	  echo "Open http://127.0.0.1:$(or $(PORT),8000)/docs/  (Ctrl+C to stop)"; \
+	  echo "Open http://127.0.0.1:$(or $(PORT),8080)/docs/  (Ctrl+C to stop)"; \
 	  trap 'rm -rf "$$site"' EXIT; \
-	  cd "$$site" && python3 -m http.server "$(or $(PORT),8000)"; \
+	  cd "$$site" && python3 -m http.server "$(or $(PORT),8080)"; \
 	else \
-	  echo "Open http://127.0.0.1:$(or $(PORT),8000)/  (Ctrl+C to stop)"; \
-	  cd "$$out" && python3 -m http.server "$(or $(PORT),8000)"; \
+	  echo "Open http://127.0.0.1:$(or $(PORT),8080)/  (Ctrl+C to stop)"; \
+	  cd "$$out" && python3 -m http.server "$(or $(PORT),8080)"; \
 	fi
