@@ -10,6 +10,11 @@ declare module 'vue-router' {
 }
 
 const routes: RouteRecordRaw[] = [
+  {// 管理員端路由
+    path: '/admin',
+    name: 'AdminHome',
+    component: () => import('@/views/admin/AdminHome.vue')
+  },
   {
     path: '/login',
     name: 'Login',
