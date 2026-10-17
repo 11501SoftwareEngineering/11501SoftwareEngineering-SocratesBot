@@ -3,6 +3,8 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -14,6 +16,7 @@ from app.core.database import engine
 from app.core.exceptions import AuthRequired
 from app.core.migration import run_migrations
 from app.core.redis import close_redis
+from app.core.validation_errors import sanitize_validation_errors
 from app.middleware import CsrfMiddleware, RequestLoggingMiddleware
 
 logging.basicConfig(
@@ -46,6 +49,19 @@ async def auth_required_handler(_request: Request, exc: AuthRequired) -> JSONRes
     if exc.clear_cookies:
         clear_auth_cookies(response)
     return response
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_handler(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Return 422 without echoing password ``input`` values."""
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": sanitize_validation_errors(jsonable_encoder(exc.errors())),
+        },
+    )
 
 
 # Last added = outermost. CSRF runs inside CORS so preflight is not blocked.

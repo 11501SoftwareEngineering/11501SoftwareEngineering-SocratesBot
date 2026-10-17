@@ -19,3 +19,7 @@ CSRF_PROTECTED_PATHS = frozenset(
 )
 
 AUTH_UNAUTHORIZED_DETAIL = "Not authenticated or token expired"
+CURRENT_PASSWORD_INCORRECT_DETAIL = "Current password is incorrect"
+NEW_PASSWORD_SAME_AS_CURRENT_DETAIL = (
+    "New password must be different from the current password"
+)

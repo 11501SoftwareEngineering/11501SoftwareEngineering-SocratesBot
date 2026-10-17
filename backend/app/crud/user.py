@@ -141,3 +141,35 @@ def preferred_language_code(user: User) -> str:
     if user.languages:
         return user.languages[0].language.code
     return settings.DEFAULT_LANGUAGE_CODE
+
+
+async def update_password(
+    db: AsyncSession,
+    user: User,
+    *,
+    new_password: str,
+    must_change_password: bool = False,
+) -> User:
+    """Replace the user's password hash and update the must-change flag.
+
+    Args:
+        db: Async SQLAlchemy session.
+        user: User with ``password`` relation loaded.
+        new_password: Plaintext password (hashed before storage).
+        must_change_password: Value to store after the update.
+
+    Returns:
+        Reloaded ``User`` with password and languages loaded.
+
+    Raises:
+        RuntimeError: If the user has no password row or cannot be reloaded.
+    """
+    if user.password is None:
+        raise RuntimeError("user has no password row")
+    user.password.password_hash = await run_in_threadpool(hash_password, new_password)
+    user.password.must_change_password = must_change_password
+    await db.commit()
+    loaded = await get_user_by_id(db, user.id)
+    if loaded is None:
+        raise RuntimeError("failed to reload user after password update")
+    return loaded
