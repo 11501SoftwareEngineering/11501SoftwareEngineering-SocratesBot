@@ -16,6 +16,15 @@ export interface Topic {
   description: string
   status: string
   session_id: string | null
+  age_range?: string | null
+  round_count?: number | null
+}
+
+export interface CourseTopics {
+  course_id: string
+  name: string
+  invite_code: string
+  topics: Topic[]
 }
 
 export interface TopicExplanation {
@@ -46,8 +55,10 @@ export const studentApi = {
   leaveCourse(courseId: string) {
     return apiClient.delete(`/student/courses/${courseId}`)
   },
-  getCourseTopics(courseId: string) {
-    return apiClient.get<{ topics: Topic[] }>(`/student/courses/${courseId}/topics`)
+  getCourseTopics(courseId: string, signal?: AbortSignal) {
+    return apiClient.get<CourseTopics>(`/student/courses/${encodeURIComponent(courseId)}/topics`, {
+      signal,
+    })
   },
   getTopicExplanation(topicId: string) {
     return apiClient.get<TopicExplanation>(`/student/topics/${topicId}/explanation`)

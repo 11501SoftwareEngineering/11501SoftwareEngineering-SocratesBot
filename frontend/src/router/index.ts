@@ -27,6 +27,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/student/CourseListView.vue'),
       },
       {
+        path: 'courses/:courseId',
+        name: 'StudentCourse',
+        component: () => import('@/views/student/CourseView.vue'),
+        meta: { requiresAuth: true, roles: ['STUDENT'] },
+      },
+      {
         path: 'chat/:questionId',
         name: 'StudentChat',
         component: () => import('@/views/student/ChatView.vue'),
@@ -62,10 +68,13 @@ const routes: RouteRecordRaw[] = [
       },
     ],
   },
-  // 預設跳轉首頁
+  // 公開公告首頁：未登入也可瀏覽，因此不限制 roles。
   {
     path: '/',
-    redirect: '/login',
+    alias: '/announcements',
+    name: 'Announcements',
+    component: () => import('@/views/common/AnnouncementsView.vue'),
+    meta: { requiresAuth: false },
   },
   // 404 / 無權限處理
   {
