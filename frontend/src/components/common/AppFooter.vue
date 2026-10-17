@@ -6,11 +6,13 @@ const links = ['隱私權', '版權', '開發者', '聯絡我們', 'Bug']
 </script>
 
 <template>
-  <footer class="flex h-10 w-full items-center justify-center gap-6 bg-secondary px-4 py-3">
+  <footer
+    class="flex min-h-10 shrink-0 w-full flex-wrap items-center justify-center gap-x-4 gap-y-2 sm:gap-x-8 bg-secondary px-4 py-2"
+  >
     <span
       v-for="link in links"
       :key="link"
-      class="cursor-default font-heading text-sm text-secondary-foreground/80 hover:text-secondary-foreground"
+      class="cursor-default font-heading text-footer text-foreground"
     >
       {{ link }}
     </span>
