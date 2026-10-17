@@ -48,7 +48,7 @@ http://localhost:8000/api/v1/health
 
 ### GitHub Pages 預覽（靜態 OpenAPI）
 
-CI 會把與本機 `/docs` 同款的靜態 Swagger UI 發到 GitHub Pages（需在 repo Settings → Pages 將 Source 設為 **GitHub Actions**，並視情況保護 `github-pages` Environment）：
+CI 會把與本機 `/docs` 同款的靜態 Swagger UI 發到 GitHub Pages（需在 repo Settings → Pages 將 Source 設為 **GitHub Actions**，並視情況保護 `github-pages` Environment）。僅在變更 `backend/**` 或此 workflow 時部署（可用 Actions → API Docs Pages → Run workflow 手動重建）：
 
 - Swagger：`https://<owner>.github.io/<repo>/docs/`
 - Redocly：`https://<owner>.github.io/<repo>/redoc/`
