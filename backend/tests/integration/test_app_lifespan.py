@@ -23,7 +23,15 @@ def test_lifespan_migrates_database_and_closes_services(
         }
 
         current_revision = subprocess.run(
-            ["uv", "run", "--locked", "alembic", "current", "--verbose"],
+            [
+                "uv",
+                "run",
+                "--locked",
+                "python",
+                "scripts/run_alembic.py",
+                "current",
+                "--verbose",
+            ],
             cwd=BACKEND_DIR,
             check=True,
             capture_output=True,

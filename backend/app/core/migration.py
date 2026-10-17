@@ -3,6 +3,7 @@ import logging
 
 from alembic.config import Config
 
+import app.core.alembic_utf8  # noqa: F401
 from alembic import command
 from app.core.config import BACKEND_DIR
 

@@ -24,7 +24,7 @@ config.set_main_option(
 if config.config_file_name is not None and config.attributes.get(
     "configure_logger", True
 ):
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, encoding="utf-8")
 
 # add your model's MetaData object here
 # for 'autogenerate' support
