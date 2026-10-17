@@ -58,6 +58,8 @@ http://localhost:8000/api/v1/health
 
 `APP_ENV=development` 時，啟動 FastAPI 會自動 upgrade head。  
 
+請用 Make 目標（內部走 `scripts/run_alembic.py`），**不要**直接跑 `alembic` / `uv run alembic`：Alembic 1.20 用系統 locale 讀 `alembic.ini`，在 Windows CP950 下會因 UTF-8 繁中註解失敗。
+
 ```bash
 make -C backend db-revision message="描述變更"   # autogenerate，產生後請人工檢查
 make -C backend db-upgrade                        # upgrade head
