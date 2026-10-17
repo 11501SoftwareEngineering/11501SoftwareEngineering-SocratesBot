@@ -1,0 +1,54 @@
+name: API Docs Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/api-docs-pages.yml"
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - "backend/**"
+      - ".github/workflows/api-docs-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  pull-requests: write
+
+jobs:
+  api-docs:
+    # Pin to full commit SHA (Sonar / supply-chain); comment is the release tag.
+    # Bumped after release of fastAPI-docs-pages v1.0.6 (require-pr + setup-uv).
+    uses: dytsou/fastAPI-docs-pages/.github/workflows/publish.yml@62568edc386a1fbe8136f9d1152b8287cf2e4c31 # v1.0.6
+    with:
+      # publish.yml installs uv via SHA-pinned astral-sh/setup-uv.
+      setup-command: |
+        cd backend && uv python install 3.13 && uv sync --locked --no-build
+      # Prefer each tree's exporter + lockfile when present; workspace bootstrap
+      # only until origin/main ships scripts/export_openapi.py.
+      export-command: |
+        tree_backend="$API_DOCS_TREE_ROOT/backend"
+        workspace_backend="$API_DOCS_WORKSPACE/backend"
+        if [ -f "$tree_backend/scripts/export_openapi.py" ]; then
+          (
+            cd "$tree_backend"
+            uv python install 3.13
+            uv sync --locked --no-build
+          )
+          PYTHONPATH="$tree_backend" \
+            uv run --locked --project "$tree_backend" \
+            python "$tree_backend/scripts/export_openapi.py" \
+            -o "$tree_backend/openapi.json"
+        else
+          PYTHONPATH="$tree_backend" \
+            uv run --locked --project "$workspace_backend" \
+            python "$workspace_backend/scripts/export_openapi.py" \
+            -o "$tree_backend/openapi.json"
+        fi
+      openapi-path: backend/openapi.json
+      title: SocratesBot API
+      renderer: both
