@@ -104,6 +104,10 @@
 - 呼叫方式: GET /student/courses/{courseId}/topics
 - 輸入資料: 無
 - 成功回應: 課程代號, 課程名稱, 課程邀請碼, 題目清單，包含 題目代號, 標題, 描述, 狀態, 對話代號
+- 前端串接：約定回應型別為 `CourseTopics`，使用 `studentApi.getCourseTopics(courseId)`；課程欄位為 `course_id`、`name`、`invite_code`、`topics`。
+- Figma 問題卡片另顯示 `age_range`（年齡層文字）與 `round_count`（回合數）；這兩個欄位尚未在既有 API 規格定義，前端將它們設為可選，缺值顯示「未提供」，實際串接時須核對欄位名稱。
+- 頁面：`/student/courses/:courseId`，僅 `STUDENT` 可用；GET 使用 `useQuery`（頁首共用快取），搜尋使用頁面內 `ref`，不新增 Pinia store。
+- 搜尋在已取得的題目標題與描述中進行；點選題目前往既有 `StudentChat` 路由，由題目頁負責建立或進入 Session。
 - 錯誤:
     - 未登入或憑證過期
     - 尚未加入該課程
@@ -342,21 +346,21 @@
 - 功能說明: 管理員主頁取得所有老師帳號名單
 - 呼叫方式: GET /admin/teachers
 - 輸入資料: 無
-- 成功回應: 老師清單，包含 帳號, 姓名, 建立時間
+- 成功回應: 老師清單，包含 使用者 id, 帳號, 姓名, 建立時間
 - 錯誤:
     - 未登入或憑證過期
     - 非管理員無權存取
 
 ### 建立老師帳號
-- 功能說明: 管理員手動新增老師帳號
+- 功能說明: 管理員手動新增老師帳號；系統產生一次性初始密碼，並將 `must_change_password` 設為 true
 - 呼叫方式: POST /admin/teachers
-- 輸入資料: 帳號, 密碼, 姓名
-- 成功回應: 帳號, 姓名, 角色, 回應訊息
+- 輸入資料: 帳號, 姓名（不含密碼）
+- 成功回應: 帳號, 姓名, 角色, 一次性初始密碼, 回應訊息
 - 錯誤:
-    - 帳號或密碼未填寫或格式無效
+    - 帳號或姓名未填寫或格式無效
     - 未登入或憑證過期
     - 非管理員無權存取
-    - 該帳號已存在
+    - 該帳號已存在或帳號名稱保留給設定檔超級管理員
 
 ### 刪除老師帳號
 - 功能說明: 管理員刪除指定老師帳號
@@ -367,24 +371,4 @@
     - 未登入或憑證過期
     - 非管理員無權存取
     - 查無此老師帳號
-
-
-## 公開公告（前端串接約定）
-
-以下記錄前端預期的資料格式，實際路徑與欄位需依提供的 API 確認。
-
-### 取得公告列表
-- 功能說明：公告首頁取得已發布公告，未登入也可存取。
-- 呼叫方式：GET /system/announcements（完整路徑 /api/v1/system/announcements）。
-- 認證：不需要 Bearer Token。
-- 輸入參數：無。
-- 成功回傳：200，JSON 陣列，依 published_at 由新到舊排列；無公告回傳 []。
-- 欄位：id（唯一字串）、title（標題字串）、content（純文字內容字串）、published_at（含時區的 ISO 8601 日期時間）。
-- 日期顯示：以 Asia/Taipei 時區顯示 YYYY-MM-DD。
-- 錯誤：非 2xx 狀態碼，錯誤本文使用 detail 字串。
-- 前端函式：src/api/announcements.ts 的 announcementsApi.getAnnouncements()。
-- GET 資料與載入／錯誤狀態使用 @tanstack/vue-query 的 useQuery，不放 Pinia；提供載入中、無公告、錯誤與 refetch 重試。
-
-```json
-[{"id":"announcement-1","title":"系統維護公告","content":"維護期間服務暫停。","published_at":"2026-10-05T09:00:00+08:00"}]
-```
+    - 目標帳號為設定檔超級管理員（不可刪除）

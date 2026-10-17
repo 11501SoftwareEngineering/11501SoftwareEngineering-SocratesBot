@@ -13,6 +13,12 @@ repos:
         language: system
         types: [python]
         files: ^backend/.*\.py$
+      - id: db-migration-check
+        name: Alembic migrations align with main
+        entry: make -C backend db-migration-check
+        language: system
+        pass_filenames: false
+        files: ^backend/alembic/
       - id: gitleaks
         name: Gitleaks staged secret scan
         entry: bash scripts/gitleaks-staged.sh
