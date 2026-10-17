@@ -173,38 +173,3 @@ async def update_password(
     if loaded is None:
         raise RuntimeError("failed to reload user after password update")
     return loaded
-
-
-async def list_users_by_role(db: AsyncSession, role: UserRole) -> list[User]:
-    """Return all users with the given system role, ordered by created_at.
-
-    Args:
-        db: Async SQLAlchemy session.
-        role: System role to filter on.
-
-    Returns:
-        Matching ``User`` rows (password/languages not required).
-    """
-    result = await db.execute(
-        select(User).where(User.role == role.value).order_by(User.created_at.asc())
-    )
-    return list(result.scalars().all())
-
-
-async def delete_teacher(db: AsyncSession, teacher: User) -> None:
-    """Delete a TEACHER only; password/language/refresh rows cascade in DB.
-
-    Regular ``USER`` accounts are not deleted through this path (no cascade
-    delete for general users).
-
-    Args:
-        db: Async SQLAlchemy session.
-        teacher: User row that must have role ``TEACHER``.
-
-    Raises:
-        ValueError: If ``teacher.role`` is not ``TEACHER``.
-    """
-    if teacher.role != UserRole.TEACHER.value:
-        raise ValueError("only TEACHER accounts may be deleted")
-    await db.delete(teacher)
-    await db.commit()
