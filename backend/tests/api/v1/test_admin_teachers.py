@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.yaml_config import yaml_config
-from tests.api.v1.conftest import FakeStore, bearer_from
+from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
 
 
 @pytest.fixture
@@ -18,29 +18,40 @@ def elevated_client(
     return auth_client
 
 
-def _register_and_login(
-    client: TestClient, account: str, password: str = "password1", name: str = "Admin"
-) -> str:
-    client.post(
-        "/api/v1/auth/register",
-        json={"account": account, "password": password, "name": name},
-    )
+def _login(client: TestClient, account: str, password: str = "password1") -> str:
     login = client.post(
         "/api/v1/auth/login",
         json={"account": account, "password": password},
     )
     assert login.status_code == 200
-    assert login.json()["role"] == "USER"
     return bearer_from(login)
 
 
-def test_elevated_user_lists_teachers(elevated_client: TestClient) -> None:
-    bearer = _register_and_login(elevated_client, "admin")
-    login = elevated_client.post(
-        "/api/v1/auth/login",
-        json={"account": "admin", "password": "password1"},
+def _seed_admin_and_login(
+    client: TestClient,
+    store: FakeStore,
+    account: str = "admin",
+    password: str = "password1",
+) -> str:
+    """Bootstrap an elevated admin without public register (reserved names)."""
+    seed_user(store, account_id=account, password=password, name="Admin")
+    return _login(client, account, password)
+
+
+def _register_and_login(
+    client: TestClient, account: str, password: str = "password1", name: str = "User"
+) -> str:
+    client.post(
+        "/api/v1/auth/register",
+        json={"account": account, "password": password, "name": name},
     )
-    assert login.json()["role"] == "USER"
+    return _login(client, account, password)
+
+
+def test_elevated_user_lists_teachers(
+    elevated_client: TestClient, store: FakeStore
+) -> None:
+    bearer = _seed_admin_and_login(elevated_client, store)
 
     listed = elevated_client.get(
         "/api/v1/admin/teachers",
@@ -65,8 +76,34 @@ def test_admin_unauthenticated(elevated_client: TestClient) -> None:
     assert elevated_client.get("/api/v1/admin/teachers").status_code == 401
 
 
-def test_create_list_delete_teacher(elevated_client: TestClient) -> None:
-    admin_bearer = _register_and_login(elevated_client, "admin")
+def test_register_reserved_super_admin_account(
+    elevated_client: TestClient,
+) -> None:
+    response = elevated_client.post(
+        "/api/v1/auth/register",
+        json={"account": "admin", "password": "password1", "name": "Squat"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Account name reserved"
+
+
+def test_create_teacher_reserved_account_name(
+    elevated_client: TestClient, store: FakeStore
+) -> None:
+    admin_bearer = _seed_admin_and_login(elevated_client, store)
+    response = elevated_client.post(
+        "/api/v1/admin/teachers",
+        headers={"Authorization": admin_bearer},
+        json={"account": "admin", "name": "Should Fail"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Account name reserved"
+
+
+def test_create_list_delete_teacher(
+    elevated_client: TestClient, store: FakeStore
+) -> None:
+    admin_bearer = _seed_admin_and_login(elevated_client, store)
 
     created = elevated_client.post(
         "/api/v1/admin/teachers",
@@ -120,8 +157,10 @@ def test_create_list_delete_teacher(elevated_client: TestClient) -> None:
     )
 
 
-def test_create_teacher_duplicate(elevated_client: TestClient) -> None:
-    admin_bearer = _register_and_login(elevated_client, "admin")
+def test_create_teacher_duplicate(
+    elevated_client: TestClient, store: FakeStore
+) -> None:
+    admin_bearer = _seed_admin_and_login(elevated_client, store)
     payload = {"account": "dup", "name": "Dup"}
     assert (
         elevated_client.post(
@@ -142,7 +181,7 @@ def test_create_teacher_duplicate(elevated_client: TestClient) -> None:
 def test_delete_unknown_or_non_teacher(
     elevated_client: TestClient, store: FakeStore
 ) -> None:
-    admin_bearer = _register_and_login(elevated_client, "admin")
+    admin_bearer = _seed_admin_and_login(elevated_client, store)
     missing = elevated_client.delete(
         "/api/v1/admin/teachers/00000000-0000-0000-0000-000000000001",
         headers={"Authorization": admin_bearer},
@@ -158,9 +197,11 @@ def test_delete_unknown_or_non_teacher(
 
 
 def test_teacher_must_change_password_gate(
-    elevated_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    elevated_client: TestClient,
+    store: FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    admin_bearer = _register_and_login(elevated_client, "admin")
+    admin_bearer = _seed_admin_and_login(elevated_client, store)
     created = elevated_client.post(
         "/api/v1/admin/teachers",
         headers={"Authorization": admin_bearer},

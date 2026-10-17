@@ -56,6 +56,28 @@ def test_register_integrity_error_maps_to_400(monkeypatch: pytest.MonkeyPatch) -
     db.rollback.assert_awaited_once()
 
 
+def test_register_rejects_reserved_super_admin_account(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.auth.is_reserved_super_admin_account",
+        lambda _account: True,
+    )
+    get_user = AsyncMock()
+    monkeypatch.setattr("app.services.auth.user.get_user_by_account", get_user)
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            auth_service.register_user(
+                AsyncMock(),
+                RegisterRequest(account="boss", password="password1", name="Boss"),
+            )
+        )
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "Account name reserved"
+    get_user.assert_not_awaited()
+
+
 def test_login_rejects_user_without_password(monkeypatch: pytest.MonkeyPatch) -> None:
     user = _FakeUser(
         id=uuid.uuid4(),

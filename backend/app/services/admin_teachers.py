@@ -6,6 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.authz import is_reserved_super_admin_account
 from app.core.enums import UserRole
 from app.core.security import generate_initial_password
 from app.crud import user
@@ -40,8 +41,13 @@ async def create_teacher(
     once in the response so the admin can hand it to the teacher.
 
     Raises:
-        HTTPException: 400 if the account already exists.
+        HTTPException: 400 if the account is reserved or already exists.
     """
+    if is_reserved_super_admin_account(payload.account):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account name reserved",
+        )
     existing = await user.get_user_by_account(db, payload.account)
     if existing is not None:
         raise HTTPException(
