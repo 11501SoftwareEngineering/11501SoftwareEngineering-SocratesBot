@@ -13,7 +13,6 @@ from app.crud import user
 from app.schemas.admin import (
     TeacherCreateRequest,
     TeacherCreateResponse,
-    TeacherDeleteResponse,
     TeacherListItem,
 )
 
@@ -79,7 +78,7 @@ async def create_teacher(
     )
 
 
-async def delete_teacher(db: AsyncSession, teacher_id: UUID) -> TeacherDeleteResponse:
+async def delete_teacher(db: AsyncSession, teacher_id: UUID) -> None:
     """Delete a TEACHER by id (not general ``USER`` accounts).
 
     Child rows (``user_passwords``, ``user_languages``, ``refresh_tokens``)
@@ -101,4 +100,3 @@ async def delete_teacher(db: AsyncSession, teacher_id: UUID) -> TeacherDeleteRes
             detail="Cannot delete elevated admin account",
         )
     await user.delete_teacher(db, target)
-    return TeacherDeleteResponse()

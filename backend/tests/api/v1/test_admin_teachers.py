@@ -141,7 +141,8 @@ def test_create_list_delete_teacher(
         f"/api/v1/admin/teachers/{teacher_id}",
         headers={"Authorization": admin_bearer},
     )
-    assert deleted.status_code == 200
+    assert deleted.status_code == 204
+    assert deleted.content == b""
     assert (
         elevated_client.get(
             "/api/v1/admin/teachers",

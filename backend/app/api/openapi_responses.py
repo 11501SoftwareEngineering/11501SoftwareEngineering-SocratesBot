@@ -38,6 +38,53 @@ def json_detail_examples(description: str, examples: dict[str, Any]) -> dict[str
     }
 
 
+_ACCOUNT_ALREADY_EXISTS_DETAIL = "Account already exists"
+_ACCOUNT_NAME_RESERVED_DETAIL = "Account name reserved"
+
+REGISTER_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_examples(
+        "Registration rejected",
+        {
+            "account_already_exists": _ACCOUNT_ALREADY_EXISTS_DETAIL,
+            "account_name_reserved": _ACCOUNT_NAME_RESERVED_DETAIL,
+        },
+    ),
+    422: json_detail_example(
+        "Request validation failed",
+        [
+            {
+                "type": "string_too_short",
+                "loc": ["body", "password"],
+                "msg": "String should have at least 8 characters",
+            }
+        ],
+    ),
+}
+
+TEACHER_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_examples(
+        "Teacher create rejected",
+        {
+            "account_already_exists": _ACCOUNT_ALREADY_EXISTS_DETAIL,
+            "account_name_reserved": _ACCOUNT_NAME_RESERVED_DETAIL,
+        },
+    ),
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    422: json_detail_example(
+        "Request validation failed",
+        [
+            {
+                "type": "string_too_short",
+                "loc": ["body", "account"],
+                "msg": "String should have at least 1 character",
+            }
+        ],
+    ),
+}
+
 PASSWORD_CHANGE_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: json_detail_examples(
         "Password change rejected",

@@ -28,10 +28,3 @@ class TeacherListItem(BaseModel):
     account: str = Field(examples=["teacher1"])
     name: str = Field(examples=["Teacher One"])
     created_at: datetime
-
-
-class TeacherDeleteResponse(BaseModel):
-    message: str = Field(
-        default="Teacher deleted",
-        examples=["Teacher deleted"],
-    )
