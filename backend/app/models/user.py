@@ -31,13 +31,21 @@ class User(Base):
     )
 
     password: Mapped[UserPassword] = relationship(
-        back_populates="user", uselist=False, cascade="all, delete-orphan"
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+        # DB FK uses ON DELETE CASCADE; let Postgres remove child rows.
+        passive_deletes=True,
     )
     languages: Mapped[list[UserLanguage]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
     refresh_tokens: Mapped[list[RefreshToken]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
 
