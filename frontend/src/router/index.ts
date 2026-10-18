@@ -10,11 +10,6 @@ declare module 'vue-router' {
 }
 
 const routes: RouteRecordRaw[] = [
-  {// 管理員端路由
-    path: '/admin',
-    name: 'AdminHome',
-    component: () => import('@/views/admin/AdminHome.vue')
-  },
   {
     path: '/login',
     name: 'Login',
@@ -55,7 +50,7 @@ const routes: RouteRecordRaw[] = [
       },
     ],
   },
-  // 管理員路由
+  // 管理員路由（受 ADMIN 權限保護）
   {
     path: '/admin',
     meta: { requiresAuth: true, roles: ['ADMIN'] },
