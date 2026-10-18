@@ -63,7 +63,7 @@ export function useCreateCourse() {
       const newCourse: TeacherCourse = {
         id: Date.now(),
         name: payload.name,
-        code: payload.code || `CRS-${Math.floor(1000 + Math.random() * 9000)}`,
+        code: payload.code || `CRS-${Date.now().toString().slice(-4)}`,
         description: payload.description || '',
       }
       mockCourses.value.push(newCourse)

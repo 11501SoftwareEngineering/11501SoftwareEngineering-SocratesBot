@@ -36,10 +36,9 @@ const filteredCourses = computed(() => {
   )
 })
 
-// 開啟新增課程彈窗
 const openCreateModal = () => {
   formName.value = ''
-  formCode.value = `CRS-${Math.floor(1000 + Math.random() * 9000)}`
+  formCode.value = `CRS-${Date.now().toString().slice(-4)}`
   formError.value = ''
   isCreateModalOpen.value = true
 }
