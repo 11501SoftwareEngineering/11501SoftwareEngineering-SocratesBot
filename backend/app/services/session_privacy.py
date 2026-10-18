@@ -24,7 +24,7 @@ class SessionPrivacyStore(Protocol):
         self,
         session_id: UUID,
         is_anonymous: bool,
-    ) -> SessionPrivacyData: ...
+    ) -> SessionPrivacyData | None: ...
 
 
 async def update_session_privacy(
@@ -49,6 +49,12 @@ async def update_session_privacy(
         )
 
     updated_session = await store.set_is_anonymous(session_id, is_anonymous)
+
+    if updated_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
+        )
 
     return UpdateSessionPrivacyResponse(
         session_id=updated_session.id,

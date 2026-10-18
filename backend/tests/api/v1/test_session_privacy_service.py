@@ -97,3 +97,38 @@ def test_missing_session_returns_404() -> None:
     assert exc_info.value.status_code == 404
     assert store.updates == []
     assert store.sessions == {}
+
+
+def test_session_deleted_before_update_returns_404(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = SessionPrivacyData(
+        id=uuid4(),
+        user_id=uuid4(),
+        is_anonymous=False,
+    )
+    store = FakeStore([session])
+
+    async def delete_before_update(
+        session_id: UUID,
+        is_anonymous: bool,
+    ) -> None:
+        store.sessions.pop(session_id, None)
+        return None
+
+    monkeypatch.setattr(store, "set_is_anonymous", delete_before_update)
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(
+            update_session_privacy(
+                store=store,
+                session_id=session.id,
+                current_user_id=session.user_id,
+                is_anonymous=True,
+            )
+        )
+
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Session not found"
+    assert store.sessions == {}
+    assert store.updates == []
