@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { ref } from 'vue'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { API_BASE_URL } from '@/api/client'

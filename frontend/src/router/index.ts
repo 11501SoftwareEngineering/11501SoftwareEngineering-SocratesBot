@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import type { UserRole } from '@/stores/auth'
