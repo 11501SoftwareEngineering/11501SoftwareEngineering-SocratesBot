@@ -1,5 +1,4 @@
-﻿<template><div class='p-6'><h1>UserManageView 頁面開發中...</h1></div></template>
-<script setup>
+﻿<script setup>
 import { ref } from 'vue'
 
 // Mock 資料（對應 PM 要求的欄位：id, account, name, created_at）
@@ -24,13 +23,17 @@ const openCreateModal = () => {
   isCreateModalOpen.value = true
 }
 
-// 模擬新增老師（產生密碼並透過對話框提示「只會顯示這一次」）
+// 模擬新增老師（使用安全的 crypto API 產生隨機密碼以通過 CodeQL 檢查）
 const handleCreate = () => {
   if (!newAccount.value || !newName.value) {
     errorMessage.value = '請填寫帳號與姓名'
     return
   }
-  const fakePassword = 'pw_' + Math.random().toString(36).substring(2, 8)
+  
+  // 使用安全的亂數產生方式避免 Insecure randomness (CodeQL 檢查)
+  const array = new Uint32Array(1)
+  window.crypto.getRandomValues(array)
+  const fakePassword = 'pw_' + array[0].toString(36)
   
   teachers.value.push({
     id: Date.now(),
