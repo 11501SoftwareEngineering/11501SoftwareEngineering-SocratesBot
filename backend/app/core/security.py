@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+﻿from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from secrets import token_urlsafe
 from typing import Any
@@ -19,6 +19,12 @@ DUMMY_PASSWORD_HASH = password_hash.hash("timing-equalizer-not-a-real-password")
 def generate_opaque_token() -> str:
     """Return a high-entropy opaque token for refresh/CSRF cookies."""
     return token_urlsafe(32)
+
+
+def generate_initial_password() -> str:
+    """Return a high-entropy initial password (URL-safe, >= 8 chars)."""
+    # token_urlsafe(12) returns 16 characters; fits password max 128.
+    return token_urlsafe(12)
 
 
 def hash_token(raw_token: str) -> str:
@@ -46,7 +52,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         hashed_password: Stored hash from ``hash_password``.
 
     Returns:
-        ``True`` if the password matches; otherwise ``False``.
+        ``True`` if the plaintext matches; otherwise ``False``.
     """
     return password_hash.verify(plain_password, hashed_password)
 

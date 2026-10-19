@@ -1,4 +1,4 @@
-"""Auth path exemptions and shared unauthorized detail text."""
+﻿"""Auth path exemptions and shared unauthorized detail text."""
 
 from app.core.api_paths import api_v1, normalize_path
 
@@ -19,3 +19,7 @@ CSRF_PROTECTED_PATHS = frozenset(
 )
 
 AUTH_UNAUTHORIZED_DETAIL = "Not authenticated or token expired"
+CURRENT_PASSWORD_INCORRECT_DETAIL = "Current password is incorrect"
+NEW_PASSWORD_SAME_AS_CURRENT_DETAIL = (
+    "New password must be different from the current password"
+)

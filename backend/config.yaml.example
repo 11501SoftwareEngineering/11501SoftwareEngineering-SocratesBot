@@ -1,3 +1,5 @@
-# Copy to config.yaml (gitignored). Non-secret local app config.
-# Super-admin via account_id list (login /users/me still returns role as USER|TEACHER)
+# Copy to config.yaml (gitignored).
+# Schema: app.core.yaml_config.YamlConfig
+# SUPER_ADMIN_ACCOUNTS is a list of account_id values for admin elevation.
+# Admin elevation does not change the database role.
 SUPER_ADMIN_ACCOUNTS: []

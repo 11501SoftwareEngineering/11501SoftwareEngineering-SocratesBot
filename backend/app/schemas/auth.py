@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+﻿from pydantic import BaseModel, Field
 
 from app.core.enums import UserRole
 
@@ -47,6 +47,19 @@ class CurrentUserResponse(BaseModel):
     preferred_language: str = Field(
         default=_DEFAULT_LANGUAGE_CODE,
         examples=[_DEFAULT_LANGUAGE_CODE],
+    )
+    must_change_password: bool = Field(default=False, examples=[False])
+
+
+class PasswordChangeRequest(BaseModel):
+    old_password: str = Field(min_length=1, max_length=128, examples=["password1"])
+    new_password: str = Field(min_length=8, max_length=128, examples=["password2"])
+
+
+class PasswordChangeResponse(BaseModel):
+    message: str = Field(
+        default="Password updated",
+        examples=["Password updated"],
     )
 
 

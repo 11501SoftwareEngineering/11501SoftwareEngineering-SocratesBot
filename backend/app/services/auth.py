@@ -5,6 +5,12 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+from app.core.auth_policies import (
+    AUTH_UNAUTHORIZED_DETAIL,
+    CURRENT_PASSWORD_INCORRECT_DETAIL,
+    NEW_PASSWORD_SAME_AS_CURRENT_DETAIL,
+)
+from app.core.authz import is_reserved_super_admin_account
 from app.core.cookies import (
     REFRESH_COOKIE,
     clear_auth_cookies,
@@ -24,6 +30,8 @@ from app.schemas.auth import (
     CurrentUserResponse,
     LoginRequest,
     LoginResponse,
+    PasswordChangeRequest,
+    PasswordChangeResponse,
     RegisterRequest,
     RegisterResponse,
 )
@@ -40,12 +48,18 @@ async def register_user(db: AsyncSession, payload: RegisterRequest) -> RegisterR
         ``RegisterResponse`` with account, name, role, and success message.
 
     Raises:
-        HTTPException: 409 if an account with the same ``account`` already exists.
+        HTTPException: 400 if the account is reserved for config elevation, or
+            an account with the same ``account`` already exists.
     """
+    if is_reserved_super_admin_account(payload.account):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Account name reserved",
+        )
     existing_user = await user.get_user_by_account(db, payload.account)
     if existing_user is not None:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Account already exists",
         )
 
@@ -61,7 +75,7 @@ async def register_user(db: AsyncSession, payload: RegisterRequest) -> RegisterR
     except IntegrityError:
         await db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Account already exists",
         ) from None
 
@@ -158,11 +172,64 @@ async def get_current_user_profile(current_user: User) -> CurrentUserResponse:
     if current_user.password is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated or token expired",
+            detail=AUTH_UNAUTHORIZED_DETAIL,
         )
     return CurrentUserResponse(
         account=current_user.account_id,
         name=current_user.name,
         role=UserRole(current_user.role),
         preferred_language=user.preferred_language_code(current_user),
+        must_change_password=current_user.password.must_change_password,
     )
+
+
+async def change_password(
+    db: AsyncSession,
+    current_user: User,
+    payload: PasswordChangeRequest,
+) -> PasswordChangeResponse:
+    """Verify the old password, set the new hash, and clear must-change.
+
+    Revokes all refresh tokens for the user so prior sessions cannot continue
+    after the password (and ``must_change_password`` flag) change.
+
+    Args:
+        db: Async SQLAlchemy session.
+        current_user: Authenticated user with password relation loaded.
+        payload: Old and new password body.
+
+    Returns:
+        ``PasswordChangeResponse`` success message.
+
+    Raises:
+        HTTPException: 401 if there is no password row; 400 if old password
+            is wrong or new password equals the current password.
+    """
+    if current_user.password is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=AUTH_UNAUTHORIZED_DETAIL,
+        )
+    old_ok = await run_in_threadpool(
+        verify_password,
+        payload.old_password,
+        current_user.password.password_hash,
+    )
+    if not old_ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=CURRENT_PASSWORD_INCORRECT_DETAIL,
+        )
+    if payload.new_password == payload.old_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=NEW_PASSWORD_SAME_AS_CURRENT_DETAIL,
+        )
+    await user.update_password(
+        db,
+        current_user,
+        new_password=payload.new_password,
+        must_change_password=False,
+    )
+    await auth.revoke_all_for_user(db, current_user.id)
+    return PasswordChangeResponse()

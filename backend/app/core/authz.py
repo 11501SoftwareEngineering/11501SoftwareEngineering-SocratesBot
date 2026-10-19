@@ -1,4 +1,4 @@
-"""Authorization helpers (config elevation, password-change gate)."""
+﻿"""Authorization helpers (config elevation, password-change gate)."""
 
 from fastapi import HTTPException, status
 
@@ -11,6 +11,11 @@ from app.models.user import User
 def is_super_admin(current_user: User) -> bool:
     """Return whether the user is elevated via config, not API role."""
     return current_user.account_id in yaml_config.SUPER_ADMIN_ACCOUNTS
+
+
+def is_reserved_super_admin_account(account_id: str) -> bool:
+    """Return whether ``account_id`` is listed in ``SUPER_ADMIN_ACCOUNTS``."""
+    return account_id in yaml_config.SUPER_ADMIN_ACCOUNTS
 
 
 def enforce_must_change_password(current_user: User, *, path: str) -> None:
