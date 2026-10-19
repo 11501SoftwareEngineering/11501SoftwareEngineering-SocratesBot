@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import secrets
 import string
@@ -25,14 +25,11 @@ async def create_course(
 
     for _ in range(_MAX_CREATE_ATTEMPTS):
         invitation_code = "".join(
-            secrets.choice(_INVITE_CODE_ALPHABET)
-            for _ in range(_INVITE_CODE_LENGTH)
+            secrets.choice(_INVITE_CODE_ALPHABET) for _ in range(_INVITE_CODE_LENGTH)
         )
 
         existing_id = await db.scalar(
-            select(Course.id).where(
-                Course.invitation_code == invitation_code
-            )
+            select(Course.id).where(Course.invitation_code == invitation_code)
         )
         if existing_id is not None:
             continue
@@ -52,9 +49,7 @@ async def create_course(
 
             # Retry only when the invitation code collided with another row.
             collision_id = await db.scalar(
-                select(Course.id).where(
-                    Course.invitation_code == invitation_code
-                )
+                select(Course.id).where(Course.invitation_code == invitation_code)
             )
             if collision_id is not None:
                 continue
@@ -64,6 +59,4 @@ async def create_course(
         await db.refresh(course)
         return course
 
-    raise RuntimeError(
-        "Could not generate a unique course invitation code."
-    )
+    raise RuntimeError("Could not generate a unique course invitation code.")

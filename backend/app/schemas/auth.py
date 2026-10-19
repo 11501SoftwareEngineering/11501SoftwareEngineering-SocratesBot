@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field
 
 from app.core.enums import UserRole
 

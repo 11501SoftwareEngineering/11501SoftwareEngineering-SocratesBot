@@ -1,4 +1,4 @@
-﻿"""Authorization helpers (config elevation, password-change gate)."""
+"""Authorization helpers (config elevation, password-change gate)."""
 
 from fastapi import HTTPException, status
 

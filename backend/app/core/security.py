@@ -1,4 +1,4 @@
-﻿from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from secrets import token_urlsafe
 from typing import Any

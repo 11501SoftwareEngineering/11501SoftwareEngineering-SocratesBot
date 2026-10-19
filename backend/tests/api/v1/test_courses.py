@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
@@ -153,9 +153,7 @@ def test_create_course_retries_invitation_code_collision(
     )
 
     db = SimpleNamespace(
-        scalar=AsyncMock(
-            side_effect=[uuid.uuid4(), None]
-        ),
+        scalar=AsyncMock(side_effect=[uuid.uuid4(), None]),
         add=Mock(),
         commit=AsyncMock(),
         refresh=AsyncMock(),
@@ -174,4 +172,3 @@ def test_create_course_retries_invitation_code_collision(
     assert db.scalar.await_count == 2
     db.commit.assert_awaited_once()
     db.refresh.assert_awaited_once_with(course)
-

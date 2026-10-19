@@ -1,4 +1,4 @@
-﻿"""Auth path exemptions and shared unauthorized detail text."""
+"""Auth path exemptions and shared unauthorized detail text."""
 
 from app.core.api_paths import api_v1, normalize_path
 
