@@ -81,7 +81,7 @@ openapi-site:
 	out="$(or $(OUT),../docs/openapi)"; \
 	PYTHONPATH=. uv run --locked python scripts/build_api_docs_site.py --out "$$out"; \
 	if [ -z "$(OUT)" ]; then \
-	  site="$$(mktemp -d "${TMPDIR:-/tmp}/openapi-site.XXXXXX")"; \
+	  site="$$(mktemp -d "./openapi-site.XXXXXX")"; \
 	  ln -s "$$(cd "$$out" && pwd -P)" "$$site/docs"; \
 	  echo "Open http://127.0.0.1:$(or $(PORT),8080)/docs/  (Ctrl+C to stop)"; \
 	  trap 'rm -rf "$$site"' EXIT; \
