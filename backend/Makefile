@@ -46,21 +46,24 @@ db-dev:
 db-dev-down:
 	docker-compose -f ../devops/dev/docker-compose.db.yml down
 
+# UTF-8-safe wrapper: Alembic 1.20 reads alembic.ini with encoding="locale".
+ALEMBIC := uv run --locked python scripts/run_alembic.py
+
 db-revision:
 	@test -n "$(message)" || { echo 'Usage: make db-revision message="description"' >&2; exit 2; }
-	uv run --locked alembic revision --autogenerate -m "$(message)"
+	$(ALEMBIC) revision --autogenerate -m "$(message)"
 
 db-upgrade:
-	uv run --locked alembic upgrade head
+	$(ALEMBIC) upgrade head
 
 db-downgrade:
-	uv run --locked alembic downgrade -1
+	$(ALEMBIC) downgrade -1
 
 db-current:
-	uv run --locked alembic current
+	$(ALEMBIC) current
 
 db-heads:
-	uv run --locked alembic heads
+	$(ALEMBIC) heads
 
 db-migration-check:
 	git fetch origin main
