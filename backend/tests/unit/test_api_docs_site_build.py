@@ -25,6 +25,19 @@ def test_build_site_uses_relative_openapi_and_assets(tmp_path: Path) -> None:
     assert 'src="/swagger-ui-bundle.js"' not in html
 
 
+def test_build_site_declares_utf8_charset(tmp_path: Path) -> None:
+    out = build_site(tmp_path / "docs" / "openapi")
+    html = (out / "index.html").read_text(encoding="utf-8")
+    assert '<meta charset="utf-8">' in html
+    assert 'src="./swagger-ui-bundle.js" charset="utf-8"' in html
+
+
+def test_build_site_keeps_openapi_31(tmp_path: Path) -> None:
+    out = build_site(tmp_path / "docs" / "openapi")
+    spec = (out / "openapi.json").read_text(encoding="utf-8")
+    assert '"openapi": "3.1' in spec
+
+
 def test_build_site_disables_try_it_out(tmp_path: Path) -> None:
     out = build_site(tmp_path / "docs" / "openapi")
     html = (out / "index.html").read_text(encoding="utf-8")
@@ -46,3 +59,13 @@ def test_build_site_preserves_sibling_docs_markdown(tmp_path: Path) -> None:
     build_site(site / "docs" / "openapi")
     assert kept.read_text(encoding="utf-8") == "keep me\n"
     assert (site / "docs" / "openapi" / "index.html").is_file()
+
+
+def test_build_site_removes_stale_files_in_out(tmp_path: Path) -> None:
+    out = tmp_path / "docs" / "openapi"
+    out.mkdir(parents=True)
+    stale = out / "stale-cache.js"
+    stale.write_text("old\n", encoding="utf-8")
+    build_site(out)
+    assert not stale.exists()
+    assert (out / "index.html").is_file()

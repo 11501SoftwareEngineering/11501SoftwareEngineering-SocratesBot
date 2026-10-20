@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build a static Swagger UI page from the FastAPI OpenAPI schema.
 
-Uses the ``swagger-ui-bundle`` package for assets and FastAPI's
-``get_swagger_ui_html`` for the entry page (relative asset/spec URLs).
+Uses ``swagger-ui-bundle-v2`` (Swagger UI 5, OpenAPI 3.1) for assets and
+FastAPI's ``get_swagger_ui_html`` for the entry page (relative URLs).
 """
 
 from __future__ import annotations
@@ -32,7 +32,10 @@ def build_site(out: Path, *, title: str = "SocratesBot API") -> Path:
     ``docs/`` is left alone.
     """
     out = out.resolve()
-    out.mkdir(parents=True, exist_ok=True)
+    # Fresh tree so stale assets/HTML cannot mask a bad build.
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True)
 
     write_openapi_json(out / "openapi.json")
 
@@ -56,7 +59,18 @@ def build_site(out: Path, *, title: str = "SocratesBot API") -> Path:
         swagger_favicon_url="./favicon-32x32.png",
         swagger_ui_parameters=params,
     )
-    (out / "index.html").write_bytes(html_response.body)
+    # FastAPI's template omits charset; python -m http.server also sends
+    # text/html without charset, so Chromium defaults to windows-1252 and
+    # mis-decodes swagger-ui-bundle.js (UTF-8) → SyntaxError / blank page.
+    html = html_response.body.decode("utf-8")
+    if "<meta charset=" not in html.lower():
+        html = html.replace("<head>", '<head>\n    <meta charset="utf-8">', 1)
+    html = html.replace(
+        '<script src="./swagger-ui-bundle.js"></script>',
+        '<script src="./swagger-ui-bundle.js" charset="utf-8"></script>',
+        1,
+    )
+    (out / "index.html").write_text(html, encoding="utf-8")
     return out
 
 
