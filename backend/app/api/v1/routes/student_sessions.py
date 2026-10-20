@@ -1,11 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ActiveUser, get_db
-from app.crud.session import SQLAlchemySessionStore
 from app.schemas.session import CreateSessionResponse
 from app.services import session as session_service
 
@@ -19,32 +18,8 @@ async def create_or_enter_student_session(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CreateSessionResponse:
     """Create or reuse the authenticated student's session for a topic."""
-    store = SQLAlchemySessionStore(
+    return await session_service.create_or_enter_student_session(
         db,
-        initial_is_anonymous=False,
+        current_user.id,
+        topicId,
     )
-
-    try:
-        result = await session_service.create_or_enter_session(
-            user_id=current_user.id,
-            topic_id=topicId,
-            store=store,
-        )
-        await db.commit()
-    except session_service.TopicNotFoundError as exc:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Topic not found",
-        ) from exc
-    except session_service.CourseAccessDeniedError as exc:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Course membership required",
-        ) from exc
-    except Exception:
-        await db.rollback()
-        raise
-
-    return result

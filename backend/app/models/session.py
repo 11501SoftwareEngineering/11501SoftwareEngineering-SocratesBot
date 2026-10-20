@@ -39,7 +39,7 @@ class Session(Base):
     )
     topic_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("topics.id"),
+        ForeignKey("topics.id", ondelete="CASCADE"),
         nullable=False,
     )
     user_id: Mapped[uuid.UUID] = mapped_column(

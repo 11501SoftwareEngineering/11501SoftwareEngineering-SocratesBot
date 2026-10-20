@@ -44,7 +44,7 @@ async def get_session_id(
     return await db.scalar(statement)
 
 
-async def create_session_if_absent(
+async def get_or_create_session_id(
     db: AsyncSession,
     *,
     user_id: UUID,
@@ -115,12 +115,12 @@ class SQLAlchemySessionStore:
             topic_id=topic_id,
         )
 
-    async def create_session_if_absent(
+    async def get_or_create_session_id(
         self,
         user_id: UUID,
         topic_id: UUID,
     ) -> UUID:
-        return await create_session_if_absent(
+        return await get_or_create_session_id(
             self._db,
             user_id=user_id,
             topic_id=topic_id,

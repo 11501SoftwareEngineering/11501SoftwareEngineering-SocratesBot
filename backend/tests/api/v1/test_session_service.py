@@ -47,7 +47,7 @@ class FakeSessionStore:
         session = self.sessions.get((user_id, topic_id))
         return session.id if session is not None else None
 
-    async def create_session_if_absent(self, user_id: UUID, topic_id: UUID) -> UUID:
+    async def get_or_create_session_id(self, user_id: UUID, topic_id: UUID) -> UUID:
         self.create_calls += 1
         key = (user_id, topic_id)
         if key not in self.sessions:

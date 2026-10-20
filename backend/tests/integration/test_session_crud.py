@@ -6,12 +6,14 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.database import Base
 from app.core.enums import SessionStatus, UserRole
 from app.crud import session as session_crud
+from app.crud.user import delete_teacher
 from app.models.course import Course, CourseMembership
 from app.models.session import Session
 from app.models.topic import Topic
@@ -162,7 +164,7 @@ def test_create_session_stores_initial_values(is_anonymous: bool) -> None:
             )
             assert existing_id is None
 
-            session_id = await session_crud.create_session_if_absent(
+            session_id = await session_crud.get_or_create_session_id(
                 db,
                 user_id=student.id,
                 topic_id=topic.id,
@@ -203,7 +205,7 @@ def test_repeated_creation_preserves_existing_session(
             _, topic = await create_course_and_topic(db)
             student = await create_student(db)
 
-            original_id = await session_crud.create_session_if_absent(
+            original_id = await session_crud.get_or_create_session_id(
                 db,
                 user_id=student.id,
                 topic_id=topic.id,
@@ -221,7 +223,7 @@ def test_repeated_creation_preserves_existing_session(
             original.completed_at = completed_at
             await db.flush()
 
-            repeated_id = await session_crud.create_session_if_absent(
+            repeated_id = await session_crud.get_or_create_session_id(
                 db,
                 user_id=student.id,
                 topic_id=topic.id,
@@ -256,19 +258,19 @@ def test_sessions_are_separate_for_each_user_and_topic() -> None:
             student_a = await create_student(db)
             student_b = await create_student(db)
 
-            session_aa = await session_crud.create_session_if_absent(
+            session_aa = await session_crud.get_or_create_session_id(
                 db,
                 user_id=student_a.id,
                 topic_id=topic_a.id,
                 is_anonymous=True,
             )
-            session_ba = await session_crud.create_session_if_absent(
+            session_ba = await session_crud.get_or_create_session_id(
                 db,
                 user_id=student_b.id,
                 topic_id=topic_a.id,
                 is_anonymous=True,
             )
-            session_ab = await session_crud.create_session_if_absent(
+            session_ab = await session_crud.get_or_create_session_id(
                 db,
                 user_id=student_a.id,
                 topic_id=topic_b.id,
@@ -399,5 +401,102 @@ def test_service_rejects_missing_topic_without_creating_session() -> None:
 
             session_count = await db.scalar(select(func.count()).select_from(Session))
             assert session_count == 0
+
+    asyncio.run(run())
+
+
+def test_delete_teacher_cascades_course_data() -> None:
+    async def run() -> None:
+        async with session_test_db() as db:
+            course, topic = await create_course_and_topic(db)
+            other_course, other_topic = await create_course_and_topic(db)
+            student = await create_student(db)
+
+            teacher = await db.get(User, course.created_by)
+            assert teacher is not None
+
+            session = Session(
+                user_id=student.id,
+                topic_id=topic.id,
+                is_anonymous=False,
+            )
+            db.add_all(
+                [
+                    CourseMembership(
+                        course_id=course.id,
+                        user_id=student.id,
+                        role="STUDENT",
+                    ),
+                    session,
+                ]
+            )
+            await db.flush()
+
+            course_id = course.id
+            deleted_records = (
+                (User, teacher.id),
+                (Course, course.id),
+                (Topic, topic.id),
+                (Session, session.id),
+            )
+            preserved_records = (
+                (User, student.id),
+                (User, other_course.created_by),
+                (Course, other_course.id),
+                (Topic, other_topic.id),
+            )
+
+            await delete_teacher(db, teacher)
+            await db.execute(
+                text("SET CONSTRAINTS fk_topics_created_by_users IMMEDIATE")
+            )
+
+            for model, record_id in deleted_records:
+                assert (
+                    await db.scalar(select(model.id).where(model.id == record_id))
+                    is None
+                )
+
+            assert (
+                await db.scalar(
+                    select(CourseMembership.user_id).where(
+                        CourseMembership.course_id == course_id
+                    )
+                )
+                is None
+            )
+
+            for model, record_id in preserved_records:
+                assert (
+                    await db.scalar(select(model.id).where(model.id == record_id))
+                    == record_id
+                )
+
+    asyncio.run(run())
+
+
+def test_topic_rejects_missing_creator() -> None:
+    async def run() -> None:
+        async with session_test_db() as db:
+            course, _ = await create_course_and_topic(db)
+
+            db.add(
+                Topic(
+                    course_id=course.id,
+                    created_by=uuid4(),
+                    title="Missing creator",
+                )
+            )
+            await db.flush()
+
+            with pytest.raises(
+                IntegrityError,
+                match="fk_topics_created_by_users",
+            ):
+                await db.execute(
+                    text("SET CONSTRAINTS fk_topics_created_by_users IMMEDIATE")
+                )
+
+            await db.rollback()
 
     asyncio.run(run())

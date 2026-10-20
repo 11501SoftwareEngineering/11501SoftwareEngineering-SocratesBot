@@ -55,7 +55,7 @@ def test_create_session_returns_ids_and_commits(
     monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=True))
     monkeypatch.setattr(session_crud, "get_session_id", AsyncMock(return_value=None))
     create_mock = AsyncMock(return_value=session_id)
-    monkeypatch.setattr(session_crud, "create_session_if_absent", create_mock)
+    monkeypatch.setattr(session_crud, "get_or_create_session_id", create_mock)
 
     response = auth_client.post(
         f"/api/v1/student/topics/{topic_id}/sessions",
@@ -112,7 +112,7 @@ def test_session_errors_return_http_status_and_roll_back(
     lookup_mock = AsyncMock(return_value=None)
     create_mock = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(session_crud, "get_session_id", lookup_mock)
-    monkeypatch.setattr(session_crud, "create_session_if_absent", create_mock)
+    monkeypatch.setattr(session_crud, "get_or_create_session_id", create_mock)
 
     response = auth_client.post(
         f"/api/v1/student/topics/{topic_id}/sessions",
@@ -151,7 +151,7 @@ def test_enter_existing_session_returns_original_id(
     lookup_mock = AsyncMock(return_value=existing_session_id)
     create_mock = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(session_crud, "get_session_id", lookup_mock)
-    monkeypatch.setattr(session_crud, "create_session_if_absent", create_mock)
+    monkeypatch.setattr(session_crud, "get_or_create_session_id", create_mock)
 
     response = auth_client.post(
         f"/api/v1/student/topics/{topic_id}/sessions",

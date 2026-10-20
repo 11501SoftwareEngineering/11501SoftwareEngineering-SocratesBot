@@ -18,12 +18,16 @@ class Topic(Base):
     )
     course_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("courses.id"),
+        ForeignKey("courses.id", ondelete="CASCADE"),
         nullable=False,
     )
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey(
+            "users.id",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
         nullable=False,
     )
     title: Mapped[str] = mapped_column(String, nullable=False)

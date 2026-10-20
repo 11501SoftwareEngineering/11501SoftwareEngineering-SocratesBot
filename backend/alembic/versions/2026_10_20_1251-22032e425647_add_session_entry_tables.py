@@ -42,7 +42,10 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["created_by"], ["users.id"], name=op.f("fk_courses_created_by_users")
+            ["created_by"],
+            ["users.id"],
+            name=op.f("fk_courses_created_by_users"),
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_courses")),
         sa.UniqueConstraint("invitation_code", name=op.f("uq_courses_invitation_code")),
@@ -65,6 +68,7 @@ def upgrade() -> None:
             ["course_id"],
             ["courses.id"],
             name=op.f("fk_course_memberships_course_id_courses"),
+            ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
             ["user_id"], ["users.id"], name=op.f("fk_course_memberships_user_id_users")
@@ -93,10 +97,17 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(
-            ["course_id"], ["courses.id"], name=op.f("fk_topics_course_id_courses")
+            ["course_id"],
+            ["courses.id"],
+            name=op.f("fk_topics_course_id_courses"),
+            ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["created_by"], ["users.id"], name=op.f("fk_topics_created_by_users")
+            ["created_by"],
+            ["users.id"],
+            name=op.f("fk_topics_created_by_users"),
+            deferrable=True,
+            initially="DEFERRED",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_topics")),
     )
@@ -124,7 +135,10 @@ def upgrade() -> None:
             "status IN ('IN_PROGRESS', 'COMPLETED')", name=op.f("ck_sessions_status")
         ),
         sa.ForeignKeyConstraint(
-            ["topic_id"], ["topics.id"], name=op.f("fk_sessions_topic_id_topics")
+            ["topic_id"],
+            ["topics.id"],
+            name=op.f("fk_sessions_topic_id_topics"),
+            ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
             ["user_id"], ["users.id"], name=op.f("fk_sessions_user_id_users")
