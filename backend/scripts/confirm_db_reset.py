@@ -22,13 +22,13 @@ def confirm_db_reset(
     print(
         "WARNING: db-reset will Alembic downgrade to base (wipe schema), "
         "upgrade head, then seed.\n"
-        "Confirm this is your local development database. Continue? [y/N] ",
+        "Confirm this is your local development database. Continue? y/[N] ",
         end="",
         file=stdout,
         flush=True,
     )
-    answer = stdin.readline().strip().lower()
-    return answer in {"y", "yes"}
+    answer = stdin.read(1).lower()
+    return answer == "y"
 
 
 def main() -> None:

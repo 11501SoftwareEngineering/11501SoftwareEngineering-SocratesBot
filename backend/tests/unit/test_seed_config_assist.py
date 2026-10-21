@@ -64,12 +64,25 @@ def test_config_assist_decline_leaves_file(tmp_path: Path) -> None:
         config_path=config,
         example_path=tmp_path / "missing.example",
         prompt=True,
-        stdin=StringIO("n\n"),
+        stdin=StringIO("n"),
         stdout=StringIO(),
     )
     assert status == "skipped"
     data = yaml.safe_load(config.read_text(encoding="utf-8"))
     assert data["SUPER_ADMIN_ACCOUNTS"] == ["alice"]
+
+
+def test_config_assist_default_enter_is_no(tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text("SUPER_ADMIN_ACCOUNTS: [alice]\n", encoding="utf-8")
+    status = ensure_dev_admin_elevated(
+        config_path=config,
+        example_path=tmp_path / "missing.example",
+        prompt=True,
+        stdin=StringIO("\n"),
+        stdout=StringIO(),
+    )
+    assert status == "skipped"
 
 
 def test_config_assist_append_on_yes(tmp_path: Path) -> None:
@@ -79,7 +92,7 @@ def test_config_assist_append_on_yes(tmp_path: Path) -> None:
         config_path=config,
         example_path=tmp_path / "missing.example",
         prompt=True,
-        stdin=StringIO("y\n"),
+        stdin=StringIO("y"),
         stdout=StringIO(),
     )
     assert status == "appended"
@@ -95,7 +108,18 @@ def test_confirm_db_reset_decline() -> None:
     assert (
         confirm_db_reset(
             confirm_env="",
-            stdin=StringIO("n\n"),
+            stdin=StringIO("n"),
+            stdout=StringIO(),
+        )
+        is False
+    )
+
+
+def test_confirm_db_reset_default_enter_is_no() -> None:
+    assert (
+        confirm_db_reset(
+            confirm_env="",
+            stdin=StringIO("\n"),
             stdout=StringIO(),
         )
         is False
@@ -106,7 +130,7 @@ def test_confirm_db_reset_accept() -> None:
     assert (
         confirm_db_reset(
             confirm_env="",
-            stdin=StringIO("yes\n"),
+            stdin=StringIO("y"),
             stdout=StringIO(),
         )
         is True

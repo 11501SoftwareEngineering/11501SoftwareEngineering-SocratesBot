@@ -82,13 +82,13 @@ def ensure_dev_admin_elevated(
         return "skipped"
 
     print(
-        f"SUPER_ADMIN_ACCOUNTS currently: {accounts}\nAppend {ADMIN_ID}? [y/N] ",
+        f"SUPER_ADMIN_ACCOUNTS currently: {accounts}\nAppend {ADMIN_ID}? y/[N] ",
         end="",
         file=stdout,
         flush=True,
     )
-    answer = stdin.readline().strip().lower()
-    if answer not in {"y", "yes"}:
+    answer = stdin.read(1).lower()
+    if answer != "y":
         print(f"left config unchanged (declined adding {ADMIN_ID})", file=stdout)
         return "skipped"
 
