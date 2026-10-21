@@ -6,7 +6,8 @@ import asyncio
 import logging
 import sys
 
-from scripts.seed.runner import SeedError, run_seed_for_cli
+from scripts.seed.errors import SeedError
+from scripts.seed.runner import run_seed_for_cli
 
 logging.basicConfig(
     level=logging.INFO,
