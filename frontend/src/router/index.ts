@@ -50,7 +50,7 @@ const routes: RouteRecordRaw[] = [
       },
     ],
   },
-  // 管理員路由
+  // 管理員路由（受 ADMIN 權限保護）
   {
     path: '/admin',
     meta: { requiresAuth: true, roles: ['ADMIN'] },
