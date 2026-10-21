@@ -13,13 +13,18 @@ from scripts.seed.catalog import CORE_ACCOUNTS, SHARED_PASSWORD
 
 
 async def seed_auth(db: AsyncSession) -> None:
+    missing = []
+    for account in CORE_ACCOUNTS:
+        existing = await get_user_by_account(db, account.account_id)
+        if existing is None:
+            missing.append(account)
+    if not missing:
+        return
+
     language = await ensure_default_language(db)
     password_digest = await run_in_threadpool(hash_password, SHARED_PASSWORD)
 
-    for account in CORE_ACCOUNTS:
-        existing = await get_user_by_account(db, account.account_id)
-        if existing is not None:
-            continue
+    for account in missing:
         user = User(
             account_id=account.account_id,
             name=account.name,

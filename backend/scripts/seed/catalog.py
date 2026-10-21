@@ -36,7 +36,7 @@ ACCOUNT_TEACHER = SeedAccount(
 ACCOUNT_ADMIN = SeedAccount(
     account_id="dev-admin",
     name="Dev Admin",
-    role=UserRole.USER,
+    role=UserRole.TEACHER,
 )
 
 CORE_ACCOUNTS: tuple[SeedAccount, ...] = (

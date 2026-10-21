@@ -5,11 +5,18 @@ from __future__ import annotations
 from io import StringIO
 from pathlib import Path
 
+import pytest
 import yaml
 
+from app.core.config import settings
 from scripts.confirm_db_reset import confirm_db_reset
 from scripts.seed.catalog import ACCOUNT_ADMIN
 from scripts.seed_config_assist import ensure_dev_admin_elevated
+
+
+@pytest.fixture
+def development_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "APP_ENV", "development")
 
 
 def test_config_assist_creates_from_example(tmp_path: Path) -> None:
@@ -100,11 +107,22 @@ def test_config_assist_append_on_yes(tmp_path: Path) -> None:
     assert data["SUPER_ADMIN_ACCOUNTS"] == ["alice", ACCOUNT_ADMIN.account_id]
 
 
-def test_confirm_db_reset_with_confirm_env() -> None:
-    assert confirm_db_reset(confirm_env="1", stdout=StringIO()) is True
+def test_confirm_db_reset_with_confirm_env(development_env: None) -> None:
+    out = StringIO()
+    assert confirm_db_reset(confirm_env="1", stdout=out) is True
+    assert "APP_ENV=development" in out.getvalue()
 
 
-def test_confirm_db_reset_decline() -> None:
+def test_confirm_db_reset_refuses_non_development(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "APP_ENV", "test")
+    err = StringIO()
+    assert confirm_db_reset(confirm_env="1", stdout=StringIO(), stderr=err) is False
+    assert "development only" in err.getvalue()
+
+
+def test_confirm_db_reset_decline(development_env: None) -> None:
     assert (
         confirm_db_reset(
             confirm_env="",
@@ -115,7 +133,7 @@ def test_confirm_db_reset_decline() -> None:
     )
 
 
-def test_confirm_db_reset_default_enter_is_no() -> None:
+def test_confirm_db_reset_default_enter_is_no(development_env: None) -> None:
     assert (
         confirm_db_reset(
             confirm_env="",
@@ -126,12 +144,14 @@ def test_confirm_db_reset_default_enter_is_no() -> None:
     )
 
 
-def test_confirm_db_reset_accept() -> None:
+def test_confirm_db_reset_accept(development_env: None) -> None:
+    out = StringIO()
     assert (
         confirm_db_reset(
             confirm_env="",
             stdin=StringIO("y"),
-            stdout=StringIO(),
+            stdout=out,
         )
         is True
     )
+    assert "POSTGRES_HOST=" in out.getvalue()
