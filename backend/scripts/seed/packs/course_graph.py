@@ -16,6 +16,7 @@ from scripts.seed.catalog import (
     TOPIC_ID,
     TOPIC_TITLE,
 )
+from scripts.seed.errors import SeedError
 from scripts.seed.packs.auth import get_user_id_by_account
 
 
@@ -24,7 +25,7 @@ async def seed_course_graph(db: AsyncSession) -> None:
     student_id = await get_user_id_by_account(db, ACCOUNT_STUDENT.account_id)
     if teacher_id is None or student_id is None:
         msg = "auth pack must run before course_graph (missing teacher or student)"
-        raise RuntimeError(msg)
+        raise SeedError(msg)
 
     course = await db.get(Course, COURSE_ID)
     if course is None:
@@ -32,6 +33,13 @@ async def seed_course_graph(db: AsyncSession) -> None:
             select(Course).where(Course.invitation_code == INVITATION_CODE)
         )
         course = by_code.scalar_one_or_none()
+        if course is not None and course.id != COURSE_ID:
+            msg = (
+                f"invitation_code {INVITATION_CODE!r} belongs to course "
+                f"{course.id}, expected {COURSE_ID}; "
+                "run `make -C backend db-reset` or remove the conflicting row"
+            )
+            raise SeedError(msg)
     if course is None:
         course = Course(
             id=COURSE_ID,

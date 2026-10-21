@@ -17,6 +17,7 @@ from scripts.seed.catalog import (
     KNOWN_PACKS,
     credential_summary_lines,
 )
+from scripts.seed.errors import SeedError
 from scripts.seed.packs.auth import seed_auth
 from scripts.seed.packs.course_graph import seed_course_graph
 
@@ -29,9 +30,8 @@ PACK_REGISTRY: dict[str, PackFn] = {
     "course_graph": seed_course_graph,
 }
 
-
-class SeedError(Exception):
-    """Seed aborted due to environment or pack selection."""
+# Stable dependency order for known packs (auth before course_graph).
+_PACK_ORDER = {name: index for index, name in enumerate(DEFAULT_PACKS)}
 
 
 def resolve_packs(seed_packs_env: str | None = None) -> tuple[str, ...]:
@@ -39,6 +39,8 @@ def resolve_packs(seed_packs_env: str | None = None) -> tuple[str, ...]:
 
     Unset/empty ``SEED_PACKS`` → default core packs.
     Set → comma-separated list replaces the default set.
+    Known packs are always returned in dependency order; ``course_graph``
+    without ``auth`` is rejected.
     """
     raw = seed_packs_env if seed_packs_env is not None else os.environ.get("SEED_PACKS")
     if raw is None or raw.strip() == "":
@@ -53,7 +55,13 @@ def resolve_packs(seed_packs_env: str | None = None) -> tuple[str, ...]:
         known = ", ".join(sorted(KNOWN_PACKS))
         msg = f"unknown seed pack(s): {', '.join(unknown)} (known: {known})"
         raise SeedError(msg)
-    return names
+
+    selected = set(names)
+    if "course_graph" in selected and "auth" not in selected:
+        msg = "course_graph requires auth; include auth in SEED_PACKS or use defaults"
+        raise SeedError(msg)
+
+    return tuple(sorted(selected, key=lambda name: _PACK_ORDER[name]))
 
 
 def require_development() -> None:

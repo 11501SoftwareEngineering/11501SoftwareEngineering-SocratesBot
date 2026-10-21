@@ -7,12 +7,20 @@ from pathlib import Path
 
 import yaml
 
+from app.core.config import settings
 from scripts.seed.catalog import ACCOUNT_ADMIN
+from scripts.seed.errors import SeedError
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 CONFIG_PATH = BACKEND_DIR / "config.yaml"
 EXAMPLE_PATH = BACKEND_DIR / "config.yaml.example"
 ADMIN_ID = ACCOUNT_ADMIN.account_id
+
+
+def _require_development() -> None:
+    if settings.APP_ENV != "development":
+        msg = f"config assist refused: APP_ENV={settings.APP_ENV!r} (development only)"
+        raise SeedError(msg)
 
 
 def _load_mapping(path: Path) -> dict:
@@ -30,6 +38,11 @@ def _write_mapping(path: Path, data: dict) -> None:
     )
 
 
+def _stdin_is_tty(stdin) -> bool:
+    isatty = getattr(stdin, "isatty", None)
+    return bool(isatty()) if callable(isatty) else False
+
+
 def ensure_dev_admin_elevated(
     *,
     config_path: Path = CONFIG_PATH,
@@ -42,7 +55,12 @@ def ensure_dev_admin_elevated(
 
     Returns a short status: ``created`` | ``unchanged`` | ``appended`` |
     ``skipped`` | ``wrote_empty``.
+
+    Development-only. Non-TTY / ``prompt=False`` auto-appends when the list
+    already has other accounts (so ``CONFIRM=1`` Make paths do not silently
+    leave admin unelevated). Interactive TTY decline still skips.
     """
+    _require_development()
     stdin = stdin if stdin is not None else sys.stdin
     stdout = stdout if stdout is not None else sys.stdout
 
@@ -73,13 +91,16 @@ def ensure_dev_admin_elevated(
         print(f"set SUPER_ADMIN_ACCOUNTS=[{ADMIN_ID}]", file=stdout)
         return "wrote_empty"
 
-    if not prompt:
+    interactive = prompt and _stdin_is_tty(stdin)
+    if not interactive:
+        accounts.append(ADMIN_ID)
+        data["SUPER_ADMIN_ACCOUNTS"] = accounts
+        _write_mapping(config_path, data)
         print(
-            f"SUPER_ADMIN_ACCOUNTS already has values; not adding {ADMIN_ID} "
-            "(non-interactive)",
+            f"appended {ADMIN_ID} to SUPER_ADMIN_ACCOUNTS (non-interactive)",
             file=stdout,
         )
-        return "skipped"
+        return "appended"
 
     print(
         f"SUPER_ADMIN_ACCOUNTS currently: {accounts}\nAppend {ADMIN_ID}? y/[N] ",
@@ -102,6 +123,9 @@ def ensure_dev_admin_elevated(
 def main() -> None:
     try:
         ensure_dev_admin_elevated(prompt=True)
+    except SeedError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     except (OSError, ValueError, yaml.YAMLError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

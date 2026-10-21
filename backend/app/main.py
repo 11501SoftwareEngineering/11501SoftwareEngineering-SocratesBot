@@ -33,7 +33,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await run_migrations()
         # Opt-in only; never writes config.yaml (use `make seed` for that).
         if settings.SEED_DEV_DATA:
-            await run_seed_db(print_summary=True)
+            # No credential dump on hot reload; use `make seed` for the summary.
+            await run_seed_db(print_summary=False)
     yield
     await close_redis()
     await engine.dispose()

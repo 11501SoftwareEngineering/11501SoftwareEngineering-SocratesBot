@@ -17,6 +17,15 @@ def test_seed_dev_data_defaults_false() -> None:
     assert field.default is False
 
 
+def test_lifespan_seed_omits_credential_summary() -> None:
+    """Hot-reload path must not print password1 (review #6)."""
+    import inspect
+
+    from app import main
+
+    assert "print_summary=False" in inspect.getsource(main.lifespan)
+
+
 def test_run_seed_db_does_not_write_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
