@@ -38,6 +38,24 @@
 
 格式範本：`backend/config.yaml.example`。
 
+## 開發用假資料（seed）
+
+本機要測已合併的 auth／admin／學生 session API 時，用固定 catalog 灌入帳號與一門示範課（**僅** `APP_ENV=development`）。
+
+前端／帳密／邀請碼／Topic ID 以 [docs/測試資料.md](../docs/測試資料.md) 為準。後端操作：
+
+```bash
+make -C backend db-dev          # 若 Postgres 尚未啟動
+make -C backend seed            # 灌 DB + 協助把 dev-admin 寫進 config.yaml
+make -C backend db-reset        # 互動確認後清空 schema 再 upgrade + seed
+make -C backend db-reset CONFIRM=1   # 非互動（腳本用）
+```
+
+- 帳號：`dev-student` / `dev-teacher` / `dev-admin`；共用密碼 `password1`
+- 邀請碼：`DEVJOIN01`；topic id：`00000000-0000-4000-8000-000000000201`
+- `make seed` 可重複執行（已存在的列會跳過）；改 `config.yaml` 後需**重啟** server
+- 可選：在 `.env` 設 `SEED_DEV_DATA=true`，`make -C backend dev` 啟動時（migration 後）只灌 DB、**不**寫 `config.yaml`；預設 `false`
+
 ## 啟動開發伺服器
 1. 啟動 docker 容器，裡面有 PostgreSQL 和 Redis. 
     在專案根目錄執行：
