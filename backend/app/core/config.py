@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     APP_HOST: NonEmptyStr
     APP_PORT: int
     CORS_ORIGINS: list[str]
+    # Opt-in: after migrations in development lifespan, load core seed packs.
+    SEED_DEV_DATA: bool = False
 
     # Database (PostgreSQL)
     POSTGRES_USER: Annotated[SecretStr, Field(min_length=1)]
