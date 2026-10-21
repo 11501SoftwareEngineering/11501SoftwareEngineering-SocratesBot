@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ActiveUser, get_db
-from app.crud.session_privacy import SQLAlchemySessionPrivacyStore
 from app.schemas.session import CreateSessionResponse
 from app.schemas.session_privacy import (
     UpdateSessionPrivacyRequest,
@@ -42,18 +41,9 @@ async def update_student_session_privacy(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> UpdateSessionPrivacyResponse:
     """Update the authenticated student's session privacy setting."""
-    store = SQLAlchemySessionPrivacyStore(db)
-
-    try:
-        result = await session_privacy_service.update_session_privacy(
-            store=store,
-            session_id=sessionId,
-            current_user_id=current_user.id,
-            is_anonymous=payload.is_anonymous,
-        )
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise
-
-    return result
+    return await session_privacy_service.update_student_session_privacy(
+        db,
+        current_user.id,
+        sessionId,
+        payload.is_anonymous,
+    )

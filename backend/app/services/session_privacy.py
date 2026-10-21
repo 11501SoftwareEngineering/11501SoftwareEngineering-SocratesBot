@@ -1,17 +1,14 @@
-from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.session_privacy import UpdateSessionPrivacyResponse
-
-
-@dataclass(frozen=True)
-class SessionPrivacyData:
-    id: UUID
-    user_id: UUID
-    is_anonymous: bool
+from app.crud.session_privacy import SQLAlchemySessionPrivacyStore
+from app.schemas.session_privacy import (
+    SessionPrivacyData,
+    UpdateSessionPrivacyResponse,
+)
 
 
 class SessionPrivacyStore(Protocol):
@@ -61,3 +58,27 @@ async def update_session_privacy(
         is_anonymous=updated_session.is_anonymous,
         message="匿名分享設定已更新",
     )
+
+
+async def update_student_session_privacy(
+    db: AsyncSession,
+    current_user_id: UUID,
+    session_id: UUID,
+    is_anonymous: bool,
+) -> UpdateSessionPrivacyResponse:
+    """Update session privacy and manage the database transaction."""
+    store = SQLAlchemySessionPrivacyStore(db)
+
+    try:
+        result = await update_session_privacy(
+            store=store,
+            session_id=session_id,
+            current_user_id=current_user_id,
+            is_anonymous=is_anonymous,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    return result

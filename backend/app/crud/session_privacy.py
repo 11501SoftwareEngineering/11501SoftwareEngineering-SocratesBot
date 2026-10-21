@@ -4,7 +4,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.session import Session
-from app.services.session_privacy import SessionPrivacyData
+from app.schemas.session_privacy import SessionPrivacyData
 
 
 async def get_session(
