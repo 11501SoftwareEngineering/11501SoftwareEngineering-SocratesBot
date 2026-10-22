@@ -13,8 +13,9 @@ from fastapi import (
     UploadFile,
     status,
 )
+from starlette.datastructures import FormData
 from starlette.datastructures import UploadFile as StarletteUploadFile
-from starlette.formparsers import MultiPartException
+from starlette.formparsers import MultiPartException, MultiPartParser
 
 from app.api.deps import ActiveUser
 from app.api.openapi_responses import TRANSCRIBE_RESPONSES
@@ -41,6 +42,26 @@ router = APIRouter(prefix="/student/audio", tags=["student-audio"])
 GROQ_API_KEY_HEADER = "X-Groq-Api-Key"
 # Multipart wrappers (boundaries/headers) beyond the raw audio part.
 _MULTIPART_OVERHEAD_BYTES = 4096
+
+
+async def _parse_multipart(request: Request, *, max_part_size: int) -> FormData:
+    """Parse multipart with an explicit part ceiling (Starlette form() default is 1MiB).
+
+    Uses ``MultiPartParser`` directly so the limit is not tied to ``Request.form``
+    stubs that omit ``max_part_size`` (Sonar / older type info).
+    """
+    content_type = request.headers.get("content-type", "")
+    if "multipart/form-data" not in content_type.lower():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=STT_INVALID_OR_CORRUPT_AUDIO_DETAIL,
+        )
+    parser = MultiPartParser(
+        request.headers,
+        request.stream(),
+        max_part_size=max_part_size,
+    )
+    return await parser.parse()
 
 
 @router.post(
@@ -99,9 +120,8 @@ async def transcribe_audio(
         except ValueError:
             pass
 
-    # Parse with the same ceiling as STT_MAX_AUDIO_BYTES (Starlette default is 1MB).
     try:
-        form = await request.form(max_part_size=max_bytes)
+        form = await _parse_multipart(request, max_part_size=max_bytes)
     except MultiPartException as exc:
         raise HTTPException(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
