@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
@@ -48,8 +49,15 @@ async def ensure_language(db: AsyncSession, code: str) -> Language:
         return language
     locale = SUPPORTED_LOCALES[code]
     language = Language(code=locale.code, name=locale.name)
-    db.add(language)
-    await db.flush()
+    try:
+        async with db.begin_nested():
+            db.add(language)
+            await db.flush()
+    except IntegrityError:
+        language = await get_language_by_code(db, code)
+        if language is None:
+            raise
+        return language
     return language
 
 
@@ -183,7 +191,13 @@ async def update_preferred_language(
         ValueError: If ``code`` is not supported.
     """
     language = await ensure_language(db, code)
-    user.languages = [UserLanguage(language=language)]
+    # Serialize concurrent PATCHes: lock the user row, then replace language
+    # rows with an explicit DELETE so a stale identity-map cannot leave extras.
+    locked = (
+        await db.execute(select(User).where(User.id == user.id).with_for_update())
+    ).scalar_one()
+    await db.execute(delete(UserLanguage).where(UserLanguage.user_id == locked.id))
+    locked.languages = [UserLanguage(language=language)]
     await db.commit()
     loaded = await get_user_by_id(db, user.id)
     if loaded is None:

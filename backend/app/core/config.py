@@ -1,8 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Self
 
-from pydantic import Field, SecretStr, computed_field
+from pydantic import Field, SecretStr, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
@@ -63,6 +63,19 @@ class Settings(BaseSettings):
     # LLM API
     OPENAI_API_KEY: SecretStr
     ANTHROPIC_API_KEY: SecretStr
+
+    @model_validator(mode="after")
+    def _default_language_must_be_supported(self) -> Self:
+        # Late import: locales must not pull settings at module import time.
+        from app.core.locales import SUPPORTED_LOCALES
+
+        if self.DEFAULT_LANGUAGE_CODE not in SUPPORTED_LOCALES:
+            msg = (
+                f"DEFAULT_LANGUAGE_CODE must be one of "
+                f"{sorted(SUPPORTED_LOCALES)}, got {self.DEFAULT_LANGUAGE_CODE!r}"
+            )
+            raise ValueError(msg)
+        return self
 
     @property
     def cookie_secure(self) -> bool:
