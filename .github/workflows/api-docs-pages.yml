@@ -24,6 +24,7 @@ permissions:
   pages: write
   id-token: write
   pull-requests: write
+  deployments: write
 
 jobs:
   api-docs:
