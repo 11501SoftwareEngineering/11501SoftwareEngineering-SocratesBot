@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     # Cookie flags: SameSite=None for cross-origin SPA; Secure off in development.
     COOKIE_SAMESITE: NonEmptyStr = "none"
 
+    # Student STT (Groq key is per-request header; never stored here)
+    STT_MAX_AUDIO_BYTES: int = 10 * 1024 * 1024
+    STT_LEXICON_TERMS: list[str] = Field(default_factory=list)
+
     # LLM API
     OPENAI_API_KEY: SecretStr
     ANTHROPIC_API_KEY: SecretStr

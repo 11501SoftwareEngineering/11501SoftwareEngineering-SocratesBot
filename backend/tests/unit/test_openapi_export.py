@@ -27,6 +27,31 @@ def test_export_openapi_dict_includes_v1_paths() -> None:
     assert any("health" in p for p in paths)
 
 
+def test_transcribe_openapi_documents_client_error_examples() -> None:
+    schema = export_openapi_dict()
+    op = schema["paths"]["/api/v1/student/audio/transcribe"]["post"]
+    responses = op["responses"]
+    assert "400" in responses
+    assert "401" in responses
+    assert "403" in responses
+    assert "413" in responses
+    assert "422" in responses
+    examples_400 = responses["400"]["content"]["application/json"]["examples"]
+    assert "missing_groq_api_key" in examples_400
+    assert examples_400["missing_groq_api_key"]["value"] == {
+        "detail": "Missing Groq API key"
+    }
+    assert examples_400["invalid_or_corrupt_audio"]["value"] == {
+        "detail": "Invalid or corrupt audio file"
+    }
+    assert examples_400["invalid_language"]["value"] == {
+        "detail": "Invalid language code"
+    }
+    assert responses["413"]["content"]["application/json"]["example"] == {
+        "detail": "Audio file exceeds size limit"
+    }
+
+
 def test_write_openapi_json_roundtrip(tmp_path: Path) -> None:
     out = tmp_path / "openapi.json"
     write_openapi_json(out)

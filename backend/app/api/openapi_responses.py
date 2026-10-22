@@ -4,11 +4,22 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.api.student_audio_errors import (
+    STT_AUDIO_TOO_LARGE_DETAIL,
+    STT_CONNECTION_FAILED_DETAIL,
+    STT_INVALID_LANGUAGE_DETAIL,
+    STT_INVALID_OR_CORRUPT_AUDIO_DETAIL,
+    STT_MISSING_GROQ_KEY_DETAIL,
+    STT_PROVIDER_FAILED_DETAIL,
+    STT_TIMEOUT_DETAIL,
+)
 from app.core.auth_policies import (
     AUTH_UNAUTHORIZED_DETAIL,
     CURRENT_PASSWORD_INCORRECT_DETAIL,
     NEW_PASSWORD_SAME_AS_CURRENT_DETAIL,
 )
+
+_PASSWORD_CHANGE_REQUIRED_DETAIL = "Password change required"
 
 
 def json_detail_example(description: str, detail: Any) -> dict[str, Any]:
@@ -129,5 +140,49 @@ PREFERENCES_UPDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
                 "msg": "String should have at least 1 character",
             }
         ],
+    ),
+}
+
+TRANSCRIBE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_examples(
+        "Transcription rejected (client/input)",
+        {
+            "missing_groq_api_key": STT_MISSING_GROQ_KEY_DETAIL,
+            "invalid_or_corrupt_audio": STT_INVALID_OR_CORRUPT_AUDIO_DETAIL,
+            "invalid_language": STT_INVALID_LANGUAGE_DETAIL,
+        },
+    ),
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Password change required",
+        _PASSWORD_CHANGE_REQUIRED_DETAIL,
+    ),
+    413: json_detail_example(
+        "Audio exceeds size limit",
+        STT_AUDIO_TOO_LARGE_DETAIL,
+    ),
+    422: json_detail_example(
+        "Request validation failed",
+        [
+            {
+                "type": "missing",
+                "loc": ["body", "file"],
+                "msg": "Field required",
+            }
+        ],
+    ),
+    502: json_detail_example(
+        "Upstream STT provider error",
+        STT_PROVIDER_FAILED_DETAIL,
+    ),
+    504: json_detail_examples(
+        "STT provider timeout or connection failure",
+        {
+            "timeout": STT_TIMEOUT_DETAIL,
+            "connection_failed": STT_CONNECTION_FAILED_DETAIL,
+        },
     ),
 }
