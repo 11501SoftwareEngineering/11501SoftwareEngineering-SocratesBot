@@ -108,3 +108,26 @@ PASSWORD_CHANGE_RESPONSES: dict[int | str, dict[str, Any]] = {
         ],
     ),
 }
+
+_INVALID_LANGUAGE_DETAIL = "Invalid language code"
+
+PREFERENCES_UPDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_example(
+        "Unsupported preferred language",
+        _INVALID_LANGUAGE_DETAIL,
+    ),
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    422: json_detail_example(
+        "Request validation failed",
+        [
+            {
+                "type": "string_too_short",
+                "loc": ["body", "preferred_language"],
+                "msg": "String should have at least 1 character",
+            }
+        ],
+    ),
+}
