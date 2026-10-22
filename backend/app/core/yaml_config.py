@@ -13,7 +13,7 @@ CONFIG_YAML_PATH = BACKEND_DIR / "config.yaml"
 class YamlConfig(BaseModel):
     """Fields sourced from ``config.yaml``"""
 
-    # Super-admin via account_id list (login /users/me still returns role as USER|TEACHER)
+    # Super-admin via account_id list (login /users/me: ["SUPERADMIN", "USER"])
     SUPER_ADMIN_ACCOUNTS: list[str] = Field(default_factory=list)
 
 

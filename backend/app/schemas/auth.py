@@ -32,7 +32,8 @@ class LoginResponse(BaseModel):
 
     account: str = Field(examples=["alice"])
     name: str = Field(examples=["Alice"])
-    role: UserRole = Field(examples=[UserRole.USER])
+    # ``[USER]`` / ``[TEACHER]``, or ``[SUPERADMIN, TEACHER]`` when config-elevated.
+    role: list[UserRole] = Field(examples=[[UserRole.SUPERADMIN, UserRole.TEACHER]])
     preferred_language: str = Field(
         default=_DEFAULT_LANGUAGE_CODE,
         examples=[_DEFAULT_LANGUAGE_CODE],
@@ -43,7 +44,8 @@ class LoginResponse(BaseModel):
 class CurrentUserResponse(BaseModel):
     account: str = Field(examples=["alice"])
     name: str = Field(examples=["Alice"])
-    role: UserRole = Field(examples=[UserRole.USER])
+    # ``[USER]`` / ``[TEACHER]``, or ``[SUPERADMIN, TEACHER]`` when config-elevated.
+    role: list[UserRole] = Field(examples=[[UserRole.SUPERADMIN, UserRole.TEACHER]])
     preferred_language: str = Field(
         default=_DEFAULT_LANGUAGE_CODE,
         examples=[_DEFAULT_LANGUAGE_CODE],

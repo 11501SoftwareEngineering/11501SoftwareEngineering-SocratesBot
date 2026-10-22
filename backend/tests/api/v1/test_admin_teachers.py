@@ -62,6 +62,42 @@ def test_elevated_user_lists_teachers(
     assert listed.json() == []
 
 
+def test_elevated_login_and_me_return_superadmin_role(
+    elevated_client: TestClient, store: FakeStore
+) -> None:
+    """Config elevation surfaces as ``[SUPERADMIN, USER]`` on login and /users/me."""
+    seed_user(store, account_id="admin", password="password1", name="Admin")
+    login = elevated_client.post(
+        "/api/v1/auth/login",
+        json={"account": "admin", "password": "password1"},
+    )
+    assert login.status_code == 200
+    assert login.json()["role"] == ["SUPERADMIN", "USER"]
+    assert store.users_by_account["admin"].role == UserRole.USER.value
+
+    me = elevated_client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": bearer_from(login)},
+    )
+    assert me.status_code == 200
+    assert me.json()["role"] == ["SUPERADMIN", "USER"]
+
+
+def test_non_elevated_login_keeps_db_role(
+    elevated_client: TestClient,
+) -> None:
+    elevated_client.post(
+        "/api/v1/auth/register",
+        json={"account": "peon", "password": "password1", "name": "Peon"},
+    )
+    login = elevated_client.post(
+        "/api/v1/auth/login",
+        json={"account": "peon", "password": "password1"},
+    )
+    assert login.status_code == 200
+    assert login.json()["role"] == ["USER"]
+
+
 def test_non_elevated_forbidden(elevated_client: TestClient) -> None:
     bearer = _register_and_login(elevated_client, "peon")
     response = elevated_client.post(
@@ -134,7 +170,7 @@ def test_create_list_delete_teacher(
         json={"account": "teach1", "password": initial_password},
     )
     assert teacher_login.status_code == 200
-    assert teacher_login.json()["role"] == "TEACHER"
+    assert teacher_login.json()["role"] == ["TEACHER"]
     assert teacher_login.json()["must_change_password"] is True
 
     deleted = elevated_client.delete(

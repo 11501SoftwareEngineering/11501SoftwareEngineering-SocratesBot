@@ -10,7 +10,7 @@ from app.core.auth_policies import (
     CURRENT_PASSWORD_INCORRECT_DETAIL,
     NEW_PASSWORD_SAME_AS_CURRENT_DETAIL,
 )
-from app.core.authz import is_reserved_super_admin_account
+from app.core.authz import api_role, is_reserved_super_admin_account
 from app.core.cookies import (
     REFRESH_COOKIE,
     clear_auth_cookies,
@@ -120,8 +120,8 @@ async def login_user(
             detail="Invalid account or password",
         )
 
-    role = UserRole(current_user.role)
-    access_token = create_access_token(subject=current_user.id, role=role)
+    db_role = UserRole(current_user.role)
+    access_token = create_access_token(subject=current_user.id, role=db_role)
     refresh_raw = await auth.create_refresh_token(db, current_user.id)
     csrf = generate_opaque_token()
     set_refresh_cookies(
@@ -133,7 +133,7 @@ async def login_user(
     return LoginResponse(
         account=current_user.account_id,
         name=current_user.name,
-        role=role,
+        role=api_role(current_user),
         preferred_language=user.preferred_language_code(current_user),
         must_change_password=current_user.password.must_change_password,
     )
@@ -177,7 +177,7 @@ async def get_current_user_profile(current_user: User) -> CurrentUserResponse:
     return CurrentUserResponse(
         account=current_user.account_id,
         name=current_user.name,
-        role=UserRole(current_user.role),
+        role=api_role(current_user),
         preferred_language=user.preferred_language_code(current_user),
         must_change_password=current_user.password.must_change_password,
     )
