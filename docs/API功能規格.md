@@ -143,14 +143,20 @@
     - 查無此對話
 
 #### 語音辨識 (STT)
-- 功能說明: 學生語音輸入轉為文字
+- 功能說明: 學生語音輸入轉為文字（Groq Whisper；請求需帶 BYO `X-Groq-Api-Key`）
 - 呼叫方式: POST /student/audio/transcribe
-- 輸入資料: 音檔
-- 成功回應: 轉錄文字
+- 輸入資料: 音檔 (`file` multipart)、可選 `language`、Header `X-Groq-Api-Key`
+- 成功回應: 轉錄文字 — `{"text":"..."}`
 - 錯誤:
-    - 音訊檔案格式不符或損壞
-    - 未登入或憑證過期
-    - 音訊檔案超過容量限制
+    - 缺少 Groq API key (400) — `{"detail":"Missing Groq API key"}`
+    - 音訊檔案格式不符或損壞 (400) — `{"detail":"Invalid or corrupt audio file"}`
+    - 語言代碼無效 (400) — `{"detail":"Invalid language code"}`（僅可選 `language` override）
+    - 未登入或憑證過期 (401) — `{"detail":"Not authenticated or token expired"}`
+    - 需先變更密碼 (403) — `{"detail":"Password change required"}`
+    - 音訊檔案超過容量限制 (413) — `{"detail":"Audio file exceeds size limit"}`
+    - 請求驗證失敗 (422) — 例如缺少 `file`
+    - 上游辨識失敗 (502) — `{"detail":"Speech recognition failed"}`
+    - 辨識逾時或連線失敗 (504) — `{"detail":"Speech recognition timed out"}` / `{"detail":"Speech recognition service connection failed"}`
 
 #### 取得學生個人結果頁
 - 功能說明: 學生作答完成後取得論點摘要、立場轉折與核心論點
