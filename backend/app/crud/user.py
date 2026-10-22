@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.core.config import settings
 from app.core.enums import UserRole
+from app.core.locales import SUPPORTED_LOCALES
 from app.core.security import hash_password
 from app.models.user import Language, User, UserLanguage, UserPassword
 
@@ -27,6 +28,31 @@ async def get_language_by_code(db: AsyncSession, code: str) -> Language | None:
     return result.scalar_one_or_none()
 
 
+async def ensure_language(db: AsyncSession, code: str) -> Language:
+    """Return a supported language row, creating it if missing.
+
+    Args:
+        db: Async SQLAlchemy session.
+        code: Canonical supported locale code (``zh-TW`` / ``en`` / ``es``).
+
+    Returns:
+        Matching ``Language`` row (existing or newly created).
+
+    Raises:
+        ValueError: If ``code`` is not in the supported locale registry.
+    """
+    if code not in SUPPORTED_LOCALES:
+        raise ValueError(f"unsupported language code: {code}")
+    language = await get_language_by_code(db, code)
+    if language is not None:
+        return language
+    locale = SUPPORTED_LOCALES[code]
+    language = Language(code=locale.code, name=locale.name)
+    db.add(language)
+    await db.flush()
+    return language
+
+
 async def ensure_default_language(db: AsyncSession) -> Language:
     """Return the configured default language, creating it if missing.
 
@@ -36,14 +62,7 @@ async def ensure_default_language(db: AsyncSession) -> Language:
     Returns:
         ``Language`` for ``settings.DEFAULT_LANGUAGE_CODE`` (existing or new).
     """
-    code = settings.DEFAULT_LANGUAGE_CODE
-    language = await get_language_by_code(db, code)
-    if language is not None:
-        return language
-    language = Language(code=code, name=code)
-    db.add(language)
-    await db.flush()
-    return language
+    return await ensure_language(db, settings.DEFAULT_LANGUAGE_CODE)
 
 
 async def get_user_by_account(db: AsyncSession, account_id: str) -> User | None:
@@ -141,6 +160,35 @@ def preferred_language_code(user: User) -> str:
     if user.languages:
         return user.languages[0].language.code
     return settings.DEFAULT_LANGUAGE_CODE
+
+
+async def update_preferred_language(
+    db: AsyncSession,
+    user: User,
+    *,
+    code: str,
+) -> User:
+    """Replace the user's languages with a single preferred language row.
+
+    Args:
+        db: Async SQLAlchemy session.
+        user: User whose preference is being updated.
+        code: Canonical supported locale code.
+
+    Returns:
+        Reloaded ``User`` with languages loaded.
+
+    Raises:
+        RuntimeError: If the user cannot be reloaded after commit.
+        ValueError: If ``code`` is not supported.
+    """
+    language = await ensure_language(db, code)
+    user.languages = [UserLanguage(language=language)]
+    await db.commit()
+    loaded = await get_user_by_id(db, user.id)
+    if loaded is None:
+        raise RuntimeError("failed to reload user after preference update")
+    return loaded
 
 
 async def update_password(
