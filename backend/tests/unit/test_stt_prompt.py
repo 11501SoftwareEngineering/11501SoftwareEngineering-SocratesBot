@@ -29,6 +29,7 @@ def test_en_lexicon_without_steering() -> None:
 
 def test_prompt_respects_max_chars() -> None:
     terms = [f"term{i:04d}" for i in range(200)]
-    prompt = build_stt_prompt("en", lexicon_terms=terms, max_chars=80)
-    assert prompt is not None
-    assert len(prompt) <= 80
+    for max_chars in (25, 35, 45, 80):
+        prompt = build_stt_prompt("en", lexicon_terms=terms, max_chars=max_chars)
+        assert prompt is not None
+        assert len(prompt) <= max_chars

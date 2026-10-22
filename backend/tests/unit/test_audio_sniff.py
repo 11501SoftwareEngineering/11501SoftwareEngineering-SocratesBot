@@ -28,6 +28,11 @@ def test_sniff_mp4_ftyp() -> None:
     assert sniffed.content_type == "audio/mp4"
 
 
+def test_sniff_rejects_heic_ftyp() -> None:
+    data = b"\x00\x00\x00\x18ftypheic" + b"\x00" * 8
+    assert sniff_audio(data) is None
+
+
 def test_sniff_rejects_short_and_unknown() -> None:
     assert sniff_audio(b"short") is None
     assert sniff_audio(b"not-an-audio-file!!!!") is None

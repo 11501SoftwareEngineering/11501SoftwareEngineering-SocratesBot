@@ -4,6 +4,32 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# ISO-BMFF major brands we accept as audio/mp4 (m4a). Reject image/video brands.
+_AUDIO_FTYP_BRANDS = frozenset(
+    {
+        b"M4A ",
+        b"M4B ",
+        b"mp4a",
+        b"isom",
+        b"iso2",
+        b"mp41",
+        b"mp42",
+        b"dash",
+    }
+)
+_REJECT_FTYP_BRANDS = frozenset(
+    {
+        b"heic",
+        b"heix",
+        b"hevc",
+        b"mif1",
+        b"msf1",
+        b"avif",
+        b"avis",
+        b"mmp4",  # often MPEG-4 visual
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class SniffedAudio:
@@ -18,6 +44,9 @@ def sniff_audio(data: bytes) -> SniffedAudio | None:
     if data[:4] == b"\x1a\x45\xdf\xa3":
         return SniffedAudio("audio.webm", "audio/webm")
     if data[4:8] == b"ftyp":
+        brand = data[8:12]
+        if brand in _REJECT_FTYP_BRANDS or brand not in _AUDIO_FTYP_BRANDS:
+            return None
         return SniffedAudio("audio.m4a", "audio/mp4")
     if data[:4] == b"OggS":
         return SniffedAudio("audio.ogg", "audio/ogg")

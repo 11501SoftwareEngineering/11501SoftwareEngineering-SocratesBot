@@ -12,6 +12,8 @@ from groq import APIConnectionError, APIStatusError, APITimeoutError, AsyncGroq
 
 from app.api.student_audio_errors import (
     STT_CONNECTION_FAILED_DETAIL,
+    STT_EMPTY_TRANSCRIPT_DETAIL,
+    STT_INVALID_GROQ_KEY_DETAIL,
     STT_PROVIDER_FAILED_DETAIL,
     STT_TIMEOUT_DETAIL,
 )
@@ -36,10 +38,12 @@ def build_stt_prompt(
 
     sep = "、" if locale_code == "zh-TW" else ", "
     prefix = "專有名詞：" if locale_code == "zh-TW" else "Terms: "
+    period = "。"
 
     budget = max_chars - len(steering) - (1 if steering else 0)
     kept: list[str] = []
-    used = len(prefix) if terms else 0
+    # Reserve trailing period up front so len(prompt) never exceeds max_chars.
+    used = (len(prefix) + len(period)) if terms else 0
     for raw in terms:
         term = raw.strip()
         if not term or term in kept:
@@ -50,7 +54,7 @@ def build_stt_prompt(
         kept.append(term)
         used += cost
 
-    lexicon_part = f"{prefix}{sep.join(kept)}。" if kept else ""
+    lexicon_part = f"{prefix}{sep.join(kept)}{period}" if kept else ""
     if lexicon_part and steering:
         return f"{lexicon_part} {steering}".strip()
     return lexicon_part or steering or None
@@ -113,7 +117,7 @@ class GroqTranscriber:
     ) -> str:
         client = AsyncGroq(
             api_key=api_key,
-            max_retries=3,
+            max_retries=1,
             timeout=30.0,
         )
         try:
@@ -135,11 +139,31 @@ class GroqTranscriber:
                 detail=STT_CONNECTION_FAILED_DETAIL,
             ) from exc
         except APIStatusError as exc:
+            code = getattr(exc, "status_code", None)
+            if code in {401, 403}:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=STT_INVALID_GROQ_KEY_DETAIL,
+                ) from exc
+            if isinstance(code, int) and 400 <= code < 500:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=STT_PROVIDER_FAILED_DETAIL,
+                ) from exc
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=STT_PROVIDER_FAILED_DETAIL,
             ) from exc
-        return (getattr(result, "text", None) or "").strip()
+        finally:
+            await client.close()
+
+        text = (getattr(result, "text", None) or "").strip()
+        if not text:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=STT_EMPTY_TRANSCRIPT_DETAIL,
+            )
+        return text
 
 
 def get_transcriber() -> Transcriber:

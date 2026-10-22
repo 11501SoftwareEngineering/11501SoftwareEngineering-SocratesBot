@@ -47,6 +47,9 @@ def test_transcribe_openapi_documents_client_error_examples() -> None:
     assert examples_400["invalid_language"]["value"] == {
         "detail": "Invalid language code"
     }
+    assert examples_400["invalid_groq_api_key"]["value"] == {
+        "detail": "Invalid Groq API key"
+    }
     assert responses["413"]["content"]["application/json"]["example"] == {
         "detail": "Audio file exceeds size limit"
     }

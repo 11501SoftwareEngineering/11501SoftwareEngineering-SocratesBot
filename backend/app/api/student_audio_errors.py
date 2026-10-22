@@ -1,9 +1,11 @@
 """Shared STT error detail strings (route + OpenAPI examples stay in sync)."""
 
 STT_MISSING_GROQ_KEY_DETAIL = "Missing Groq API key"
+STT_INVALID_GROQ_KEY_DETAIL = "Invalid Groq API key"
 STT_INVALID_OR_CORRUPT_AUDIO_DETAIL = "Invalid or corrupt audio file"
 STT_AUDIO_TOO_LARGE_DETAIL = "Audio file exceeds size limit"
 STT_INVALID_LANGUAGE_DETAIL = "Invalid language code"
 STT_TIMEOUT_DETAIL = "Speech recognition timed out"
 STT_CONNECTION_FAILED_DETAIL = "Speech recognition service connection failed"
 STT_PROVIDER_FAILED_DETAIL = "Speech recognition failed"
+STT_EMPTY_TRANSCRIPT_DETAIL = "Speech recognition returned empty transcript"

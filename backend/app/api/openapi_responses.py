@@ -7,6 +7,7 @@ from typing import Any
 from app.api.student_audio_errors import (
     STT_AUDIO_TOO_LARGE_DETAIL,
     STT_CONNECTION_FAILED_DETAIL,
+    STT_INVALID_GROQ_KEY_DETAIL,
     STT_INVALID_LANGUAGE_DETAIL,
     STT_INVALID_OR_CORRUPT_AUDIO_DETAIL,
     STT_MISSING_GROQ_KEY_DETAIL,
@@ -148,6 +149,7 @@ TRANSCRIBE_RESPONSES: dict[int | str, dict[str, Any]] = {
         "Transcription rejected (client/input)",
         {
             "missing_groq_api_key": STT_MISSING_GROQ_KEY_DETAIL,
+            "invalid_groq_api_key": STT_INVALID_GROQ_KEY_DETAIL,
             "invalid_or_corrupt_audio": STT_INVALID_OR_CORRUPT_AUDIO_DETAIL,
             "invalid_language": STT_INVALID_LANGUAGE_DETAIL,
         },

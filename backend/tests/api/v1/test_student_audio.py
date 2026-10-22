@@ -149,6 +149,32 @@ def test_transcribe_rejects_oversize(
     assert fake_stt.last_call is None
 
 
+def test_transcribe_accepts_over_one_megabyte_under_stt_cap(
+    auth_client: TestClient,
+    store: FakeStore,
+    fake_stt: FakeTranscriber,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Starlette default max_part_size is 1MB; route must raise the form ceiling."""
+    monkeypatch.setattr(
+        "app.api.v1.routes.student_audio.settings.STT_MAX_AUDIO_BYTES",
+        2 * 1024 * 1024,
+    )
+    seed_user(store, account_id="stt-1mb")
+    token = _login(auth_client, "stt-1mb")
+    # Just over Starlette's 1MiB default part limit, under our STT cap.
+    body = _WEBM + b"\x00" * (1024 * 1024)
+
+    response = auth_client.post(
+        "/api/v1/student/audio/transcribe",
+        headers={"Authorization": token},
+        files={"file": ("rec.webm", io.BytesIO(body), "audio/webm")},
+    )
+    assert response.status_code == 200
+    assert fake_stt.last_call is not None
+    assert fake_stt.last_call["audio_len"] == len(body)
+
+
 def test_transcribe_unauthenticated(
     auth_client: TestClient, fake_stt: FakeTranscriber
 ) -> None:
