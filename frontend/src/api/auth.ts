@@ -1,21 +1,32 @@
 import { apiClient } from './client'
 
-// 欄位名稱依 docs/API功能規格.md 的登入 API 猜測，實際串接前務必跟後端組確認
-// Pydantic schema 裡的真實欄位名稱是否一致。
 export interface LoginPayload {
   account: string
   password: string
 }
 
+// Updated to match the actual JSON body fields. Token is now retrieved from headers.
 export interface LoginResponse {
-  access_token: string
   account: string
   name: string
   role: 'STUDENT' | 'TEACHER' | 'ADMIN'
+  preferred_language: string
+  must_change_password: boolean
+}
+
+// Added the payload interface for registration
+export interface RegisterPayload {
+  account: string
+  password: string
+  name: string
 }
 
 export const authApi = {
   login(payload: LoginPayload) {
     return apiClient.post<LoginResponse>('/auth/login', payload)
+  },
+  // Added the register API endpoint
+  register(payload: RegisterPayload) {
+    return apiClient.post('/auth/register', payload)
   },
 }
