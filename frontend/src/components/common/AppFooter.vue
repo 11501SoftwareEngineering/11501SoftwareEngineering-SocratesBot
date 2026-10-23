@@ -1,18 +1,21 @@
 <script setup lang="ts">
-// 對應 Figma Footer 元件（node 21:31）。
-// 五個連結目前都還沒有對應的頁面／路由，所以先用純文字呈現，
-// 之後哪個組員做好那個頁面，再把對應項目換成 <RouterLink>。
+// 頁尾。電腦版一排（Figma Footer），手機版直排加分隔線（Figma Footer_phone）。
+// 五個項目目前都還沒有對應的頁面，先用純文字呈現，做好頁面再換成 <RouterLink>。
 const links = ['隱私權', '版權', '開發者', '聯絡我們', 'Bug']
 </script>
 
 <template>
-  <footer class="flex h-10 w-full items-center justify-center gap-6 bg-secondary px-4 py-3">
-    <span
-      v-for="link in links"
-      :key="link"
-      class="cursor-default font-heading text-sm text-secondary-foreground/80 hover:text-secondary-foreground"
+  <footer class="shrink-0 bg-secondary px-4 py-2">
+    <ul
+      class="mx-auto flex max-w-md flex-col divide-y divide-muted-foreground/60 px-4 sm:max-w-none sm:flex-row sm:flex-wrap sm:items-center sm:justify-center sm:gap-x-8 sm:divide-y-0 sm:px-0"
     >
-      {{ link }}
-    </span>
+      <li
+        v-for="link in links"
+        :key="link"
+        class="py-3 text-center font-heading text-footer text-muted-foreground sm:py-0"
+      >
+        {{ link }}
+      </li>
+    </ul>
   </footer>
 </template>

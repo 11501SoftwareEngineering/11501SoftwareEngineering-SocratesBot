@@ -1,22 +1,6 @@
-
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&display=swap');
-
-/*
- * Iansui（芫荽）改成「自己放在專案裡」，不再吃 Google Fonts 的 CDN。
- * 原因：這個容器這邊測試發現連不到 fonts.googleapis.com（被防火牆/網路政策擋掉），
- * 代表校園網路、公司網路甚至上台展示現場的網路，也很可能一樣連不到——
- * 如果字體要從 Google 即時下載，只要那個當下連不到 Google，畫面就會整個掉回預設字體，
- * 而且 CSS 本身完全看不出來哪裡錯（不會報錯，只是安靜地 fallback），非常難排查。
- * 自己把字體檔放進 src/assets/fonts/ 之後，字體就變成專案的一部分，跟網路狀況無關。
- * 字體來源：https://github.com/ButTaiwan/iansui（OFL 開源字型授權，授權條款放在同資料夾的 OFL.txt）。
- */
-@font-face {
-  font-family: 'Iansui';
-  src: url('./fonts/Iansui-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
+@import './fonts/gen-jyuu-gothicx/Regular.css';
+@import './fonts/gen-jyuu-gothicx/Medium.css';
+@import './fonts/gen-jyuu-gothicx/Bold.css';
 
 @tailwind base;
 @tailwind components;
@@ -36,27 +20,28 @@
  */
 @layer base {
   .theme {
-    --font-heading: var(--font-sans)}
+    --font-heading: var(--font-sans);
+  }
   :root {
-    --font-sans: 'Iansui', 'Noto Sans', sans-serif;
-    --font-heading: 'Iansui', 'Noto Sans', sans-serif;
-    --background: 48 24% 96%;
-    --foreground: 197 8% 34%;
+    --font-sans: 'Gen Jyuu GothicX', sans-serif;
+    --font-heading: var(--font-sans);
+    --background: 48 23.809524% 95.882353%;
+    --foreground: 197.142857 8.139535% 33.72549%;
     --card: 0 0% 100%;
-    --card-foreground: 197 8% 34%;
+    --card-foreground: 197.142857 8.139535% 33.72549%;
     --popover: 0 0% 100%;
-    --popover-foreground: 197 8% 34%;
-    --primary: 170 23% 64%;
-    --primary-foreground: 197 8% 34%;
-    --secondary: 35 23% 78%;
-    --secondary-foreground: 197 8% 34%;
+    --popover-foreground: 197.142857 8.139535% 33.72549%;
+    --primary: 170 22.826087% 63.921569%;
+    --primary-foreground: 197.142857 8.139535% 33.72549%;
+    --secondary: 34.615385 23.214286% 78.039216%;
+    --secondary-foreground: 197.142857 8.139535% 33.72549%;
     --muted: 48 24% 92%;
-    --muted-foreground: 70 3% 46%;
+    --muted-foreground: 70 2.542373% 46.27451%;
     --accent: 35 23% 78%;
     --accent-foreground: 197 8% 34%;
     --destructive: 7 40% 71%;
     --destructive-foreground: 0 0% 100%;
-    --border: 48 20% 90%;
+    --border: 48 20% 90.196078%;
     --input: 48 20% 90%;
     --ring: 170 23% 64%;
     --chart-1: 12 76% 61%;
@@ -67,7 +52,7 @@
     --radius: 0.5rem;
     --radius-sm: calc(var(--radius) - 4px);
     --radius-md: calc(var(--radius) - 2px);
-    --radius-lg: var(--radius)
+    --radius-lg: var(--radius);
   }
   .dark {
     --background: 0 0% 3.9%;
@@ -93,7 +78,7 @@
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%
+    --chart-5: 340 75% 55%;
   }
 }
 
@@ -102,6 +87,7 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background font-sans text-foreground;
+    font-synthesis: none;
   }
 }
