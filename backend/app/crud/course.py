@@ -17,7 +17,7 @@ _MAX_CREATE_ATTEMPTS = 10
 async def create_course(
     db: AsyncSession,
     *,
-    owner_id,
+    created_by,
     name: str,
     description: str | None,
 ) -> Course:
@@ -35,7 +35,7 @@ async def create_course(
             continue
 
         course = Course(
-            owner_id=owner_id,
+            created_by=created_by,
             name=name,
             description=description,
             invitation_code=invitation_code,

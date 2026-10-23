@@ -56,17 +56,17 @@ def test_teacher_can_create_course(
     async def fake_create_course(
         _db,
         *,
-        owner_id,
+        created_by,
         name: str,
         description: str | None,
     ) -> Course:
-        assert owner_id == teacher_id
+        assert created_by == teacher_id
         assert name == "測試課程"
         assert description == "建課測試"
 
         return Course(
             id=uuid.uuid4(),
-            owner_id=owner_id,
+            created_by=created_by,
             name=name,
             description=description,
             invitation_code="A1B2C3D4",
@@ -162,7 +162,7 @@ def test_create_course_retries_invitation_code_collision(
     course = __import__("asyncio").run(
         course_crud.create_course(
             db,
-            owner_id=uuid.uuid4(),
+            created_by=uuid.uuid4(),
             name="碰撞測試",
             description=None,
         )

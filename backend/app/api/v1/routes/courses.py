@@ -32,7 +32,7 @@ async def create_teacher_course(
 
     return await course_crud.create_course(
         db,
-        owner_id=current_user.id,
+        created_by=current_user.id,
         name=payload.name,
         description=payload.description,
     )
