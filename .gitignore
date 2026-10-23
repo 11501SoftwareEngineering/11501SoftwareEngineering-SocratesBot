@@ -77,3 +77,8 @@ Icon?
 .coverage.*
 coverage.xml
 htmlcov/
+
+# Local openapi Make output (make -C backend openapi-export / openapi-site)
+/docs/openapi/
+/backend/openapi.json
+/backend/openapi-site.*/

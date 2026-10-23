@@ -66,6 +66,23 @@ http://localhost:8000/redoc
 確認 PostgreSQL 與 Redis 連線狀態:
 http://localhost:8000/api/v1/health
 
+### GitHub Pages 預覽（靜態 OpenAPI）
+
+CI 會把與本機 `/docs` 同款的靜態 Swagger UI 發到 GitHub Pages（需在 repo Settings → Pages 將 Source 設為 **GitHub Actions**，並視情況保護 `github-pages` Environment）。僅在變更 `backend/**` 或此 workflow 時部署（可用 Actions → API Docs Pages → Run workflow 手動重建）：
+
+- Swagger：`https://<owner>.github.io/<repo>/docs/`
+- Redocly：`https://<owner>.github.io/<repo>/redoc/`
+- 同 repo PR：`https://<owner>.github.io/<repo>/pr-preview/pr-<n>/docs/`（fork PR 不處理）
+
+本機匯出／預覽（檔案預設在 `docs/openapi/`；`openapi-site` 預覽 URL 仍是 `/docs/`）：
+
+```bash
+make -C backend openapi-export               # → docs/openapi/openapi.json
+make -C backend openapi-site                 # 建站並在 :8080 起 server → /docs/
+make -C backend openapi-site PORT=9000       # 改 port
+make -C backend openapi-site OUT=/tmp/site   # 改輸出路徑（此時 URL 為 /）
+```
+
 ## 開發前檢查
 
 在 repo 根目錄執行 `make -C backend fix` 自動修正 backend Python；送出 PR 前執行 `make -C backend check`，確認 Ruff、格式、`db-migration-check`，以及快速後端測試都通過。CI 會分開跑 Ruff 與 `db-migration-check`；pre-commit 在變更 `backend/alembic/` 時也會跑 `db-migration-check`。
@@ -77,6 +94,8 @@ http://localhost:8000/api/v1/health
 新增的 model 需在 `app/models/__init__.py` import，autogenerate 才偵測得到。  
 
 `APP_ENV=development` 時，啟動 FastAPI 會自動 upgrade head。  
+
+請用 Make 目標（內部走 `scripts/run_alembic.py`），**不要**直接跑 `alembic` / `uv run alembic`：Alembic 1.20 用系統 locale 讀 `alembic.ini`，在 Windows CP950 下會因 UTF-8 繁中註解失敗。
 
 ```bash
 make -C backend db-revision message="描述變更"   # autogenerate，產生後請人工檢查

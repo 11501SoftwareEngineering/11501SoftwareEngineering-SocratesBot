@@ -26,6 +26,8 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    # 開發環境自動執行 migration
+    # 正式環境請於部署流程執行: make -C backend db-upgrade
     if settings.APP_ENV == "development":
         await run_migrations()
     yield
