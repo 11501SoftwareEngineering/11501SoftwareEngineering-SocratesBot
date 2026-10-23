@@ -1,12 +1,12 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup lock dev fix check test \
+.PHONY: help setup lock dev fix check test test-integration \
 	db-prod db-prod-down db-dev db-dev-down \
 	db-revision db-upgrade db-downgrade db-current db-heads \
 	db-migration-check openapi-export openapi-site
 
 help:
-	@echo "App: setup, lock, dev, fix, check, test"
+	@echo "App: setup, lock, dev, fix, check, test, test-integration"
 	@echo "Docs: openapi-export, openapi-site [OUT=dir] [PORT=8080]"
 	@echo "Docker: db-dev, db-dev-down, db-prod, db-prod-down"
 	@echo 'Migrations: db-revision message="...", db-upgrade, db-downgrade, db-current, db-heads'
@@ -37,6 +37,9 @@ check:
 
 test:
 	uv run --locked pytest tests/api tests/unit -q
+
+test-integration:
+	uv run --locked pytest tests/integration -q -m integration
 
 db-prod:
 	docker-compose -f ../devops/prod/docker-compose.db.yml up
