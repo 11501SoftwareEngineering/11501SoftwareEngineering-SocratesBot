@@ -35,6 +35,26 @@ pnpm install
 pnpm dev
 ```
 
+請在 `frontend` 目錄執行，並開啟終端機顯示的網址。首頁為公告；課程頁位於 `/student/courses/:courseId`，需要學生登入與既有課程 API。
+
+### Demo 模式（不用後端，用假資料）
+
+```sh
+pnpm dev:mock      # 開發用，打開終端機顯示的網址
+pnpm build:demo    # 打包成可以部署的 Demo 版（dist/）
+```
+
+- 所有 `/api/v1/...` 請求會被瀏覽器裡的假後端（`src/mocks/`，用 MSW）攔截，前端程式完全不用改。
+- 左下角的 **🐞 Debug** 按鈕可以：一鍵切換學生／老師／管理員、讓某組 API 變成空資料／錯誤／很慢／一直載入、新增課程／問題／學生、讓全班完成作答、直接結束對話、新增公告、重置假資料。
+- 假帳號：學生 `s001`～`s012`、老師 `wang` `lin` `chen`（chen 第一次登入要改密碼）、管理員 `admin`，密碼都是 `password123`。
+- 假資料存在瀏覽器的 localStorage，重新整理不會不見。
+- 後端做好之後，用一般的 `pnpm dev` 就會打真的後端；正式版打包（`pnpm build`）不會包含假後端和 Debug 面板。
+- API 規格沒寫、前端先假設的地方，在 `src/api/*.ts` 用 ⚠️ 標起來了，串接時要跟後端核對。
+
+### 公告資料
+
+公告固定讀取 `src/data/announcements.ts`，可直接修改其中的文字與日期，不會發出公告 API 請求。
+
 ### Type-Check, Compile and Minify for Production
 
 ```sh

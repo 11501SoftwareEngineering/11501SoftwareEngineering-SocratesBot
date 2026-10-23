@@ -45,5 +45,5 @@ const modelValue = defineModel<string>()
         props.class,
       )
     "
-  >
+  />
 </template>
