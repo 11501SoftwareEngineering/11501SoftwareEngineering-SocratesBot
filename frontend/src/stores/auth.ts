@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
 import { apiClient } from '@/api/client'
+import { queryClient } from '@/queryClient'
+import router from '@/router'
 
 export type UserRole = 'STUDENT' | 'TEACHER' | 'ADMIN'
 
@@ -15,8 +16,6 @@ export interface User {
 export const useAuthStore = defineStore(
   'auth',
   () => {
-    const router = useRouter()
-
     const token = ref<string | null>(null)
     const user = ref<User | null>(null)
 
@@ -33,7 +32,10 @@ export const useAuthStore = defineStore(
       token.value = null
       user.value = null
       localStorage.removeItem('access_token')
-      router.push('/login')
+      localStorage.removeItem('auth')
+      // Clear queries and mutations, and cancel pending queries before changing accounts.
+      queryClient.clear()
+      return router.replace('/login')
     }
 
     async function fetchCurrentUser() {
@@ -41,7 +43,7 @@ export const useAuthStore = defineStore(
       try {
         const res = await apiClient.get<User>('/users/me')
         user.value = res.data
-      } catch (error) {
+      } catch {
         logout()
       }
     }
@@ -58,5 +60,5 @@ export const useAuthStore = defineStore(
   },
   {
     persist: true,
-  }
+  },
 )

@@ -8,7 +8,7 @@ import LoginView from '../LoginView.vue'
 // 這樣測試的時候完全不會發出真正的網路請求,不需要後端跑起來。
 vi.mock('@/api/auth', () => ({
   authApi: {
-    login: vi.fn(),
+    login: vi.fn<typeof authApi.login>(),
   },
 }))
 

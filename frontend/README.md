@@ -35,6 +35,12 @@ pnpm install
 pnpm dev
 ```
 
+請在 `frontend` 目錄執行，並開啟終端機顯示的網址。首頁為公告；課程頁位於 `/student/courses/:courseId`，需要學生登入與既有課程 API。
+
+### 公告資料
+
+公告固定讀取 `src/data/announcements.ts`，可直接修改其中的文字與日期，不會發出公告 API 請求。
+
 ### Type-Check, Compile and Minify for Production
 
 ```sh
