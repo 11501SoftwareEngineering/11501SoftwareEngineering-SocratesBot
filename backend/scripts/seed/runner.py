@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import Awaitable, Callable, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,9 +40,12 @@ def resolve_packs(seed_packs_env: str | None = None) -> tuple[str, ...]:
     Set → comma-separated list replaces the default set.
     Known packs are always returned in dependency order; ``course_graph``
     without ``auth`` is rejected.
+
+    Reads ``settings.SEED_PACKS`` (``.env`` / process env) unless
+    ``seed_packs_env`` is passed explicitly (tests / callers).
     """
-    raw = seed_packs_env if seed_packs_env is not None else os.environ.get("SEED_PACKS")
-    if raw is None or raw.strip() == "":
+    raw = settings.SEED_PACKS if seed_packs_env is None else seed_packs_env
+    if raw.strip() == "":
         return DEFAULT_PACKS
 
     names = tuple(part.strip() for part in raw.split(",") if part.strip())

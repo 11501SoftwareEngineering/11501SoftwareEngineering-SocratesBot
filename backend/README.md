@@ -55,6 +55,7 @@ make -C backend db-reset CONFIRM=1   # 非互動（腳本用）
 - 邀請碼：`DEVJOIN01`；topic id：`00000000-0000-4000-8000-000000000201`
 - `make seed` 可重複執行（已存在的列會跳過）；改 `config.yaml` 後需**重啟** server
 - 可選：在 `.env` 設 `SEED_DEV_DATA=true`，`make -C backend dev` 啟動時（migration 後）只灌 DB、**不**寫 `config.yaml`；預設 `false`
+- 可選：`SEED_PACKS`（`.env` 或環境變數）用逗號分隔覆寫要跑的 pack；空白／未設 → 預設 `auth,course_graph`。已知：`auth`、`course_graph`（後者必須含 `auth`）。例：`SEED_PACKS=auth`
 
 ## 啟動開發伺服器
 1. 啟動 docker 容器，裡面有 PostgreSQL 和 Redis. 

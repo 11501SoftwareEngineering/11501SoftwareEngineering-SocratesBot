@@ -20,10 +20,24 @@ from scripts.seed.packs import auth as auth_pack
 from scripts.seed.runner import require_development, resolve_packs
 
 
-def test_resolve_packs_default_when_unset() -> None:
+def test_resolve_packs_default_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "SEED_PACKS", "")
     assert resolve_packs(None) == ("auth", "course_graph")
     assert resolve_packs("") == ("auth", "course_graph")
     assert resolve_packs("   ") == ("auth", "course_graph")
+
+
+def test_resolve_packs_reads_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "SEED_PACKS", "auth")
+    assert resolve_packs(None) == ("auth",)
 
 
 def test_resolve_packs_override_single() -> None:

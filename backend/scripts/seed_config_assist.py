@@ -32,8 +32,15 @@ def _load_mapping(path: Path) -> dict:
 
 
 def _write_mapping(path: Path, data: dict) -> None:
+    # default_flow_style=None keeps scalar lists inline ([a, b]), matching
+    # config.yaml.example / README — PyYAML's default dumps them as block lists.
     path.write_text(
-        yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+        yaml.safe_dump(
+            data,
+            allow_unicode=True,
+            sort_keys=False,
+            default_flow_style=None,
+        ),
         encoding="utf-8",
     )
 
