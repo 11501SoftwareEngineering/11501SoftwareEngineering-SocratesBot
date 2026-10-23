@@ -55,7 +55,29 @@ make -C backend db-reset CONFIRM=1   # 非互動（腳本用）
 - 邀請碼：`DEVJOIN01`；topic id：`00000000-0000-4000-8000-000000000201`
 - `make seed` 可重複執行（已存在的列會跳過）；改 `config.yaml` 後需**重啟** server
 - 可選：在 `.env` 設 `SEED_DEV_DATA=true`，`make -C backend dev` 啟動時（migration 後）只灌 DB、**不**寫 `config.yaml`；預設 `false`
-- 可選：`SEED_PACKS`（`.env` 或環境變數）用逗號分隔覆寫要跑的 pack；空白／未設 → 預設 `auth,course_graph`。已知：`auth`、`course_graph`（後者必須含 `auth`）。例：`SEED_PACKS=auth`
+
+### `SEED_PACKS`（可選：只跑部分 seed pack）
+
+Seed 依 **pack** 分段灌資料。平常不設即可；預設會跑完整核心組，等同前端測試資料文件裡的整套 catalog。
+
+| Pack | 灌入內容 |
+|------|----------|
+| `auth` | 三個固定帳號（`dev-student` / `dev-teacher` / `dev-admin`）與共用密碼 |
+| `course_graph` | 示範課程、邀請碼、topic，並把 `dev-student` 加進該課（依賴上面的帳號已存在） |
+
+`SEED_PACKS` 用來**覆寫**這次要跑哪些 pack（逗號分隔、空白會被忽略）。讀取順序與其他設定相同：行程環境變數或 `backend/.env`（經 `settings`）。
+
+- **未設或空字串** → 跑預設 `auth,course_graph`（順序固定：先 `auth` 再 `course_graph`）
+- **有設定** → 只跑列出的 pack；未知名稱會報錯並中止
+- **`course_graph` 必須同時含 `auth`**（否則拒絕）；若你寫 `course_graph,auth`，執行時仍會依依賴排成 `auth` → `course_graph`
+
+適用時機例如：只想重灌帳號、暫時不要動課程圖。對 `make seed`、`make db-reset`，以及 `SEED_DEV_DATA=true` 的 lifespan 灌 DB 都生效（後者一樣不寫 `config.yaml`）。
+
+```bash
+# backend/.env 或匯出到 shell
+SEED_PACKS=auth                 # 只灌帳號
+# SEED_PACKS=auth,course_graph  # 與預設相同（可省略）
+```
 
 ## 啟動開發伺服器
 1. 啟動 docker 容器，裡面有 PostgreSQL 和 Redis. 
