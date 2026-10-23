@@ -98,6 +98,15 @@ async function run(action: () => string) {
   await queryClient.invalidateQueries()
 }
 
+const announcementTitle = ref('')
+const announcementContent = ref('')
+async function handleAddAnnouncement() {
+  await run(() => addAnnouncement(announcementTitle.value, announcementContent.value))
+  announcementTitle.value = ''
+  announcementContent.value = ''
+  if (route.name !== 'Home') await router.push({ name: 'Home' })
+}
+
 async function handleReset() {
   resetAllData()
   resetScenarios()
@@ -298,7 +307,23 @@ const btn =
           >
             直接結束這段對話（學生對話頁）
           </button>
-          <button type="button" :class="btn" @click="run(addAnnouncement)">新增一則公告</button>
+          <fieldset class="space-y-2 rounded-md border border-border p-3">
+            <legend class="px-1 text-xs text-muted-foreground">新增公告</legend>
+            <input
+              v-model="announcementTitle"
+              aria-label="公告標題"
+              placeholder="標題（沒填就用測試標題）"
+              class="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+            <textarea
+              v-model="announcementContent"
+              aria-label="公告內容"
+              rows="3"
+              placeholder="內容（可以換行）"
+              class="w-full resize-y rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+            />
+            <button type="button" :class="btn" @click="handleAddAnnouncement">新增這則公告</button>
+          </fieldset>
           <button type="button" :class="btn" @click="run(clearAnnouncements)">清空公告</button>
           <p class="text-xs text-muted-foreground">
             灰色的按鈕要先進到對應的頁面。假資料存在這個瀏覽器裡，重新整理不會不見。

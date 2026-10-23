@@ -195,16 +195,18 @@ export function addManyConclusions(topicId: string, count = 5) {
   return `已新增 ${fresh.length} 個結論（共 ${total} 個），並把 ${answered} 份作答重新分配`
 }
 
-export function addAnnouncement() {
+/** 新增公告；標題、內容沒填就用預設的測試文字 */
+export function addAnnouncement(title = '', content = '') {
   const now = new Date()
   announcements.unshift({
     id: `debug-${now.getTime()}`,
-    title: `測試公告 ${now.toLocaleTimeString('zh-TW', { hour12: false })}`,
+    title: title.trim() || `測試公告 ${now.toLocaleTimeString('zh-TW', { hour12: false })}`,
     content:
+      content.trim() ||
       '這是用 Debug 面板新增的公告。內容比較長的時候，收合狀態只會顯示第一行，點一下標題可以展開全文。',
     published_at: now.toISOString(),
   })
-  return '已新增一則公告（重新整理後會消失）'
+  return '已新增公告（重新整理後會消失；要永久保留請改 src/data/announcements.ts）'
 }
 
 export function clearAnnouncements() {
