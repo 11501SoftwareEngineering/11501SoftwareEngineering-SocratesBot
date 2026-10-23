@@ -21,19 +21,27 @@ const authStore = useAuthStore()
       <span class="rounded-full bg-background/60 px-2 py-0.5 text-xs text-foreground">
         {{ authStore.userRole }}
       </span>
-      <Button variant="secondary" size="sm" @click="authStore.logout()">
-        登出
-      </Button>
+      <Button variant="secondary" size="sm" @click="authStore.logout()"> 登出 </Button>
     </div>
 
+    <!-- 未登入狀態：註冊與登入切換按鈕 -->
     <div v-else class="flex items-center gap-1.5">
-      <!-- TODO(前端組): 目前還沒有 /register 頁面與路由，先用一般按鈕佔位，
-           等註冊頁做好之後，改成 <Button as-child><RouterLink to="/register">。 -->
-      <Button variant="ghost" size="sm">
-        註冊
+      <Button as-child variant="ghost" size="sm">
+        <RouterLink
+          to="/register"
+          active-class="bg-secondary text-secondary-foreground"
+          class="text-primary-foreground hover:bg-secondary/50"
+        >
+          註冊
+        </RouterLink>
       </Button>
-      <Button as-child variant="secondary" size="sm">
-        <RouterLink to="/login">
+
+      <Button as-child variant="ghost" size="sm">
+        <RouterLink
+          to="/login"
+          active-class="bg-secondary text-secondary-foreground"
+          class="text-primary-foreground hover:bg-secondary/50"
+        >
           登入
         </RouterLink>
       </Button>

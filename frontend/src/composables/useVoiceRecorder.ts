@@ -62,5 +62,12 @@ export function useVoiceRecorder() {
     return null
   }
 
-  return { isRecording, isTranscribing, errorMessage, startRecording, stopRecording, toggleRecording }
+  return {
+    isRecording,
+    isTranscribing,
+    errorMessage,
+    startRecording,
+    stopRecording,
+    toggleRecording,
+  }
 }

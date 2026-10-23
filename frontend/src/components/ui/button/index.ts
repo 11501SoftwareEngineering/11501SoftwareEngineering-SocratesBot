@@ -33,21 +33,28 @@ export const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-primary text-primary-foreground data-[size=lg]:border-border data-[size=lg]:shadow-elevated hover:brightness-90',
-        outline: 'border-border bg-background hover:bg-muted hover:text-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 aria-expanded:bg-muted aria-expanded:text-foreground shadow-xs',
-        secondary: 'bg-secondary text-secondary-foreground data-[size=lg]:border-border data-[size=lg]:shadow-elevated hover:brightness-90',
+        default:
+          'bg-primary text-primary-foreground data-[size=lg]:border-border data-[size=lg]:shadow-elevated hover:brightness-90',
+        outline:
+          'border-border bg-background hover:bg-muted hover:text-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50 aria-expanded:bg-muted aria-expanded:text-foreground shadow-xs',
+        secondary:
+          'bg-secondary text-secondary-foreground data-[size=lg]:border-border data-[size=lg]:shadow-elevated hover:brightness-90',
         ghost: 'text-foreground hover:text-muted-foreground aria-expanded:text-foreground',
-        destructive: 'bg-destructive/10 hover:bg-destructive/20 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/20 text-destructive focus-visible:border-destructive/40 dark:hover:bg-destructive/30',
+        destructive:
+          'bg-destructive/10 hover:bg-destructive/20 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/20 text-destructive focus-visible:border-destructive/40 dark:hover:bg-destructive/30',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
-        'default': 'h-9 gap-1.5 px-2.5 in-data-[slot=button-group]:rounded-md has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
-        'xs': 'h-6 gap-1 rounded-[min(var(--radius-md),8px)] px-2 text-xs in-data-[slot=button-group]:rounded-md has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*=size-])]:size-3',
-        'sm': 'h-auto min-h-8 gap-1 rounded-[min(var(--radius-md),10px)] px-4 py-1.5 text-header in-data-[slot=button-group]:rounded-md has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5',
-        'lg': 'h-auto min-h-11 gap-2 px-8 py-4 text-h1-title has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4',
-        'icon': 'size-9',
-        'icon-xs': 'size-6 rounded-[min(var(--radius-md),8px)] in-data-[slot=button-group]:rounded-md [&_svg:not([class*=size-])]:size-3',
-        'icon-sm': 'size-8 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-md',
+        default:
+          'h-9 gap-1.5 px-2.5 in-data-[slot=button-group]:rounded-md has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
+        xs: 'h-6 gap-1 rounded-[min(var(--radius-md),8px)] px-2 text-xs in-data-[slot=button-group]:rounded-md has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*=size-])]:size-3',
+        sm: 'h-auto min-h-8 gap-1 rounded-[min(var(--radius-md),10px)] px-4 py-1.5 text-header in-data-[slot=button-group]:rounded-md has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5',
+        lg: 'h-auto min-h-11 gap-2 px-8 py-4 text-h1-title has-data-[icon=inline-end]:pr-4 has-data-[icon=inline-start]:pl-4',
+        icon: 'size-9',
+        'icon-xs':
+          'size-6 rounded-[min(var(--radius-md),8px)] in-data-[slot=button-group]:rounded-md [&_svg:not([class*=size-])]:size-3',
+        'icon-sm':
+          'size-8 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-md',
         'icon-lg': 'size-10',
       },
     },
