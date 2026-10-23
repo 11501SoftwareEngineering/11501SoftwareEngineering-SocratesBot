@@ -67,3 +67,23 @@ class CourseMembership(Base):
         server_default=func.now(),
         nullable=False,
     )
+    # Null = active member; set on student leave / teacher remove (soft delete).
+    left_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class CourseInstructor(Base):
+    __tablename__ = "course_instructors"
+
+    course_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("courses.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    teacher_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )

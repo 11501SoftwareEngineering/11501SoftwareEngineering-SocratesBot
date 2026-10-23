@@ -8,8 +8,9 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.api.deps import require_super_admin
+from app.api.deps import require_student_user, require_super_admin, require_teacher
 from app.core.authz import is_reserved_super_admin_account, is_super_admin
+from app.core.enums import UserRole
 from app.core.yaml_config import yaml_config
 
 
@@ -33,3 +34,25 @@ def test_require_super_admin(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(HTTPException) as exc:
         asyncio.run(require_super_admin(SimpleNamespace(account_id="peon")))  # type: ignore[arg-type]
     assert exc.value.status_code == 403
+
+
+def test_require_teacher_rejects_user() -> None:
+    teacher = SimpleNamespace(role=UserRole.TEACHER.value)
+    assert asyncio.run(require_teacher(teacher)) is teacher  # type: ignore[arg-type]
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(require_teacher(SimpleNamespace(role=UserRole.USER.value)))  # type: ignore[arg-type]
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "Teacher privileges required"
+
+
+def test_require_student_user_rejects_teacher() -> None:
+    student = SimpleNamespace(role=UserRole.USER.value)
+    assert asyncio.run(require_student_user(student)) is student  # type: ignore[arg-type]
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            require_student_user(SimpleNamespace(role=UserRole.TEACHER.value))  # type: ignore[arg-type]
+        )
+    assert exc.value.status_code == 403
+    assert exc.value.detail == "Student privileges required"

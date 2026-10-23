@@ -26,12 +26,16 @@ from app.models.user import User
 __all__ = [
     "ActiveUser",
     "CurrentUser",
+    "StudentUser",
     "SuperAdminUser",
+    "TeacherUser",
     "get_current_active_user",
     "get_current_user",
     "get_db",
     "get_redis",
+    "require_student_user",
     "require_super_admin",
+    "require_teacher",
 ]
 
 
@@ -127,6 +131,32 @@ async def require_super_admin(
     return current_user
 
 
+async def require_teacher(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> User:
+    """Require ``UserRole.TEACHER`` for teacher-prefixed course APIs."""
+    if current_user.role != UserRole.TEACHER.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Teacher privileges required",
+        )
+    return current_user
+
+
+async def require_student_user(
+    current_user: Annotated[User, Depends(get_current_active_user)],
+) -> User:
+    """Require ``UserRole.USER`` for student-prefixed course APIs."""
+    if current_user.role != UserRole.USER.value:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Student privileges required",
+        )
+    return current_user
+
+
 CurrentUser = Annotated[User, Depends(get_current_user)]
 ActiveUser = Annotated[User, Depends(get_current_active_user)]
 SuperAdminUser = Annotated[User, Depends(require_super_admin)]
+TeacherUser = Annotated[User, Depends(require_teacher)]
+StudentUser = Annotated[User, Depends(require_student_user)]

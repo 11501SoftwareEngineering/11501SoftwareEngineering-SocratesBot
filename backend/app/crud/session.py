@@ -27,6 +27,7 @@ async def is_course_member(
     statement = select(CourseMembership.user_id).where(
         CourseMembership.user_id == user_id,
         CourseMembership.course_id == course_id,
+        CourseMembership.left_at.is_(None),
     )
     return await db.scalar(statement) is not None
 
