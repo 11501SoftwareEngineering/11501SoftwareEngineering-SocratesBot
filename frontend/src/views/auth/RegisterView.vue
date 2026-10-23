@@ -19,7 +19,7 @@ const isSubmitting = ref(false)
 async function handleRegister() {
   errorMessage.value = ''
   successMessage.value = ''
-  
+
   // 檢查密碼長度
   if (password.value.length < 8) {
     errorMessage.value = '密碼至少需要 8 個字'
@@ -34,12 +34,12 @@ async function handleRegister() {
 
   isSubmitting.value = true
   try {
-    await authApi.register({ 
-      account: account.value, 
+    await authApi.register({
+      account: account.value,
       password: password.value,
-      name: name.value
+      name: name.value,
     })
-    
+
     // 顯示成功訊息並延遲跳轉回登入頁
     successMessage.value = '註冊成功，請登入'
     setTimeout(() => {
@@ -55,8 +55,9 @@ async function handleRegister() {
 
 <template>
   <div class="flex items-center justify-center bg-background px-4 py-12">
-    <div class="w-full max-w-[500px] flex flex-col items-center gap-8 rounded-2xl border border-border bg-card px-10 py-12 shadow-elevated">
-      
+    <div
+      class="w-full max-w-[500px] flex flex-col items-center gap-8 rounded-2xl border border-border bg-card px-10 py-12 shadow-elevated"
+    >
       <!-- Logo 區 -->
       <div class="flex justify-center w-full">
         <img src="@/assets/logo.svg" alt="Logo" class="h-32 w-32 object-contain" />
@@ -64,30 +65,74 @@ async function handleRegister() {
 
       <!-- 註冊表單 -->
       <form class="flex w-full flex-col gap-6" @submit.prevent="handleRegister">
-        
         <!-- 帳號名稱欄位 -->
         <div class="flex items-center gap-4">
-          <label for="register-account" class="w-24 shrink-0 font-heading text-lg font-medium text-foreground text-right">帳號名稱：</label>
-          <Input id="register-account" v-model="account" class="flex-1 shadow-input" placeholder="請輸入帳號" autocomplete="username" required />
+          <label
+            for="register-account"
+            class="w-24 shrink-0 font-heading text-lg font-medium text-foreground text-right"
+            >帳號名稱：</label
+          >
+          <Input
+            id="register-account"
+            v-model="account"
+            class="flex-1 shadow-input"
+            placeholder="請輸入帳號"
+            autocomplete="username"
+            required
+          />
         </div>
 
         <!-- 姓名欄位 -->
         <div class="flex items-center gap-4">
-          <label for="register-name" class="w-24 shrink-0 font-heading text-lg font-medium text-foreground text-right">姓名：</label>
-          <Input id="register-name" v-model="name" class="flex-1 shadow-input" placeholder="請輸入真實姓名" required />
+          <label
+            for="register-name"
+            class="w-24 shrink-0 font-heading text-lg font-medium text-foreground text-right"
+            >姓名：</label
+          >
+          <Input
+            id="register-name"
+            v-model="name"
+            class="flex-1 shadow-input"
+            placeholder="請輸入真實姓名"
+            required
+          />
         </div>
 
         <!-- 建立密碼欄位 -->
         <div class="flex items-center gap-4">
-          <label for="register-password" class="w-24 shrink-0 font-heading text-lg font-medium text-foreground text-right">建立密碼：</label>
-          <Input id="register-password" v-model="password" type="password" class="flex-1 shadow-input" placeholder="至少 8 個字" autocomplete="new-password" required />
+          <label
+            for="register-password"
+            class="w-24 shrink-0 font-heading text-lg font-medium text-foreground text-right"
+            >建立密碼：</label
+          >
+          <Input
+            id="register-password"
+            v-model="password"
+            type="password"
+            class="flex-1 shadow-input"
+            placeholder="至少 8 個字"
+            autocomplete="new-password"
+            required
+          />
         </div>
 
         <!-- 確認密碼欄位 -->
         <div class="flex flex-col gap-1">
           <div class="flex items-center gap-4">
-            <label for="register-confirm-password" class="w-24 shrink-0 font-heading text-lg font-medium text-foreground text-right">確認密碼：</label>
-            <Input id="register-confirm-password" v-model="confirmPassword" type="password" class="flex-1 shadow-input" placeholder="請再次輸入密碼" autocomplete="new-password" required />
+            <label
+              for="register-confirm-password"
+              class="w-24 shrink-0 font-heading text-lg font-medium text-foreground text-right"
+              >確認密碼：</label
+            >
+            <Input
+              id="register-confirm-password"
+              v-model="confirmPassword"
+              type="password"
+              class="flex-1 shadow-input"
+              placeholder="請再次輸入密碼"
+              autocomplete="new-password"
+              required
+            />
           </div>
           <p v-if="errorMessage" class="w-full text-right text-sm text-destructive pr-1 pt-1">
             {{ errorMessage }}
@@ -107,7 +152,6 @@ async function handleRegister() {
             {{ isSubmitting ? '註冊中...' : '註冊' }}
           </Button>
         </div>
-
       </form>
     </div>
   </div>

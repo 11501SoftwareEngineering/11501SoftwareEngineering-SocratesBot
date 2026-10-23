@@ -20,19 +20,19 @@ async function handleLogin() {
   isSubmitting.value = true
   try {
     const res = await authApi.login({ account: account.value, password: password.value })
-    
+
     // Get token from headers and remove 'Bearer '
     const token = res.headers.authorization?.replace('Bearer ', '') || ''
-    
+
     // Set auth with the exact fields returned by the backend
     authStore.setAuth(token, {
       account: res.data.account,
       name: res.data.name,
       role: res.data.role,
       preferred_language: res.data.preferred_language,
-      must_change_password: res.data.must_change_password
+      must_change_password: res.data.must_change_password,
     })
-    
+
     if (res.data.role === 'STUDENT') router.push('/student/courses')
     else if (res.data.role === 'TEACHER') router.push('/teacher/dashboard')
     else router.push('/admin/users')
@@ -47,8 +47,9 @@ async function handleLogin() {
 
 <template>
   <div class="flex items-center justify-center bg-background px-4 py-12">
-    <div class="w-full max-w-[500px] flex flex-col items-center gap-8 rounded-2xl border border-border bg-card px-10 py-12 shadow-elevated">
-      
+    <div
+      class="w-full max-w-[500px] flex flex-col items-center gap-8 rounded-2xl border border-border bg-card px-10 py-12 shadow-elevated"
+    >
       <!-- Logo 區 -->
       <div class="flex justify-center w-full">
         <img src="@/assets/logo.svg" alt="Logo" class="h-32 w-32 object-contain" />
@@ -56,18 +57,38 @@ async function handleLogin() {
 
       <!-- 登入表單 -->
       <form class="flex w-full flex-col gap-6" @submit.prevent="handleLogin">
-        
         <!-- 帳號欄位 -->
         <div class="flex items-center gap-4">
-          <label for="login-account" class="w-16 shrink-0 font-heading text-lg font-medium text-foreground text-right">帳號：</label>
-          <Input id="login-account" v-model="account" class="flex-1 shadow-input" placeholder="請輸入帳號" autocomplete="username" />
+          <label
+            for="login-account"
+            class="w-16 shrink-0 font-heading text-lg font-medium text-foreground text-right"
+            >帳號：</label
+          >
+          <Input
+            id="login-account"
+            v-model="account"
+            class="flex-1 shadow-input"
+            placeholder="請輸入帳號"
+            autocomplete="username"
+          />
         </div>
 
         <!-- 密碼欄位 -->
         <div class="flex flex-col gap-1">
           <div class="flex items-center gap-4">
-            <label for="login-password" class="w-16 shrink-0 font-heading text-lg font-medium text-foreground text-right">密碼：</label>
-            <Input id="login-password" v-model="password" type="password" class="flex-1 shadow-input" placeholder="請輸入密碼" autocomplete="current-password" />
+            <label
+              for="login-password"
+              class="w-16 shrink-0 font-heading text-lg font-medium text-foreground text-right"
+              >密碼：</label
+            >
+            <Input
+              id="login-password"
+              v-model="password"
+              type="password"
+              class="flex-1 shadow-input"
+              placeholder="請輸入密碼"
+              autocomplete="current-password"
+            />
           </div>
           <p v-if="errorMessage" class="w-full text-right text-sm text-destructive pr-1">
             {{ errorMessage }}
@@ -77,7 +98,12 @@ async function handleLogin() {
         <!-- 按鈕與忘記密碼區 -->
         <div class="flex w-full flex-col items-end gap-2 pt-4">
           <div class="flex items-center gap-4">
-            <Button type="button" variant="ghost" class="text-muted-foreground hover:text-primary" @click="router.push('/register')">
+            <Button
+              type="button"
+              variant="ghost"
+              class="text-muted-foreground hover:text-primary"
+              @click="router.push('/register')"
+            >
               註冊
             </Button>
             <Button type="submit" size="lg" class="w-24" :disabled="isSubmitting">
@@ -88,7 +114,6 @@ async function handleLogin() {
             忘記密碼?
           </button>
         </div>
-
       </form>
     </div>
   </div>
