@@ -109,8 +109,11 @@ def test_config_assist_noninteractive_auto_appends(
         stdout=StringIO(),
     )
     assert status == "appended"
-    data = yaml.safe_load(config.read_text(encoding="utf-8"))
+    text = config.read_text(encoding="utf-8")
+    data = yaml.safe_load(text)
     assert data["SUPER_ADMIN_ACCOUNTS"] == ["alice", ACCOUNT_ADMIN.account_id]
+    # Match config.yaml.example flow style, not PyYAML's default block list.
+    assert f"SUPER_ADMIN_ACCOUNTS: [alice, {ACCOUNT_ADMIN.account_id}]" in text
 
 
 def test_config_assist_decline_leaves_file(

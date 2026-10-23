@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str]
     # Opt-in: after migrations in development lifespan, load core seed packs.
     SEED_DEV_DATA: bool = False
+    # Optional comma-separated seed pack names (empty → default core packs).
+    SEED_PACKS: str = ""
 
     # Database (PostgreSQL)
     POSTGRES_USER: Annotated[SecretStr, Field(min_length=1)]
