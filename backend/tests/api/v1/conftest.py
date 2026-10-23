@@ -5,9 +5,11 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.enums import UserRole
@@ -214,3 +216,15 @@ def bearer_from(response) -> str:
     assert value is not None
     assert value.lower().startswith("bearer ")
     return value
+
+
+@pytest.fixture
+def course_route_db(auth_client: TestClient) -> AsyncMock:
+    """Override get_db with an AsyncMock session for course route tests."""
+    db = AsyncMock(spec=AsyncSession)
+
+    async def provide_db() -> AsyncMock:
+        return db
+
+    auth_client.app.dependency_overrides[get_db] = provide_db
+    return db
