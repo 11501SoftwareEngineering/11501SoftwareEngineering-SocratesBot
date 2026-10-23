@@ -77,7 +77,10 @@ async function loginAs(account: string) {
     await router.push({ name: HOME_ROUTE[user.role] })
     message.value = `已切換成 ${user.name}`
   } catch (err) {
-    message.value = `登入失敗：${getApiErrorMessage(err)}（密碼改過了的話，先重置假資料）`
+    const reason = getApiErrorMessage(err)
+    message.value = reason.startsWith('無法連線')
+      ? '假後端沒有接到請求，請按 F5 重新整理頁面（不要用 Ctrl+F5）'
+      : `登入失敗：${reason}（密碼改過了的話，先重置假資料）`
   } finally {
     busy.value = false
   }

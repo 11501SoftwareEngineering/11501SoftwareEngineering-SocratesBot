@@ -17,6 +17,18 @@ async function enableMocking() {
     onUnhandledRequest: 'bypass',
     quiet: true,
   })
+  // 按 Ctrl+F5（強制重新整理）時，瀏覽器會讓這一頁跳過 Service Worker，
+  // 假後端就攔不到請求（會出現「無法連線到伺服器」）。這時自動再重新整理一次。
+  if (!navigator.serviceWorker.controller) {
+    const key = 'msw-reloaded'
+    if (!sessionStorage.getItem(key)) {
+      sessionStorage.setItem(key, '1')
+      location.reload()
+      return new Promise<never>(() => {})
+    }
+  } else {
+    sessionStorage.removeItem('msw-reloaded')
+  }
 }
 
 async function bootstrap() {
