@@ -5,6 +5,7 @@ import { authApi } from '@/api/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuthStore } from '@/stores/auth'
+import { getApiErrorMessage } from '@/lib/utils'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -19,17 +20,25 @@ async function handleLogin() {
   isSubmitting.value = true
   try {
     const res = await authApi.login({ account: account.value, password: password.value })
-    authStore.setAuth(res.data.access_token, {
-      id: res.data.account,
-      email: res.data.account,
+    
+    // Get token from headers and remove 'Bearer '
+    const token = res.headers.authorization?.replace('Bearer ', '') || ''
+    
+    // Set auth with the exact fields returned by the backend
+    authStore.setAuth(token, {
+      account: res.data.account,
       name: res.data.name,
       role: res.data.role,
+      preferred_language: res.data.preferred_language,
+      must_change_password: res.data.must_change_password
     })
+    
     if (res.data.role === 'STUDENT') router.push('/student/courses')
     else if (res.data.role === 'TEACHER') router.push('/teacher/dashboard')
     else router.push('/admin/users')
   } catch (err) {
-    errorMessage.value = '帳號或密碼錯誤'
+    // Use the utility function for unified error messages
+    errorMessage.value = getApiErrorMessage(err)
   } finally {
     isSubmitting.value = false
   }
@@ -37,12 +46,12 @@ async function handleLogin() {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-background px-4">
+  <div class="flex items-center justify-center bg-background px-4 py-12">
     <div class="w-full max-w-[500px] flex flex-col items-center gap-8 rounded-2xl border border-border bg-card px-10 py-12 shadow-elevated">
       
       <!-- Logo 區 -->
       <div class="flex justify-center w-full">
-        <img src="@/assets/LOGO.svg" alt="Logo" class="h-32 w-32 object-contain" />
+        <img src="@/assets/logo.svg" alt="Logo" class="h-32 w-32 object-contain" />
       </div>
 
       <!-- 登入表單 -->
@@ -68,11 +77,10 @@ async function handleLogin() {
         <!-- 按鈕與忘記密碼區 -->
         <div class="flex w-full flex-col items-end gap-2 pt-4">
           <div class="flex items-center gap-4">
-            <!-- 加入 @click 觸發切換至註冊頁面 -->
             <Button type="button" variant="ghost" class="text-muted-foreground hover:text-primary" @click="router.push('/register')">
               註冊
             </Button>
-            <Button type="submit" size="lg" class="w-24 bg-primary text-primary-foreground shadow-elevated hover:opacity-90" :disabled="isSubmitting">
+            <Button type="submit" size="lg" class="w-24" :disabled="isSubmitting">
               {{ isSubmitting ? '登入中...' : '登入' }}
             </Button>
           </div>

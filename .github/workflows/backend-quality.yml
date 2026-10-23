@@ -1,0 +1,103 @@
+name: Backend Quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-quality-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - name: Install Python 3.13 and locked dependencies
+        working-directory: backend
+        run: |
+          uv python install 3.13
+          uv sync --locked --no-build
+
+      - name: Check lint and formatting
+        working-directory: backend
+        run: |
+          uv run --locked --no-build ruff check .
+          uv run --locked --no-build ruff format --check .
+
+      - name: Check Alembic migrations align with main
+        working-directory: backend
+        run: make db-migration-check
+
+      - name: Run backend unit tests with coverage
+        working-directory: backend
+        run: |
+          uv run --locked --no-build pytest tests/api tests/unit tests/migration_check -q --cov=app --cov-report=
+          {
+            echo "## Backend unit test coverage"
+            echo ""
+            echo "Includes \`tests/api\`, \`tests/unit\`, and \`tests/migration_check\`."
+            echo ""
+            uv run --locked --no-build coverage report --format=markdown
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run backend integration tests with coverage
+        working-directory: backend
+        env:
+          APP_ENV: development
+          APP_NAME: test
+          APP_HOST: 127.0.0.1
+          APP_PORT: "8000"
+          CORS_ORIGINS: "[]"
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: "5432"
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
+          REDIS_HOST: 127.0.0.1
+          REDIS_PORT: "6379"
+          REDIS_URL: redis://127.0.0.1:6379/0
+          JWT_SECRET_KEY: ci-only-jwt-secret-key-for-backend-tests
+          JWT_ALGORITHM: HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES: "15"
+          OPENAI_API_KEY: ""
+          ANTHROPIC_API_KEY: ""
+        run: |
+          uv run --locked --no-build pytest tests/integration -q --cov=app --cov-report=
+          {
+            echo "## Backend integration test coverage"
+            echo ""
+            echo "Includes \`tests/integration\` only."
+            echo ""
+            uv run --locked --no-build coverage report --format=markdown
+          } >> "$GITHUB_STEP_SUMMARY"

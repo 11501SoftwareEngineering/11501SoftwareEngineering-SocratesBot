@@ -15,7 +15,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - db-network
+      - db-network-prod
     ports:
       - 127.0.0.1:5432:5432
     secrets:
@@ -37,7 +37,7 @@ services:
 
   redis:
     image: redis:8-alpine
-    container_name: squicrates-redis
+    container_name: squicrates-redis-prod
     restart: always
     volumes:
       - redis_data_prod:/data
@@ -47,7 +47,7 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - db-network
+      - db-network-prod
     ports:
       - 127.0.0.1:6379:6379
     cap_drop:
@@ -62,7 +62,7 @@ volumes:
 
 
 networks:
-  db-network:
+  db-network-prod:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"

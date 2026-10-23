@@ -1,0 +1,71 @@
+backend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - backend/**
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - frontend/**
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/tests/**'
+          - '**/test_*.py'
+          - '**/*.test.*'
+          - '**/*.spec.*'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - docs/**
+          - '**/*.md'
+          - README*
+          - LICENSE*
+          - .github/ISSUE_TEMPLATE/**
+          - .github/PULL_REQUEST_TEMPLATE/**
+          - .github/PULL_REQUEST_TEMPLATE.md
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - .pre-commit-config.yaml
+          - scripts/**
+          - Makefile
+          - backend/Makefile
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - backend/pyproject.toml
+          - backend/uv.lock
+          - frontend/package.json
+          - frontend/package-lock.json
+          - frontend/pnpm-lock.yaml
+          - frontend/yarn.lock
+
+database:
+  - changed-files:
+      - any-glob-to-any-file:
+          - backend/alembic/**
+          - devops/prod/docker-compose.db.yml
+          - devops/**/*.sql
+
+devops:
+  - changed-files:
+      - any-glob-to-any-file:
+          - devops/**
+          - '**/Dockerfile*'
+          - '**/docker-compose*.yml'
+          - '**/compose*.yml'
+
+security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .gitleaks.toml
+          - .github/codeql/**
+          - .github/workflows/quality-gates.yml
+          - scripts/gitleaks-staged.sh
+          - .sonarcloud.properties

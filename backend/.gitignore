@@ -27,24 +27,3 @@ wheels/
 venv/
 ENV/
 env/
-
-# Local environment and generated files
-.env
-.env.local
-.env.*.local
-.env.db
-!.env.example
-*.log
-*.tmp
-*.zip
-*.tar
-*.gz
-*.o
-*.a
-*.dll
-
-# Local editor settings
-.vscode/
-.idea/
-*.swp
-*.swo
