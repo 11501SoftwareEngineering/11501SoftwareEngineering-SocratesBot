@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 
 from app.core.api_paths import path_is_exempt
 from app.core.auth_policies import PASSWORD_CHANGE_EXEMPT_PATHS
+from app.core.enums import UserRole
 from app.core.yaml_config import yaml_config
 from app.models.user import User
 
@@ -11,6 +12,18 @@ from app.models.user import User
 def is_super_admin(current_user: User) -> bool:
     """Return whether the user is elevated via config, not API role."""
     return current_user.account_id in yaml_config.SUPER_ADMIN_ACCOUNTS
+
+
+def api_role(current_user: User) -> list[UserRole]:
+    """Return roles exposed on login / ``/users/me`` (not the JWT claim).
+
+    Config-elevated accounts return ``[SUPERADMIN, <db role>]`` (e.g.
+    ``[SUPERADMIN, USER]``); otherwise ``[<db role>]``.
+    """
+    db_role = UserRole(current_user.role)
+    if is_super_admin(current_user):
+        return [UserRole.SUPERADMIN, db_role]
+    return [db_role]
 
 
 def is_reserved_super_admin_account(account_id: str) -> bool:

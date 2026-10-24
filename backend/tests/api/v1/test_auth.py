@@ -50,7 +50,7 @@ def test_register_login_and_me(auth_client: TestClient) -> None:
     assert "access_token" not in token_body
     assert token_body["must_change_password"] is False
     assert token_body["preferred_language"] == "zh-TW"
-    assert token_body["role"] == "USER"
+    assert token_body["role"] == ["USER"]
     assert "access_token" not in auth_client.cookies
     assert REFRESH_COOKIE in auth_client.cookies
     assert CSRF_COOKIE in auth_client.cookies
@@ -64,7 +64,7 @@ def test_register_login_and_me(auth_client: TestClient) -> None:
     assert me.json() == {
         "account": "alice",
         "name": "Alice",
-        "role": "USER",
+        "role": ["USER"],
         "preferred_language": "zh-TW",
         "must_change_password": False,
     }
