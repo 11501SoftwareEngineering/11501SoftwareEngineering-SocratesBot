@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:python3.14-trixie-slim
+FROM ghcr.io/astral-sh/uv:0.13.5-python3.13-trixie-slim
 
 WORKDIR /app
 
@@ -8,9 +8,12 @@ ENV PYTHONUNBUFFERED=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
+# Refresh OS CA store (Debian ca-certificates) on every image build.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+    && apt-get upgrade -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml uv.lock ./
