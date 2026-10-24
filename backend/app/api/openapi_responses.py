@@ -379,3 +379,39 @@ TEACHER_COURSE_TOPIC_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
         "Course not found",
     ),
 }
+
+STUDENT_COURSE_TOPIC_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_examples(
+        "List denied",
+        {
+            "not_student": "Student privileges required",
+            "not_member": "Course membership required",
+        },
+    ),
+    404: json_detail_example(
+        "Course not found",
+        "Course not found",
+    ),
+}
+
+STUDENT_TOPIC_EXPLANATION_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_examples(
+        "Read denied",
+        {
+            "not_student": "Student privileges required",
+            "not_member": "Course membership required",
+        },
+    ),
+    404: json_detail_example(
+        "Topic not found",
+        "Topic not found",
+    ),
+}
