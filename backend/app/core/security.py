@@ -23,7 +23,7 @@ def generate_opaque_token() -> str:
 
 def generate_initial_password() -> str:
     """Return a high-entropy initial password (URL-safe, >= 8 chars)."""
-    # token_urlsafe(12) → 16 chars; fits Register/Login password max 128.
+    # token_urlsafe(12) returns 16 characters; fits password max 128.
     return token_urlsafe(12)
 
 
@@ -52,7 +52,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         hashed_password: Stored hash from ``hash_password``.
 
     Returns:
-        ``True`` if the password matches; otherwise ``False``.
+        ``True`` if the plaintext matches; otherwise ``False``.
     """
     return password_hash.verify(plain_password, hashed_password)
 
