@@ -10,8 +10,10 @@ from app.schemas.session_privacy import (
     UpdateSessionPrivacyRequest,
     UpdateSessionPrivacyResponse,
 )
+from app.schemas.session_result import SessionResultResponse
 from app.services import session as session_service
 from app.services import session_privacy as session_privacy_service
+from app.services import session_result as session_result_service
 
 router = APIRouter(prefix="/student", tags=["student-sessions"])
 
@@ -46,4 +48,21 @@ async def update_student_session_privacy(
         current_user.id,
         sessionId,
         payload.is_anonymous,
+    )
+
+
+@router.get(
+    "/sessions/{sessionId}/result",
+    response_model=SessionResultResponse,
+)
+async def get_student_session_result(
+    sessionId: UUID,
+    current_user: ActiveUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SessionResultResponse:
+    """Return the authenticated student's completed session identifiers."""
+    return await session_result_service.get_student_session_result(
+        db,
+        current_user.id,
+        sessionId,
     )
