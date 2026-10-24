@@ -1,21 +1,15 @@
-from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import SessionStatus
-from app.schemas.session_result import SessionResultResponse
-
-
-@dataclass(frozen=True)
-class SessionResultData:
-    id: UUID
-    topic_id: UUID
-    user_id: UUID
-    status: SessionStatus
-    is_anonymous: bool
-    conclusion: str | None
+from app.crud.session_result import SQLAlchemySessionResultStore
+from app.schemas.session_result import (
+    SessionResultData,
+    SessionResultResponse,
+)
 
 
 class SessionResultStore(Protocol):
@@ -50,15 +44,21 @@ async def get_session_result(
             detail="Session is not completed",
         )
 
-    if session.conclusion is None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Session result is not available",
-        )
-
     return SessionResultResponse(
         session_id=session.id,
         topic_id=session.topic_id,
-        conclusion=session.conclusion,
-        is_anonymous=session.is_anonymous,
+    )
+
+
+async def get_student_session_result(
+    db: AsyncSession,
+    current_user_id: UUID,
+    session_id: UUID,
+) -> SessionResultResponse:
+    store = SQLAlchemySessionResultStore(db)
+
+    return await get_session_result(
+        store=store,
+        session_id=session_id,
+        current_user_id=current_user_id,
     )

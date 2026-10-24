@@ -16,15 +16,12 @@ class FakeSessionResultStore:
         return self.sessions.get(session_id)
 
 
-@pytest.mark.parametrize("is_anonymous", [True, False])
-def test_owner_can_get_completed_session_result(is_anonymous: bool) -> None:
+def test_owner_can_get_completed_session_result() -> None:
     session = SessionResultData(
         id=uuid4(),
         topic_id=uuid4(),
         user_id=uuid4(),
         status=SessionStatus.COMPLETED,
-        is_anonymous=is_anonymous,
-        conclusion="支持在明確規範下使用 AI",
     )
     store = FakeSessionResultStore({session.id: session})
 
@@ -36,10 +33,10 @@ def test_owner_can_get_completed_session_result(is_anonymous: bool) -> None:
         )
     )
 
-    assert result.session_id == session.id
-    assert result.topic_id == session.topic_id
-    assert result.conclusion == session.conclusion
-    assert result.is_anonymous is is_anonymous
+    assert result.model_dump(mode="json") == {
+        "session_id": str(session.id),
+        "topic_id": str(session.topic_id),
+    }
 
 
 @pytest.mark.parametrize(
@@ -54,8 +51,6 @@ def test_non_owner_cannot_get_session_result(
         topic_id=uuid4(),
         user_id=uuid4(),
         status=session_status,
-        is_anonymous=False,
-        conclusion=None,
     )
     store = FakeSessionResultStore({session.id: session})
 
@@ -94,8 +89,6 @@ def test_owner_cannot_get_in_progress_session_result() -> None:
         topic_id=uuid4(),
         user_id=uuid4(),
         status=SessionStatus.IN_PROGRESS,
-        is_anonymous=False,
-        conclusion=None,
     )
     store = FakeSessionResultStore({session.id: session})
 
@@ -110,27 +103,3 @@ def test_owner_cannot_get_in_progress_session_result() -> None:
 
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == "Session is not completed"
-
-
-def test_completed_session_without_conclusion_returns_409() -> None:
-    session = SessionResultData(
-        id=uuid4(),
-        topic_id=uuid4(),
-        user_id=uuid4(),
-        status=SessionStatus.COMPLETED,
-        is_anonymous=False,
-        conclusion=None,
-    )
-    store = FakeSessionResultStore({session.id: session})
-
-    with pytest.raises(HTTPException) as exc_info:
-        asyncio.run(
-            get_session_result(
-                store=store,
-                session_id=session.id,
-                current_user_id=session.user_id,
-            )
-        )
-
-    assert exc_info.value.status_code == 409
-    assert exc_info.value.detail == "Session result is not available"
