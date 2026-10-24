@@ -134,6 +134,15 @@ def auth_client(client: TestClient, store: FakeStore, monkeypatch: pytest.Monkey
         current_user.password.must_change_password = must_change_password
         return current_user
 
+    async def fake_update_preferred_language(
+        _db,
+        current_user: FakeUser,
+        *,
+        code: str,
+    ):
+        current_user.languages = [FakeUserLanguage(language=FakeLanguage(code=code))]
+        return current_user
+
     async def fake_list_users_by_role(_db, role: UserRole):
         return [u for u in store.users_by_id.values() if u.role == role.value]
 
@@ -150,6 +159,9 @@ def auth_client(client: TestClient, store: FakeStore, monkeypatch: pytest.Monkey
     monkeypatch.setattr("app.crud.user.get_user_by_id", fake_get_user_by_id)
     monkeypatch.setattr("app.crud.user.create_user", fake_create_user)
     monkeypatch.setattr("app.crud.user.update_password", fake_update_password)
+    monkeypatch.setattr(
+        "app.crud.user.update_preferred_language", fake_update_preferred_language
+    )
     monkeypatch.setattr("app.crud.user.list_users_by_role", fake_list_users_by_role)
     monkeypatch.setattr("app.crud.user.delete_teacher", fake_delete_teacher)
     monkeypatch.setattr(
