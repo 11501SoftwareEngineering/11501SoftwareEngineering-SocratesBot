@@ -19,6 +19,7 @@ from app.crud import user as user_crud
 from app.models.course import CourseMembership
 from app.schemas.course import CourseStudentAddRequest, StudentJoinRequest
 from app.services import courses as courses_service
+from app.services.course_invites import generate_invite_code
 
 
 @pytest.mark.integration
@@ -43,7 +44,7 @@ def test_soft_leave_blocks_invite_rejoin_teacher_can_readd() -> None:
                 password="password1",
                 role=UserRole.USER,
             )
-            invite = f"S{suffix[:7]}".upper()
+            invite = generate_invite_code()
             course = await course_crud.create_course_with_instructor(
                 db,
                 name="Soft Course",
