@@ -7,6 +7,7 @@ from app.api.v1.routes import (
     student_courses,
     student_sessions,
     teacher_courses,
+    teacher_topics,
     users,
 )
 
@@ -18,3 +19,4 @@ api_router.include_router(admin_teachers.router)
 api_router.include_router(student_sessions.router)
 api_router.include_router(student_courses.router)
 api_router.include_router(teacher_courses.router)
+api_router.include_router(teacher_topics.router)
