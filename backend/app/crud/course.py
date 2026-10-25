@@ -144,12 +144,9 @@ async def add_student_membership(
     db: AsyncSession, *, course_id: UUID, user_id: UUID
 ) -> CourseMembership:
     """Insert a STUDENT membership, or clear ``left_at`` (teacher re-enroll)."""
-    statement = select(CourseMembership).where(
-        CourseMembership.course_id == course_id,
-        CourseMembership.user_id == user_id,
-        CourseMembership.role == MEMBERSHIP_STUDENT,
+    existing = await get_student_membership_row(
+        db, course_id=course_id, user_id=user_id
     )
-    existing = await db.scalar(statement)
     now = datetime.now(UTC)
     if existing is None:
         membership = CourseMembership(
