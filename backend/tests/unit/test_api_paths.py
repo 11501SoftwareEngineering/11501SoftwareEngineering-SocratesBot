@@ -18,4 +18,5 @@ def test_csrf_protected_includes_logout() -> None:
 def test_password_change_exempt_paths() -> None:
     assert path_is_exempt("/api/v1/users/me", PASSWORD_CHANGE_EXEMPT_PATHS)
     assert path_is_exempt("/api/v1/users/me/", PASSWORD_CHANGE_EXEMPT_PATHS)
+    assert path_is_exempt("/api/v1/users/me/preferences", PASSWORD_CHANGE_EXEMPT_PATHS)
     assert not path_is_exempt("/api/v1/admin/teachers", PASSWORD_CHANGE_EXEMPT_PATHS)

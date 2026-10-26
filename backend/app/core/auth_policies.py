@@ -6,6 +6,7 @@ from app.core.api_paths import api_v1, normalize_path
 PASSWORD_CHANGE_EXEMPT_PATHS = frozenset(
     {
         normalize_path(api_v1("users", "me")),
+        normalize_path(api_v1("users", "me", "preferences")),
         normalize_path(api_v1("auth", "password")),
         normalize_path(api_v1("auth", "logout")),
     }

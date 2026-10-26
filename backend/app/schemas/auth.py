@@ -1,9 +1,7 @@
 from pydantic import BaseModel, Field
 
 from app.core.enums import UserRole
-
-# Keep in sync with Settings.DEFAULT_LANGUAGE_CODE (config default, not env).
-_DEFAULT_LANGUAGE_CODE = "zh-TW"
+from app.core.locales import DEFAULT_LANGUAGE_CODE as _DEFAULT_LANGUAGE_CODE
 
 
 class RegisterRequest(BaseModel):

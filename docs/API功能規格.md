@@ -53,8 +53,9 @@
 - 輸入資料: 語言設定
 - 成功回應: 偏好語言, 回應訊息
 - 錯誤:
-    - 語言代碼無效
-    - 未登入或憑證過期
+    - 未登入或憑證過期 (401) — `{"detail":"Not authenticated or token expired"}`
+    - 語言代碼無效 (400) — `{"detail":"Invalid language code"}`（僅接受 `zh-TW` / `en` / `es`）
+    - 請求驗證失敗 (422) — 例如 `preferred_language` 缺漏或過短
 
 ### 送出 Bug 回報
 - 功能說明: 使用者送出系統問題回報
