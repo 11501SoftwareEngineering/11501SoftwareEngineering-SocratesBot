@@ -109,6 +109,17 @@ PASSWORD_CHANGE_RESPONSES: dict[int | str, dict[str, Any]] = {
     ),
 }
 
+STUDENT_COURSE_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Student privileges required",
+        "Student privileges required",
+    ),
+}
+
 STUDENT_COURSE_JOIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: json_detail_examples(
         "Join rejected",
@@ -150,6 +161,17 @@ STUDENT_COURSE_LEAVE_RESPONSES: dict[int | str, dict[str, Any]] = {
     403: json_detail_example(
         "Student privileges required",
         "Student privileges required",
+    ),
+}
+
+TEACHER_COURSE_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Teacher privileges required",
+        "Teacher privileges required",
     ),
 }
 

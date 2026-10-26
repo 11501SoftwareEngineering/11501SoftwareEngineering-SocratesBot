@@ -10,6 +10,7 @@ from app.api.deps import TeacherUser, get_db
 from app.api.openapi_responses import (
     TEACHER_COURSE_CREATE_RESPONSES,
     TEACHER_COURSE_DELETE_RESPONSES,
+    TEACHER_COURSE_LIST_RESPONSES,
 )
 from app.schemas.course import (
     CourseCreateRequest,
@@ -21,7 +22,11 @@ from app.services import courses as courses_service
 router = APIRouter(prefix="/teacher/courses", tags=["teacher-courses"])
 
 
-@router.get("", response_model=list[TeacherCourseListItem])
+@router.get(
+    "",
+    response_model=list[TeacherCourseListItem],
+    responses=TEACHER_COURSE_LIST_RESPONSES,
+)
 async def list_courses(
     current_user: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
