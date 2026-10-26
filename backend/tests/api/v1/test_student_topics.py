@@ -170,7 +170,7 @@ def test_list_course_topics_non_member_forbidden(
     list_mock.assert_not_awaited()
 
 
-def test_topic_explanation_returns_title_and_description(
+def test_topic_explanation_returns_title_background_and_key_terms(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -191,7 +191,8 @@ def test_topic_explanation_returns_title_and_description(
     assert response.json() == {
         "topic_id": str(topic.id),
         "title": "T1",
-        "description": "D1",
+        "background": "D1",
+        "key_terms": [],
     }
     member_mock.assert_awaited_once_with(
         course_route_db, user_id=student.id, course_id=topic.course_id

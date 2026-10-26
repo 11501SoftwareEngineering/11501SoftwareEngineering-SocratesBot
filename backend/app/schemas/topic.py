@@ -70,4 +70,5 @@ class StudentCourseTopicsResponse(BaseModel):
 class TopicExplanationResponse(BaseModel):
     topic_id: UUID = Field(examples=[_EXAMPLE_TOPIC_ID])
     title: str = Field(examples=[_EXAMPLE_TITLE])
-    description: str | None = Field(default=None, examples=[_EXAMPLE_DESCRIPTION])
+    background: str | None = Field(default=None, examples=[_EXAMPLE_DESCRIPTION])
+    key_terms: list[str] = Field(default_factory=list, examples=[[]])
