@@ -12,7 +12,7 @@ from app.api.openapi_responses import (
     STUDENT_TOPIC_EXPLANATION_RESPONSES,
 )
 from app.schemas.topic import StudentCourseTopicsResponse, TopicExplanationResponse
-from app.services import student_topics as student_topics_service
+from app.services import topics as topics_service
 
 router = APIRouter(prefix="/student", tags=["student-topics"])
 
@@ -28,9 +28,7 @@ async def list_course_topics(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> StudentCourseTopicsResponse:
     """List a joined course's topics with the student's session state."""
-    return await student_topics_service.list_student_course_topics(
-        db, current_user, courseId
-    )
+    return await topics_service.list_student_course_topics(db, current_user, courseId)
 
 
 @router.get(
@@ -44,4 +42,4 @@ async def get_topic_explanation(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TopicExplanationResponse:
     """Return a topic's background (title and description only for now)."""
-    return await student_topics_service.get_topic_explanation(db, current_user, topicId)
+    return await topics_service.get_topic_explanation(db, current_user, topicId)
