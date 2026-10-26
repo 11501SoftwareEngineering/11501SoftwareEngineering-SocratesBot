@@ -7,7 +7,7 @@ export interface Course {
   name: string
   invite_code: string
   teacher_name: string
-  in_progress_session_count: number
+  active_topic_count: number
 }
 
 export interface Topic {

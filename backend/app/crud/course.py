@@ -73,7 +73,11 @@ async def is_course_instructor(
 async def list_courses_for_instructor(
     db: AsyncSession, teacher_id: UUID
 ) -> list[InstructorCourseRow]:
-    """List instructed courses with counts in one query (scalar subqueries)."""
+    """List instructed courses with counts in one query (scalar subqueries).
+
+    ``topic_count`` is the total number of topics in the course (not gated on
+    session status).
+    """
     student_count = (
         select(func.count())
         .select_from(CourseMembership)

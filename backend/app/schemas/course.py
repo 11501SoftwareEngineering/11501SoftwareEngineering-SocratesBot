@@ -53,7 +53,7 @@ class StudentCourseListItem(BaseModel):
     name: str = Field(examples=["Software Engineering"])
     invite_code: str = Field(examples=[_EXAMPLE_INVITE])
     teacher_name: str = Field(examples=["Teacher One"])
-    in_progress_session_count: int = Field(
+    active_topic_count: int = Field(
         examples=[2],
         description="Caller's IN_PROGRESS sessions in this course",
     )
