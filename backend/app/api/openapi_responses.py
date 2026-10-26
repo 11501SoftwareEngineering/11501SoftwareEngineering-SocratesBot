@@ -108,3 +108,170 @@ PASSWORD_CHANGE_RESPONSES: dict[int | str, dict[str, Any]] = {
         ],
     ),
 }
+
+STUDENT_COURSE_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Student privileges required",
+        "Student privileges required",
+    ),
+}
+
+STUDENT_COURSE_JOIN_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_examples(
+        "Join rejected",
+        {
+            "invalid_invite_format": "Invalid invitation code format",
+            "already_a_member": "Already a member of this course",
+            "cannot_rejoin_after_leaving": "Cannot rejoin after leaving this course",
+        },
+    ),
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Student privileges required",
+        "Student privileges required",
+    ),
+    404: json_detail_example(
+        "Course not found for this invitation code",
+        "Course not found for this invitation code",
+    ),
+    422: json_detail_example(
+        "Request validation failed",
+        [
+            {
+                "type": "string_too_short",
+                "loc": ["body", "invite_code"],
+                "msg": "String should have at least 8 characters",
+            }
+        ],
+    ),
+}
+
+STUDENT_COURSE_LEAVE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Student privileges required",
+        "Student privileges required",
+    ),
+}
+
+TEACHER_COURSE_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Teacher privileges required",
+        "Teacher privileges required",
+    ),
+}
+
+TEACHER_COURSE_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Teacher privileges required",
+        "Teacher privileges required",
+    ),
+    422: json_detail_example(
+        "Request validation failed",
+        [
+            {
+                "type": "string_too_short",
+                "loc": ["body", "name"],
+                "msg": "String should have at least 1 character",
+            }
+        ],
+    ),
+    503: json_detail_example(
+        "Could not allocate invitation code; retry later",
+        "Could not allocate invitation code; retry later",
+    ),
+}
+
+TEACHER_COURSE_STUDENT_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Teacher privileges required",
+        "Teacher privileges required",
+    ),
+    404: json_detail_example(
+        "Course not found",
+        "Course not found",
+    ),
+}
+
+TEACHER_COURSE_STUDENT_ADD_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_example(
+        "Student is already in this course",
+        "Student is already in this course",
+    ),
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Teacher privileges required",
+        "Teacher privileges required",
+    ),
+    404: json_detail_examples(
+        "Course or student not found",
+        {
+            "course_not_found": "Course not found",
+            "student_not_found": "Student not found",
+        },
+    ),
+    422: json_detail_example(
+        "Request validation failed",
+        [
+            {
+                "type": "string_too_short",
+                "loc": ["body", "account_id"],
+                "msg": "String should have at least 1 character",
+            }
+        ],
+    ),
+}
+
+TEACHER_COURSE_DELETE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_examples(
+        "Delete denied",
+        {
+            "not_teacher": "Teacher privileges required",
+            "not_creator": "Only the course creator can delete this course",
+        },
+    ),
+}
+
+TEACHER_COURSE_STUDENT_REMOVE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Teacher privileges required",
+        "Teacher privileges required",
+    ),
+    404: json_detail_example(
+        "Course not found",
+        "Course not found",
+    ),
+}
