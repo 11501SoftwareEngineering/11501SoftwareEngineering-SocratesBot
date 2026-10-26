@@ -10,6 +10,7 @@ from app.api.deps import StudentUser, get_db
 from app.api.openapi_responses import (
     STUDENT_COURSE_JOIN_RESPONSES,
     STUDENT_COURSE_LEAVE_RESPONSES,
+    STUDENT_COURSE_LIST_RESPONSES,
 )
 from app.schemas.course import (
     StudentCourseListItem,
@@ -21,7 +22,11 @@ from app.services import courses as courses_service
 router = APIRouter(prefix="/student/courses", tags=["student-courses"])
 
 
-@router.get("", response_model=list[StudentCourseListItem])
+@router.get(
+    "",
+    response_model=list[StudentCourseListItem],
+    responses=STUDENT_COURSE_LIST_RESPONSES,
+)
 async def list_courses(
     current_user: StudentUser,
     db: Annotated[AsyncSession, Depends(get_db)],
