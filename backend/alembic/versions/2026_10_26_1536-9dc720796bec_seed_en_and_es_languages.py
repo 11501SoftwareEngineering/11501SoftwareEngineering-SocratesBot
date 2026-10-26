@@ -1,8 +1,8 @@
 """seed en and es languages
 
-Revision ID: 435b736952a7
-Revises: 22032e425647
-Create Date: 2026-10-23 00:19:13.343655+08:00
+Revision ID: 9dc720796bec
+Revises: 4ec9e46f727b
+Create Date: 2026-10-26 15:36:57.997843+08:00
 
 """
 
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "435b736952a7"
-down_revision: str | Sequence[str] | None = "22032e425647"
+revision: str = "9dc720796bec"
+down_revision: str | Sequence[str] | None = "4ec9e46f727b"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
