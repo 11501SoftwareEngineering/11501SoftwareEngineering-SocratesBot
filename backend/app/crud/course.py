@@ -17,9 +17,9 @@ from app.models.user import User
 
 MEMBERSHIP_STUDENT = "STUDENT"
 
-# (course, student_count, topic_count)
+# (course, student_count, topic_count) — topic_count is total topics in the course
 InstructorCourseRow = tuple[Course, int, int]
-# (course, teacher_name, active_topic_count)
+# (course, teacher_name, in_progress_session_count)
 StudentCourseRow = tuple[Course, str, int]
 
 
@@ -85,13 +85,9 @@ async def list_courses_for_instructor(
         .scalar_subquery()
     )
     topic_count = (
-        select(func.count(func.distinct(Topic.id)))
+        select(func.count())
         .select_from(Topic)
-        .join(Session, Session.topic_id == Topic.id)
-        .where(
-            Topic.course_id == Course.id,
-            Session.status == SessionStatus.IN_PROGRESS.value,
-        )
+        .where(Topic.course_id == Course.id)
         .correlate(Course)
         .scalar_subquery()
     )
@@ -171,9 +167,9 @@ async def add_student_membership(
 async def list_student_courses(
     db: AsyncSession, user_id: UUID
 ) -> list[StudentCourseRow]:
-    """List joined courses with teacher name and session count in one query."""
+    """List joined courses with teacher name and in-progress session count."""
     creator = aliased(User)
-    active_topic_count = (
+    in_progress_session_count = (
         select(func.count())
         .select_from(Session)
         .join(Topic, Topic.id == Session.topic_id)
@@ -186,7 +182,7 @@ async def list_student_courses(
         .scalar_subquery()
     )
     statement = (
-        select(Course, creator.name, active_topic_count)
+        select(Course, creator.name, in_progress_session_count)
         .join(
             CourseMembership,
             CourseMembership.course_id == Course.id,
@@ -200,8 +196,8 @@ async def list_student_courses(
     )
     result = await db.execute(statement)
     return [
-        (course, teacher_name or "", int(active or 0))
-        for course, teacher_name, active in result.all()
+        (course, teacher_name or "", int(sessions or 0))
+        for course, teacher_name, sessions in result.all()
     ]
 
 

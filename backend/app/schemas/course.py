@@ -34,8 +34,14 @@ class TeacherCourseListItem(BaseModel):
     name: str = Field(examples=["Software Engineering"])
     description: str | None = Field(default=None, examples=["Fall 2026"])
     invite_code: str = Field(examples=[_EXAMPLE_INVITE])
-    student_count: int = Field(examples=[12])
-    topic_count: int = Field(examples=[2])
+    student_count: int = Field(
+        examples=[12],
+        description="Active STUDENT memberships in the course",
+    )
+    topic_count: int = Field(
+        examples=[2],
+        description="Total topics in the course",
+    )
 
 
 class MessageResponse(BaseModel):
@@ -47,7 +53,10 @@ class StudentCourseListItem(BaseModel):
     name: str = Field(examples=["Software Engineering"])
     invite_code: str = Field(examples=[_EXAMPLE_INVITE])
     teacher_name: str = Field(examples=["Teacher One"])
-    active_topic_count: int = Field(examples=[2])
+    in_progress_session_count: int = Field(
+        examples=[2],
+        description="Caller's IN_PROGRESS sessions in this course",
+    )
 
 
 class StudentJoinRequest(BaseModel):

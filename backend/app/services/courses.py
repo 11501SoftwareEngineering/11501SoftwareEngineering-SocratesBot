@@ -150,9 +150,9 @@ async def list_student_courses(
             name=course.name,
             invite_code=course.invitation_code,
             teacher_name=teacher_name,
-            active_topic_count=active_topic_count,
+            in_progress_session_count=session_count,
         )
-        for course, teacher_name, active_topic_count in rows
+        for course, teacher_name, session_count in rows
     ]
 
 
