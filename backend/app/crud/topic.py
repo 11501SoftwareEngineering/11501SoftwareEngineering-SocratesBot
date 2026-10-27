@@ -13,6 +13,8 @@ from app.models.topic import Topic
 
 # (topic, completed_session_count)
 TopicWithCompletedCountRow = tuple[Topic, int]
+# (topic, session_status, session_id); session columns are None if not started
+TopicWithUserSessionRow = tuple[Topic, str | None, UUID | None]
 
 
 async def create_topic(
@@ -77,3 +79,23 @@ async def list_topics_with_completed_count(
     )
     result = await db.execute(statement)
     return [(topic, int(count or 0)) for topic, count in result.all()]
+
+
+async def list_topics_with_user_session(
+    db: AsyncSession, *, course_id: UUID, user_id: UUID
+) -> list[TopicWithUserSessionRow]:
+    """List a course's topics joined with ``user_id``'s session, if any."""
+    statement = (
+        select(Topic, Session.status, Session.id)
+        .outerjoin(
+            Session,
+            (Session.topic_id == Topic.id) & (Session.user_id == user_id),
+        )
+        .where(Topic.course_id == course_id)
+        .order_by(Topic.created_at.asc(), Topic.id.asc())
+    )
+    result = await db.execute(statement)
+    return [
+        (topic, session_status, session_id)
+        for topic, session_status, session_id in result.all()
+    ]
