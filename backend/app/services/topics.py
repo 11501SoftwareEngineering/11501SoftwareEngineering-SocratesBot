@@ -114,12 +114,17 @@ async def update_topic(
 
 
 async def delete_topic(db: AsyncSession, teacher: User, topic_id: UUID) -> None:
-    """Hard-delete a topic; its sessions go via ``ON DELETE CASCADE``.
+    """Hard-delete a topic; idempotent when already gone (no 404).
+
+    Sessions go via ``ON DELETE CASCADE``.
 
     Raises:
-        HTTPException: 404 if the topic is missing; 403 if not an instructor.
+        HTTPException: 403 if the topic exists and teacher is not an instructor.
     """
-    topic = await _get_instructed_topic(db, teacher, topic_id)
+    topic = await topic_crud.get_topic_by_id(db, topic_id)
+    if topic is None:
+        return
+    await _require_course_instructor(db, teacher, topic.course_id)
     try:
         await topic_crud.delete_topic(db, topic)
         await db.commit()

@@ -77,5 +77,5 @@ async def delete_topic(
     current_user: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    """Delete a topic by id (204); course instructors only."""
+    """Delete a topic by id (204). Idempotent if already gone; instructors only."""
     await topics_service.delete_topic(db, current_user, topicId)

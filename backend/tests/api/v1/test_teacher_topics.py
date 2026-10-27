@@ -257,36 +257,51 @@ def test_update_topic_empty_title_rejected(
     assert response.status_code == 422
 
 
-@pytest.mark.parametrize(
-    ("method", "kwargs"),
-    [
-        ("put", {"json": {"title": "T"}}),
-        ("delete", {}),
-    ],
-)
-def test_missing_topic_returns_404(
+def test_update_missing_topic_returns_404(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
-    method: str,
-    kwargs: dict,
 ) -> None:
     bearer, _ = _login(auth_client, store)
     monkeypatch.setattr(topic_crud, "get_topic_by_id", AsyncMock(return_value=None))
     instructor_mock = AsyncMock()
     monkeypatch.setattr(course_crud, "is_course_instructor", instructor_mock)
 
-    response = auth_client.request(
-        method,
+    response = auth_client.put(
         f"/api/v1/teacher/topics/{uuid4()}",
         headers={"Authorization": bearer},
-        **kwargs,
+        json={"title": "T"},
     )
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Topic not found"
     instructor_mock.assert_not_awaited()
+    course_route_db.commit.assert_not_awaited()
+
+
+def test_delete_missing_topic_is_idempotent(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store)
+    monkeypatch.setattr(topic_crud, "get_topic_by_id", AsyncMock(return_value=None))
+    instructor_mock = AsyncMock()
+    monkeypatch.setattr(course_crud, "is_course_instructor", instructor_mock)
+    delete_mock = AsyncMock()
+    monkeypatch.setattr(topic_crud, "delete_topic", delete_mock)
+
+    response = auth_client.delete(
+        f"/api/v1/teacher/topics/{uuid4()}",
+        headers={"Authorization": bearer},
+    )
+
+    assert response.status_code == 204
+    assert response.content == b""
+    instructor_mock.assert_not_awaited()
+    delete_mock.assert_not_awaited()
     course_route_db.commit.assert_not_awaited()
 
 

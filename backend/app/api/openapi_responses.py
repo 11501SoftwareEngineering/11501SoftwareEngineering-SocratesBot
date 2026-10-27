@@ -360,10 +360,6 @@ TEACHER_TOPIC_DELETE_RESPONSES: dict[int | str, dict[str, Any]] = {
             "not_instructor": "Course instructor required",
         },
     ),
-    404: json_detail_example(
-        "Topic not found",
-        "Topic not found",
-    ),
 }
 
 TEACHER_COURSE_TOPIC_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
