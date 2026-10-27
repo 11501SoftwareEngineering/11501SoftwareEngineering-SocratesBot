@@ -30,7 +30,7 @@ jobs:
   api-docs:
     # Pin to full commit SHA (Sonar / supply-chain); comment is the release tag.
     # Bumped after release of fastAPI-docs-pages v1.1.1.
-    uses: dytsou/fastAPI-docs-pages/.github/workflows/publish.yml@7372d59c6c8862b63882c5066d7860944b066534 # v1.1.1
+    uses: dytsou/fastAPI-docs-pages/.github/workflows/publish.yml@37be297c463a31f2b9b985747e6c05fee116be2e # v1.1.2
     with:
       # publish.yml installs uv via SHA-pinned astral-sh/setup-uv.
       setup-command: |
