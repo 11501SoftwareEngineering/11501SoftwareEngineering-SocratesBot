@@ -5,9 +5,9 @@ from uuid import uuid4
 import pytest
 
 from app.core.enums import SessionStatus
-from app.crud.session_result import SQLAlchemySessionResultStore
+from app.crud.session import SQLAlchemySessionStore
 from app.models.session import Session
-from app.services.session_result import get_student_session_result
+from app.services.session import get_student_session_result
 from tests.integration.test_session_crud import (
     create_course_and_topic,
     create_student,
@@ -20,7 +20,7 @@ pytestmark = pytest.mark.integration
 def test_missing_session_returns_none() -> None:
     async def run() -> None:
         async with session_test_db() as db:
-            store = SQLAlchemySessionResultStore(db)
+            store = SQLAlchemySessionStore(db)
 
             result = await store.get_session(uuid4())
 
@@ -61,7 +61,7 @@ def test_get_session_returns_stored_values(
 
             db.expunge_all()
 
-            store = SQLAlchemySessionResultStore(db)
+            store = SQLAlchemySessionStore(db)
             result = await store.get_session(session_id)
 
             assert result is not None

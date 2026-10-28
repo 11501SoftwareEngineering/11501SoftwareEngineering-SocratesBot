@@ -3,7 +3,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.session_privacy import (
+from app.schemas.session import (
     UpdateSessionPrivacyRequest,
     UpdateSessionPrivacyResponse,
 )
