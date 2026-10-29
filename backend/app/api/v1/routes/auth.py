@@ -1,10 +1,12 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import ActiveUser, get_db
+from app.api.deps import ActiveUser, get_db, get_redis
 from app.api.openapi_responses import (
+    LOGIN_RESPONSES,
     PASSWORD_CHANGE_RESPONSES,
     REGISTER_RESPONSES,
 )
@@ -18,6 +20,13 @@ from app.schemas.auth import (
     RegisterResponse,
 )
 from app.services import auth as auth_service
+
+
+def _client_ip(request: Request) -> str:
+    if request.client is None:
+        return "unknown"
+    return request.client.host
+
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -46,26 +55,36 @@ async def register(
     return await auth_service.register_user(db, payload)
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login", response_model=LoginResponse, responses=LOGIN_RESPONSES)
 async def login(
+    request: Request,
     payload: LoginRequest,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ) -> LoginResponse:
     """Log in; set refresh cookies and Bearer access header.
 
     Args:
+        request: Used for client IP rate limiting.
         payload: Login body (account, password).
         response: Used for Set-Cookie and ``Authorization``.
         db: Async SQLAlchemy session (injected).
+        redis: Redis client for login failure counters.
 
     Returns:
         ``LoginResponse`` profile fields (tokens are not in JSON).
 
     Raises:
-        HTTPException: 401 if credentials are invalid.
+        HTTPException: 429 if rate-limited; 401 if credentials are invalid.
     """
-    return await auth_service.login_user(db, payload, response)
+    return await auth_service.login_user(
+        db,
+        payload,
+        response,
+        redis=redis,
+        client_ip=_client_ip(request),
+    )
 
 
 @router.post("/logout", response_model=OkResponse)

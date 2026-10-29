@@ -12,9 +12,11 @@ from fastapi.testclient import TestClient
 from app.api import deps as deps_mod
 from app.core.auth_policies import (
     CURRENT_PASSWORD_INCORRECT_DETAIL,
+    LOGIN_RATE_LIMITED_DETAIL,
     NEW_PASSWORD_SAME_AS_CURRENT_DETAIL,
     PASSWORD_CHANGE_EXEMPT_PATHS,
 )
+from app.core.config import settings
 from app.core.cookies import CSRF_COOKIE, REFRESH_COOKIE
 from app.core.enums import UserRole
 from app.core.exceptions import AuthRequired
@@ -102,6 +104,84 @@ def test_login_wrong_password(auth_client: TestClient) -> None:
         json={"account": "carol", "password": "wrong-pass"},
     )
     assert response.status_code == 401
+
+
+def test_login_rate_limited_after_failures(auth_client: TestClient) -> None:
+    auth_client.post(
+        "/api/v1/auth/register",
+        json={"account": "limited", "password": "password1", "name": "Limited"},
+    )
+    for _ in range(settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS):
+        failed = auth_client.post(
+            "/api/v1/auth/login",
+            json={"account": "limited", "password": "wrong-pass"},
+        )
+        assert failed.status_code == 401
+
+    blocked = auth_client.post(
+        "/api/v1/auth/login",
+        json={"account": "limited", "password": "password1"},
+    )
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == LOGIN_RATE_LIMITED_DETAIL
+    assert blocked.headers.get("Retry-After") == str(
+        settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS
+    )
+
+
+def test_login_success_clears_account_failure_counter(auth_client: TestClient) -> None:
+    auth_client.post(
+        "/api/v1/auth/register",
+        json={"account": "resetme", "password": "password1", "name": "Reset"},
+    )
+    for _ in range(settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS - 1):
+        assert (
+            auth_client.post(
+                "/api/v1/auth/login",
+                json={"account": "resetme", "password": "wrong-pass"},
+            ).status_code
+            == 401
+        )
+    ok = auth_client.post(
+        "/api/v1/auth/login",
+        json={"account": "resetme", "password": "password1"},
+    )
+    assert ok.status_code == 200
+    # Account key cleared; success also undoes this attempt's IP bump so login works.
+    assert (
+        auth_client.post(
+            "/api/v1/auth/login",
+            json={"account": "resetme", "password": "password1"},
+        ).status_code
+        == 200
+    )
+
+
+def test_login_ip_rate_limit_across_accounts(auth_client: TestClient) -> None:
+    """Per-IP limit must fire even when each account is under its own cap."""
+    max_attempts = settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS
+    for i in range(max_attempts):
+        account = f"spray{i}"
+        auth_client.post(
+            "/api/v1/auth/register",
+            json={"account": account, "password": "password1", "name": account},
+        )
+        failed = auth_client.post(
+            "/api/v1/auth/login",
+            json={"account": account, "password": "wrong-pass"},
+        )
+        assert failed.status_code == 401
+
+    auth_client.post(
+        "/api/v1/auth/register",
+        json={"account": "sprayx", "password": "password1", "name": "SprayX"},
+    )
+    blocked = auth_client.post(
+        "/api/v1/auth/login",
+        json={"account": "sprayx", "password": "password1"},
+    )
+    assert blocked.status_code == 429
+    assert blocked.json()["detail"] == LOGIN_RATE_LIMITED_DETAIL
 
 
 def test_me_requires_auth(auth_client: TestClient) -> None:
