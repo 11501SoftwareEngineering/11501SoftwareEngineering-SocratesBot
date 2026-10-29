@@ -9,10 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.core.auth_policies import AUTH_UNAUTHORIZED_DETAIL
-from app.core.enums import UserRole
+from app.core.enums import SessionStatus, UserRole
 from app.core.security import create_access_token
-from app.crud import session_privacy as privacy_crud
-from app.services.session_privacy import SessionPrivacyData
+from app.crud import session as privacy_crud
+from app.schemas.session import SessionData
 from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
 
 
@@ -54,9 +54,11 @@ def test_owner_updates_privacy_and_commits(
     assert login.status_code == 200
     privacy_route_db.reset_mock()
 
-    session = SessionPrivacyData(
+    session = SessionData(
         id=uuid4(),
+        topic_id=uuid4(),
         user_id=student.id,
+        status=SessionStatus.IN_PROGRESS,
         is_anonymous=not is_anonymous,
     )
     monkeypatch.setattr(
@@ -116,9 +118,11 @@ def test_privacy_errors_do_not_update_and_roll_back(
 
     session_id = uuid4()
     session = (
-        SessionPrivacyData(
+        SessionData(
             id=session_id,
+            topic_id=uuid4(),
             user_id=uuid4(),
+            status=SessionStatus.IN_PROGRESS,
             is_anonymous=False,
         )
         if session_exists

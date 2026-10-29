@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 from app.core.auth_policies import AUTH_UNAUTHORIZED_DETAIL
 from app.core.enums import SessionStatus, UserRole
 from app.core.security import create_access_token
-from app.crud import session_result as result_crud
-from app.schemas.session_result import SessionResultData
+from app.crud import session as result_crud
+from app.schemas.session import SessionData
 from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
 
 
@@ -26,11 +26,12 @@ def test_owner_can_get_completed_session_result(
     )
     assert login.status_code == 200
 
-    session = SessionResultData(
+    session = SessionData(
         id=uuid4(),
         topic_id=uuid4(),
         user_id=student.id,
         status=SessionStatus.COMPLETED,
+        is_anonymous=False,
     )
     monkeypatch.setattr(
         result_crud,
@@ -113,11 +114,12 @@ def test_non_owner_cannot_get_session_result(
     )
     assert login.status_code == 200
 
-    session = SessionResultData(
+    session = SessionData(
         id=uuid4(),
         topic_id=uuid4(),
         user_id=uuid4(),
         status=session_status,
+        is_anonymous=False,
     )
     monkeypatch.setattr(
         result_crud,
@@ -147,11 +149,12 @@ def test_owner_cannot_get_in_progress_session_result(
     )
     assert login.status_code == 200
 
-    session = SessionResultData(
+    session = SessionData(
         id=uuid4(),
         topic_id=uuid4(),
         user_id=student.id,
         status=SessionStatus.IN_PROGRESS,
+        is_anonymous=False,
     )
     monkeypatch.setattr(
         result_crud,

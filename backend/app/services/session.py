@@ -6,8 +6,14 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.enums import SessionStatus
 from app.crud.session import SQLAlchemySessionStore
-from app.schemas.session import CreateSessionResponse
+from app.schemas.session import (
+    CreateSessionResponse,
+    SessionData,
+    SessionResultResponse,
+    UpdateSessionPrivacyResponse,
+)
 
 
 class TopicNotFoundError(Exception):
@@ -95,3 +101,134 @@ async def create_or_enter_student_session(
         raise
 
     return result
+
+
+class SessionReadStore(Protocol):
+    async def get_session(
+        self,
+        session_id: UUID,
+    ) -> SessionData | None:
+        """Return session data, or None when the session does not exist."""
+        ...
+
+
+async def _get_owned_session(
+    *,
+    store: SessionReadStore,
+    session_id: UUID,
+    current_user_id: UUID,
+) -> SessionData:
+    session = await store.get_session(session_id)
+
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
+        )
+
+    if session.user_id != current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not the session owner",
+        )
+
+    return session
+
+
+class SessionPrivacyStore(SessionReadStore, Protocol):
+    async def set_is_anonymous(
+        self,
+        session_id: UUID,
+        is_anonymous: bool,
+    ) -> SessionData | None: ...
+
+
+async def update_session_privacy(
+    *,
+    store: SessionPrivacyStore,
+    session_id: UUID,
+    current_user_id: UUID,
+    is_anonymous: bool,
+) -> UpdateSessionPrivacyResponse:
+    await _get_owned_session(
+        store=store,
+        session_id=session_id,
+        current_user_id=current_user_id,
+    )
+
+    updated_session = await store.set_is_anonymous(session_id, is_anonymous)
+
+    if updated_session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
+        )
+
+    return UpdateSessionPrivacyResponse(
+        session_id=updated_session.id,
+        is_anonymous=updated_session.is_anonymous,
+        message="匿名分享設定已更新",
+    )
+
+
+async def update_student_session_privacy(
+    db: AsyncSession,
+    current_user_id: UUID,
+    session_id: UUID,
+    is_anonymous: bool,
+) -> UpdateSessionPrivacyResponse:
+    """Update session privacy and manage the database transaction."""
+    store = SQLAlchemySessionStore(db)
+
+    try:
+        result = await update_session_privacy(
+            store=store,
+            session_id=session_id,
+            current_user_id=current_user_id,
+            is_anonymous=is_anonymous,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+    return result
+
+
+async def get_session_result(
+    *,
+    store: SessionReadStore,
+    session_id: UUID,
+    current_user_id: UUID,
+) -> SessionResultResponse:
+    session = await _get_owned_session(
+        store=store,
+        session_id=session_id,
+        current_user_id=current_user_id,
+    )
+
+    if session.status != SessionStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Session is not completed",
+        )
+
+    return SessionResultResponse(
+        session_id=session.id,
+        topic_id=session.topic_id,
+    )
+
+
+async def get_student_session_result(
+    db: AsyncSession,
+    current_user_id: UUID,
+    session_id: UUID,
+) -> SessionResultResponse:
+    """Return the owner's completed session identifiers."""
+    store = SQLAlchemySessionStore(db)
+
+    return await get_session_result(
+        store=store,
+        session_id=session_id,
+        current_user_id=current_user_id,
+    )

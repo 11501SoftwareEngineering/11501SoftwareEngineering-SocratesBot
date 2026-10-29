@@ -6,10 +6,9 @@ import pytest
 from fastapi import HTTPException
 
 from app.core.enums import SessionStatus
-from app.crud.session import get_or_create_session_id
-from app.crud.session_privacy import SQLAlchemySessionPrivacyStore
+from app.crud.session import SQLAlchemySessionStore, get_or_create_session_id
 from app.models.session import Session
-from app.services.session_privacy import update_session_privacy
+from app.services.session import update_session_privacy
 from tests.integration.test_session_crud import (
     create_course_and_topic,
     create_student,
@@ -22,7 +21,7 @@ pytestmark = pytest.mark.integration
 def test_missing_session_returns_none() -> None:
     async def run() -> None:
         async with session_test_db() as db:
-            store = SQLAlchemySessionPrivacyStore(db)
+            store = SQLAlchemySessionStore(db)
 
             result = await store.get_session(uuid4())
 
@@ -45,7 +44,7 @@ def test_get_session_returns_stored_values(is_anonymous: bool) -> None:
                 is_anonymous=is_anonymous,
             )
 
-            store = SQLAlchemySessionPrivacyStore(db)
+            store = SQLAlchemySessionStore(db)
             result = await store.get_session(session_id)
 
             assert result is not None
@@ -70,7 +69,7 @@ def test_set_is_anonymous_updates_database(is_anonymous: bool) -> None:
                 is_anonymous=not is_anonymous,
             )
 
-            store = SQLAlchemySessionPrivacyStore(db)
+            store = SQLAlchemySessionStore(db)
             result = await store.set_is_anonymous(
                 session_id=session_id,
                 is_anonymous=is_anonymous,
@@ -95,7 +94,7 @@ def test_update_missing_session_returns_none() -> None:
     async def run() -> None:
         async with session_test_db() as db:
             session_id = uuid4()
-            store = SQLAlchemySessionPrivacyStore(db)
+            store = SQLAlchemySessionStore(db)
 
             result = await store.set_is_anonymous(
                 session_id=session_id,
@@ -128,7 +127,7 @@ def test_privacy_update_preserves_completed_session() -> None:
             await db.flush()
             session_id = session.id
 
-            store = SQLAlchemySessionPrivacyStore(db)
+            store = SQLAlchemySessionStore(db)
             await store.set_is_anonymous(
                 session_id=session_id,
                 is_anonymous=True,
@@ -158,7 +157,7 @@ def test_non_owner_cannot_update_privacy_in_database() -> None:
                 topic_id=topic.id,
                 is_anonymous=False,
             )
-            store = SQLAlchemySessionPrivacyStore(db)
+            store = SQLAlchemySessionStore(db)
 
             with pytest.raises(HTTPException) as exc_info:
                 await update_session_privacy(

@@ -3,7 +3,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.session_result import SessionResultResponse
+from app.schemas.session import SessionResultResponse
 
 
 def test_session_result_serializes_expected_fields() -> None:

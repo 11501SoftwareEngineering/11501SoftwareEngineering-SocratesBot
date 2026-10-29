@@ -415,3 +415,60 @@ STUDENT_TOPIC_EXPLANATION_RESPONSES: dict[int | str, dict[str, Any]] = {
         "Topic not found",
     ),
 }
+SESSION_ENTRY_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_examples(
+        "Session entry denied",
+        {
+            "course_membership_required": "Course membership required",
+            "password_change_required": "Password change required",
+        },
+    ),
+    404: json_detail_example(
+        "Topic not found",
+        "Topic not found",
+    ),
+}
+
+SESSION_PRIVACY_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_examples(
+        "Session privacy update denied",
+        {
+            "not_session_owner": "Not the session owner",
+            "password_change_required": "Password change required",
+        },
+    ),
+    404: json_detail_example(
+        "Session not found",
+        "Session not found",
+    ),
+}
+
+SESSION_RESULT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_examples(
+        "Session result access denied",
+        {
+            "not_session_owner": "Not the session owner",
+            "password_change_required": "Password change required",
+        },
+    ),
+    404: json_detail_example(
+        "Session not found",
+        "Session not found",
+    ),
+    409: json_detail_example(
+        "Session is not completed",
+        "Session is not completed",
+    ),
+}

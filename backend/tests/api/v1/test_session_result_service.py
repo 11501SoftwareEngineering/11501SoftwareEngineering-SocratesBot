@@ -5,23 +5,25 @@ import pytest
 from fastapi import HTTPException
 
 from app.core.enums import SessionStatus
-from app.services.session_result import SessionResultData, get_session_result
+from app.schemas.session import SessionData
+from app.services.session import get_session_result
 
 
 class FakeSessionResultStore:
-    def __init__(self, sessions: dict[UUID, SessionResultData]) -> None:
+    def __init__(self, sessions: dict[UUID, SessionData]) -> None:
         self.sessions = sessions
 
-    async def get_session(self, session_id: UUID) -> SessionResultData | None:
+    async def get_session(self, session_id: UUID) -> SessionData | None:
         return self.sessions.get(session_id)
 
 
 def test_owner_can_get_completed_session_result() -> None:
-    session = SessionResultData(
+    session = SessionData(
         id=uuid4(),
         topic_id=uuid4(),
         user_id=uuid4(),
         status=SessionStatus.COMPLETED,
+        is_anonymous=False,
     )
     store = FakeSessionResultStore({session.id: session})
 
@@ -46,11 +48,12 @@ def test_owner_can_get_completed_session_result() -> None:
 def test_non_owner_cannot_get_session_result(
     session_status: SessionStatus,
 ) -> None:
-    session = SessionResultData(
+    session = SessionData(
         id=uuid4(),
         topic_id=uuid4(),
         user_id=uuid4(),
         status=session_status,
+        is_anonymous=False,
     )
     store = FakeSessionResultStore({session.id: session})
 
@@ -84,11 +87,12 @@ def test_missing_session_returns_404() -> None:
 
 
 def test_owner_cannot_get_in_progress_session_result() -> None:
-    session = SessionResultData(
+    session = SessionData(
         id=uuid4(),
         topic_id=uuid4(),
         user_id=uuid4(),
         status=SessionStatus.IN_PROGRESS,
+        is_anonymous=False,
     )
     store = FakeSessionResultStore({session.id: session})
 
