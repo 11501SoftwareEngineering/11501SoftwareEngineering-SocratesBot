@@ -3,7 +3,10 @@ from redis.asyncio import Redis
 from app.core.config import settings
 
 redis_client: Redis = Redis.from_url(
-    settings.REDIS_URL.get_secret_value(), decode_responses=True
+    settings.REDIS_URL.get_secret_value(),
+    decode_responses=True,
+    socket_connect_timeout=1.0,
+    socket_timeout=1.0,
 )
 
 

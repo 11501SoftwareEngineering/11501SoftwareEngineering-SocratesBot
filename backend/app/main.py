@@ -73,7 +73,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Authorization"],
+    expose_headers=["Authorization", "Retry-After"],
 )
 
 app.include_router(api_router, prefix=API_V1_PREFIX)

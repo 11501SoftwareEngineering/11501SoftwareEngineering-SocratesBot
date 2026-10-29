@@ -24,3 +24,4 @@ CURRENT_PASSWORD_INCORRECT_DETAIL = "Current password is incorrect"
 NEW_PASSWORD_SAME_AS_CURRENT_DETAIL = (
     "New password must be different from the current password"
 )
+LOGIN_RATE_LIMITED_DETAIL = "Too many login attempts. Try again later."

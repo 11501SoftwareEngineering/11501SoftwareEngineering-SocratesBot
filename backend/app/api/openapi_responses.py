@@ -7,6 +7,7 @@ from typing import Any
 from app.core.auth_policies import (
     AUTH_UNAUTHORIZED_DETAIL,
     CURRENT_PASSWORD_INCORRECT_DETAIL,
+    LOGIN_RATE_LIMITED_DETAIL,
     NEW_PASSWORD_SAME_AS_CURRENT_DETAIL,
 )
 
@@ -40,6 +41,25 @@ def json_detail_examples(description: str, examples: dict[str, Any]) -> dict[str
 
 _ACCOUNT_ALREADY_EXISTS_DETAIL = "Account already exists"
 _ACCOUNT_NAME_RESERVED_DETAIL = "Account name reserved"
+
+LOGIN_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        "Invalid account or password",
+        "Invalid account or password",
+    ),
+    429: {
+        **json_detail_example(
+            LOGIN_RATE_LIMITED_DETAIL,
+            LOGIN_RATE_LIMITED_DETAIL,
+        ),
+        "headers": {
+            "Retry-After": {
+                "description": "Seconds until login may be retried",
+                "schema": {"type": "integer"},
+            }
+        },
+    },
+}
 
 REGISTER_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: json_detail_examples(

@@ -18,6 +18,11 @@ from app.core.cookies import (
     set_refresh_cookies,
 )
 from app.core.enums import UserRole
+from app.core.login_rate_limit import (
+    RedisCounter,
+    begin_login_attempt,
+    clear_login_failures,
+)
 from app.core.security import (
     DUMMY_PASSWORD_HASH,
     create_access_token,
@@ -91,6 +96,9 @@ async def login_user(
     db: AsyncSession,
     payload: LoginRequest,
     response: Response,
+    *,
+    redis: RedisCounter,
+    client_ip: str,
 ) -> LoginResponse:
     """Authenticate; set refresh cookies and Bearer access header.
 
@@ -98,13 +106,25 @@ async def login_user(
         db: Async SQLAlchemy session.
         payload: Login body (account, password).
         response: Used for Set-Cookie and ``Authorization`` header.
+        redis: Redis client for login failure counters.
+        client_ip: Caller IP used for per-IP rate limiting.
 
     Returns:
         ``LoginResponse`` profile fields (no tokens in JSON).
 
     Raises:
-        HTTPException: 401 if the account is missing or the password is wrong.
+        HTTPException: 429 if rate-limited; 401 if credentials are invalid.
+
+    Rate limiting reserves an attempt in Redis before password verify (atomic
+    INCR). Failures leave the counters; success clears the account key and
+    undoes this attempt's IP bump. Redis errors fail open.
     """
+    await begin_login_attempt(
+        redis,
+        account=payload.account,
+        client_ip=client_ip,
+    )
+
     current_user = await user.get_user_by_account(db, payload.account)
     stored_hash = (
         current_user.password.password_hash
@@ -119,6 +139,12 @@ async def login_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid account or password",
         )
+
+    await clear_login_failures(
+        redis,
+        account=payload.account,
+        client_ip=client_ip,
+    )
 
     db_role = UserRole(current_user.role)
     access_token = create_access_token(subject=current_user.id, role=db_role)
