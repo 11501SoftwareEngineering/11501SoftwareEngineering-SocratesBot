@@ -5,16 +5,19 @@ import { createPinia, disposePinia, setActivePinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import { AxiosError, type AxiosAdapter } from 'axios'
 import { isCancelledError } from '@tanstack/vue-query'
+import { authApi } from '@/api/auth'
 import { apiClient } from '@/api/client'
 import { queryClient } from '@/queryClient'
 import router from '@/router'
 import { useAuthStore, type User } from '../auth'
 
 const student: User = {
-  id: 'student-1',
-  email: 'student@example.com',
+  account: 'student-1',
   name: 'Student',
   role: 'STUDENT',
+  roles: ['STUDENT'],
+  preferred_language: 'zh-TW',
+  must_change_password: false,
 }
 const coursePath = '/student/courses/course-1/topics'
 
@@ -45,6 +48,8 @@ describe('session cleanup', () => {
     createApp({}).use(pinia)
     setActivePinia(pinia)
     authStore = useAuthStore()
+    // 登出時會通知後端，測試裡不真的打 API
+    vi.spyOn(authApi, 'logout').mockResolvedValue({} as never)
     authStore.setAuth('expired-token', student)
     await nextTick()
     await router.push('/student/courses')
@@ -121,7 +126,7 @@ describe('session cleanup', () => {
 
       expect(signal?.aborted).toBe(true)
       expect(isCancelledError(await cancelled)).toBe(true)
-      authStore.setAuth('new-token', { ...student, id: 'student-2' })
+      authStore.setAuth('new-token', { ...student, account: 'student-2' })
       queryClient.setQueryData(queryKey, 'New account course')
       finishRequest('Old account course')
       await flushPromises()
