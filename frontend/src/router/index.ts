@@ -16,6 +16,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/auth/LoginView.vue'),
     meta: { requiresAuth: false },
   },
+  {
+    path: '/register',
+    name: 'Register',
+    component: () => import('@/views/auth/RegisterView.vue'),
+    meta: { requiresAuth: false },
+  },
   // 學生端路由
   {
     path: '/student',
@@ -92,8 +98,8 @@ router.beforeEach((to, from, next) => {
     })
   }
 
-  // 2. 若使用者已登入，卻試圖訪問登入頁，依身分導航至其主頁
-  if (to.path === '/login' && authStore.isAuthenticated) {
+  // 2. 若使用者已登入，卻試圖訪問登入或註冊頁，依身分導航至其主頁
+  if ((to.path === '/login' || to.path === '/register') && authStore.isAuthenticated) {
     if (authStore.userRole === 'STUDENT') return next('/student/courses')
     if (authStore.userRole === 'TEACHER') return next('/teacher/dashboard')
     if (authStore.userRole === 'ADMIN') return next('/admin/users')
