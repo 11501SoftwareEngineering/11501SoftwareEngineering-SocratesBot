@@ -1,54 +1,31 @@
 <script setup lang="ts">
+/**
+ * 公告首頁（未登入也看得到）。對應 Figma「Home」（node 1:9）。
+ * 公告內容在 src/data/announcements.ts，不需要 API。
+ */
+import { computed } from 'vue'
+import NewsCard from '@/components/common/NewsCard.vue'
 import { announcements } from '@/data/announcements'
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
 
-function formatDate(value: string) {
-  // Display announcement dates in Asia/Taipei.
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return '日期未提供'
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Taipei',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date)
-}
+const sorted = computed(() =>
+  [...announcements].sort((a, b) => b.published_at.localeCompare(a.published_at)),
+)
 </script>
 
 <template>
-  <section
-    class="mx-auto w-full max-w-announcements px-5 pb-16 pt-12 sm:pt-announcement-top"
-    aria-labelledby="announcements-title"
-  >
-    <h1 id="announcements-title" class="mb-announcement-gap font-heading text-h1-title">公告</h1>
-    <p v-if="announcements.length === 0" role="status" class="text-body text-muted-foreground">
+  <div class="mx-auto w-full max-w-[960px] px-4 py-10 sm:py-12">
+    <h1 class="mb-5 text-h1-title text-foreground">公告</h1>
+    <p
+      v-if="sorted.length === 0"
+      role="status"
+      class="rounded-2xl border border-dashed border-muted-foreground/40 px-6 py-10 text-center text-body-lg text-muted-foreground"
+    >
       目前沒有公告
     </p>
-    <ul v-else class="space-y-announcement-gap">
-      <li v-for="announcement in announcements" :key="announcement.id">
-        <article>
-          <Card
-            class="min-h-announcement rounded-2xl border-border pb-4 pt-announcement-inset shadow-elevated"
-          >
-            <CardHeader
-              class="gap-y-2 p-0 px-announcement-inset sm:flex-row sm:items-center sm:justify-between sm:gap-x-6 sm:gap-y-0"
-            >
-              <h2 class="min-w-0 break-words text-h2-title">{{ announcement.title }}</h2>
-              <time
-                :datetime="announcement.published_at"
-                class="shrink-0 text-caption text-muted-foreground"
-              >
-                {{ formatDate(announcement.published_at) }}
-              </time>
-            </CardHeader>
-            <CardContent class="mt-announcement-content p-0 pl-announcement-inset pr-4">
-              <p class="whitespace-pre-wrap break-words text-body text-muted-foreground">
-                {{ announcement.content }}
-              </p>
-            </CardContent>
-          </Card>
-        </article>
+    <ul v-else class="space-y-5">
+      <li v-for="item in sorted" :key="item.id">
+        <NewsCard :title="item.title" :content="item.content" :date="item.published_at" />
       </li>
     </ul>
-  </section>
+  </div>
 </template>
