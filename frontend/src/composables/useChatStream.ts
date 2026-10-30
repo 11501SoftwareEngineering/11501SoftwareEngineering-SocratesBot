@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { onScopeDispose, ref } from 'vue'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { API_BASE_URL } from '@/api/client'
 import type { StreamDone } from '@/api/student'
@@ -26,15 +26,25 @@ export class StreamError extends Error {
  */
 export function useChatStream() {
   const isStreaming = ref(false)
+  let activeController: AbortController | null = null
+  onScopeDispose(() => activeController?.abort())
 
   async function streamMessage(
     sessionId: string,
     content: string,
     handlers: { onChunk: (chunk: string) => void; onDone?: (done: StreamDone) => void },
+    requestId: string = crypto.randomUUID(),
   ) {
     isStreaming.value = true
     const token = localStorage.getItem('access_token')
     const controller = new AbortController()
+    activeController = controller
+    let receivedDone = false
+    let timedOut = false
+    const timeout = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, 60000)
 
     try {
       await fetchEventSource(
@@ -45,7 +55,7 @@ export function useChatStream() {
             'Content-Type': 'application/json',
             Authorization: token ? `Bearer ${token}` : '',
           },
-          body: JSON.stringify({ content }),
+          body: JSON.stringify({ content, request_id: requestId }),
           signal: controller.signal,
           openWhenHidden: true,
           async onopen(response) {
@@ -55,11 +65,15 @@ export function useChatStream() {
           },
           onmessage(event) {
             if (event.event === 'done') {
+              receivedDone = true
               handlers.onDone?.(JSON.parse(event.data) as StreamDone)
               controller.abort()
               return
             }
-            handlers.onChunk(event.data)
+            if (!event.event || event.event === 'message') handlers.onChunk(event.data)
+          },
+          onclose() {
+            if (!receivedDone) throw new Error('Stream closed before completion')
           },
           onerror(err) {
             // 丟出錯誤讓 fetchEventSource 停止自動重試，由呼叫端處理
@@ -68,9 +82,12 @@ export function useChatStream() {
         },
       )
     } catch (err) {
-      if (controller.signal.aborted) return
+      if (timedOut) throw new StreamError(504, { detail: '回應等候逾時，請重新載入已保存的對話。' })
+      if (controller.signal.aborted && receivedDone) return
       throw err
     } finally {
+      clearTimeout(timeout)
+      if (activeController === controller) activeController = null
       isStreaming.value = false
     }
   }

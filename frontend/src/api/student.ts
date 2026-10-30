@@ -14,7 +14,7 @@ export interface Course {
   active_topic_count: number
 }
 
-export type TopicStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED'
+export type TopicStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'ABANDONED'
 
 export interface Topic {
   topic_id: string
@@ -25,6 +25,7 @@ export interface Topic {
   /** ⚠️ 年齡層、回合數規格沒定義，前端先假設 */
   age_range?: string | null
   max_rounds?: number | null
+  content_language?: string
 }
 
 export interface CourseTopics {
@@ -62,10 +63,13 @@ export interface ChatMessage {
 export interface SessionMessages {
   session_id: string
   topic_id: string
-  status: 'IN_PROGRESS' | 'COMPLETED'
+  status: 'IN_PROGRESS' | 'COMPLETED' | 'ABANDONED'
   max_rounds: number
   remaining_rounds: number
   messages: ChatMessage[]
+  awaiting_end_consent?: boolean
+  goal_achieved?: boolean
+  completion_reason?: string
 }
 
 /** 串流最後一個 `event: done` 帶的資料 ⚠️ 格式是前端先假設的 */
@@ -74,6 +78,7 @@ export interface StreamDone {
   is_guiding_question: boolean
   remaining_rounds: number
   is_completed: boolean
+  awaiting_end_consent?: boolean
 }
 
 export interface SessionResult {

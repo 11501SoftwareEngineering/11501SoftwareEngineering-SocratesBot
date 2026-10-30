@@ -72,6 +72,11 @@ export default {
       },
       colors: {
         background: 'hsl(var(--background))',
+        workspace: {
+          DEFAULT: 'hsl(var(--workspace))',
+          foreground: 'hsl(var(--workspace-foreground))',
+          accent: 'hsl(var(--workspace-accent))',
+        },
         foreground: 'hsl(var(--foreground))',
         card: {
           DEFAULT: 'hsl(var(--card))',

@@ -4,6 +4,11 @@
  * 欄位設計盡量貼近後端的資料表，API 回傳格式在 handlers.ts 轉換。
  */
 import { reactive, watch } from 'vue'
+import { installTaDemo } from './taDemo'
+import type { AiKeySettings, TokenUsage } from '@/api/teacherAi'
+import type { TaPermission } from '@/api/ta'
+import { installCompletedExample } from './completedInquiryDemo'
+import type { ClassSummary, IndividualReport, InquirySetup } from '@/api/inquiry'
 
 export type DbRole = 'USER' | 'TEACHER' | 'SUPERADMIN'
 
@@ -27,6 +32,9 @@ export interface DbCourse {
 }
 
 export interface DbEnrollment {
+  role?: 'STUDENT' | 'TA'
+  permissions?: TaPermission[]
+  previous_student?: boolean
   course_id: string
   student_id: string
   joined_at: string
@@ -40,6 +48,13 @@ export interface DbTopic {
   age_range: string
   max_rounds: number
   created_at: string
+  setup?: InquirySetup
+  setup_version?: number
+  source_language?: 'zh-TW' | 'en' | 'es'
+  model_id?: string
+  publication_status?: 'draft' | 'published'
+  summary_draft?: ClassSummary
+  summary_published?: ClassSummary
 }
 
 export interface DbConclusion {
@@ -59,14 +74,35 @@ export interface DbSession {
   id: string
   topic_id: string
   student_id: string
-  status: 'IN_PROGRESS' | 'COMPLETED'
+  status: 'IN_PROGRESS' | 'COMPLETED' | 'ABANDONED'
   is_anonymous: boolean
   conclusion_id: string | null
   summary: string
   messages: DbMessage[]
+  setup_snapshot?: InquirySetup
+  model_id?: string
+  awaiting_end_consent?: boolean
+  goal_achieved?: boolean
+  completed_at?: string
+  completion_reason?: 'max_turns' | 'goal_met_and_consented'
+  report?: IndividualReport
+  processed_requests?: Record<
+    string,
+    {
+      message_id: string
+      remaining_rounds: number
+      is_completed: boolean
+      is_guiding_question: boolean
+      awaiting_end_consent: boolean
+    }
+  >
 }
 
 export interface Db {
+  ai_settings?: Record<string, AiKeySettings>
+  ai_usage?: Record<string, TokenUsage>
+  ta_demo_version?: number
+  completed_example_version?: number
   users: DbUser[]
   courses: DbCourse[]
   enrollments: DbEnrollment[]
@@ -121,6 +157,7 @@ function user(id: string, account: string, name: string, role: DbRole, n: number
 }
 
 function aiOpening(topic: DbTopic) {
+  if (topic.setup) return topic.setup.opening_message
   return `你好！今天我們來想一想：「${topic.title}」。先不用急著找標準答案，說說你的第一個想法是什麼？為什麼會這樣想？`
 }
 
@@ -214,7 +251,7 @@ export function createSeed(): Db {
       course_id: 'c-phil',
       title: '自由是想做什麼就做什麼嗎？',
       description: '',
-      age_range: '18+',
+      age_range: 'university_plus',
       max_rounds: 15,
       created_at: day(12),
     },
@@ -345,7 +382,10 @@ export function createSeed(): Db {
     })
   }
 
-  return { users, courses, enrollments, topics, conclusions, sessions }
+  const seed: Db = { users, courses, enrollments, topics, conclusions, sessions }
+  installCompletedExample(seed)
+  installTaDemo(seed)
+  return seed
 }
 
 const STORAGE_KEY = 'socratesbot-mock-db'
@@ -353,7 +393,19 @@ const STORAGE_KEY = 'socratesbot-mock-db'
 function load(): Db {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as Db
+    if (raw) {
+      const saved = JSON.parse(raw) as Db
+      if (saved.completed_example_version !== 5 || saved.ta_demo_version !== 1) {
+        installCompletedExample(saved)
+        installTaDemo(saved)
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(saved))
+        } catch {
+          /* Keep the upgraded data in memory. */
+        }
+      }
+      return saved
+    }
   } catch {
     // localStorage 不能用（無痕模式等）就用初始資料
   }
@@ -366,13 +418,37 @@ watch(
   db,
   () => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+      const serialized = JSON.stringify(db)
+      if (localStorage.getItem(STORAGE_KEY) !== serialized)
+        localStorage.setItem(STORAGE_KEY, serialized)
     } catch {
       // 存不了就算了，只影響重新整理後的資料
     }
   },
   { deep: true },
 )
+
+export function syncDbFromStorage() {
+  if (import.meta.env.MODE !== 'mock') return
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw && raw !== JSON.stringify(db)) {
+      const saved = JSON.parse(raw) as Db
+      if (
+        Array.isArray(saved.users) &&
+        Array.isArray(saved.courses) &&
+        Array.isArray(saved.enrollments)
+      )
+        Object.assign(db, saved)
+    }
+  } catch {
+    /* Keep the current demo state when storage is unavailable. */
+  }
+}
+if (import.meta.env.MODE === 'mock' && typeof window !== 'undefined')
+  window.addEventListener('storage', (event) => {
+    if (event.key === STORAGE_KEY) syncDbFromStorage()
+  })
 
 export function resetDb() {
   Object.assign(db, createSeed())

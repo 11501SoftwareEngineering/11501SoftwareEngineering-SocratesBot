@@ -1,6 +1,8 @@
-# frontend
+# SocratesBot v0.2 prototype 前端
 
-This template should help get you started developing with Vue 3 in Vite.
+Vue 3 三階段教學介面：教師課程設定、學生蘇格拉底對話、教師審閱及發布全班觀點摘要。
+
+此為 **DO NOT MERGE** 原型分支。首次下載、安裝、示範帳號與打包說明請先看 [根目錄 README](../README.md)；前後端工作以 [v0.2 spec](../docs/SocratesBot_v0.2_前後端開發規格書.md) 為基線。
 
 ## Recommended IDE Setup
 
@@ -26,7 +28,7 @@ See [Vite Configuration Reference](https://vite.dev/config/).
 ## Project Setup
 
 ```sh
-pnpm install
+pnpm install --frozen-lockfile
 ```
 
 ### Compile and Hot-Reload for Development
@@ -35,7 +37,7 @@ pnpm install
 pnpm dev
 ```
 
-請在 `frontend` 目錄執行，並開啟終端機顯示的網址。首頁為公告；課程頁位於 `/student/courses/:courseId`，需要學生登入與既有課程 API。
+請在 `frontend` 目錄執行，並開啟終端機顯示的網址。首頁介紹三階段教學流程，公告位於 `/announcements`；課程頁位於 `/student/courses/:courseId`，需要學生登入與既有課程 API。
 
 ### Demo 模式（不用後端，用假資料）
 
@@ -46,9 +48,16 @@ pnpm build:demo    # 打包成可以部署的 Demo 版（dist/）
 
 - 所有 `/api/v1/...` 請求會被瀏覽器裡的假後端（`src/mocks/`，用 MSW）攔截，前端程式完全不用改。
 - 左下角的 **🐞 Debug** 按鈕可以：一鍵切換學生／老師／管理員、讓某組 API 變成空資料／錯誤／很慢／一直載入、新增課程／問題／學生、讓全班完成作答、直接結束對話、新增公告、重置假資料。
+- 助教示範：`ta / password123`，可在「哲學概論 → 助教與權限」調整四項勾選權限。發布與刪除仍由老師執行。
+- 教師首頁以「AI 模型與用量」單一卡片整合 token 統計、四種模型與 OpenRouter 本月金額，並共用重新整理按鈕；「API key 設定」可開啟金鑰欄位。示範模式不保存真正的金鑰，也不會向 OpenRouter 計費。
 - 假帳號：學生 `s001`～`s012`、老師 `wang` `lin` `chen`（chen 第一次登入要改密碼）、管理員 `admin`，密碼都是 `password123`。
 - 假資料存在瀏覽器的 localStorage，重新整理不會不見。
-- 後端做好之後，用一般的 `pnpm dev` 就會打真的後端；正式版打包（`pnpm build`）不會包含假後端和 Debug 面板。
+- 完成示範：教師登入後，進入「哲學概論 → 善意的謊言是對的嗎？」。已放入 12 份結構化報告、3 組觀點、2 位尚未形成明確觀點者及已發布摘要；提供「摘要審閱」「學生報告」兩個分頁。老師直接檢視摘要並審閱發布，不再顯示摘要編輯區塊或學生版預覽；點擊 Perspective 卡片會依觀點 tag 篩選學生報告。有編輯摘要權限的助教仍可修訂草稿，交由老師發布。
+- 課程設定保留「給 AI 的回饋／釐清回答」「依回饋重新產生」，也可單獨重新產生開場訊息。新產生內容須另行儲存或發布。
+- 已發布活動的八欄、內容語言與模型均鎖定，不再提供編輯入口；舊編輯網址僅供檢視，MSW 的新舊修改端點也會拒絕變更。
+- 原深藍工作區改為淺米色，首頁、師生課程、報告、模型卡片與學生對話統一使用共用色票。
+- 新版三階段 API 合約、最新產品決定與正式串接項目見 [前端三階段串接](../docs/前端三階段串接.md)。示範資料與本機模擬不會呼叫真正的 AI。
+- 後端做好之後，用一般的 `pnpm dev` 就會打真的後端；正式版打包（`pnpm build`）不會啟用假後端和 Debug 面板。
 - API 規格沒寫、前端先假設的地方，在 `src/api/*.ts` 用 ⚠️ 標起來了，串接時要跟後端核對。
 
 ### 公告資料
@@ -64,7 +73,9 @@ pnpm build
 ### Run Unit Tests with [Vitest](https://vitest.dev/)
 
 ```sh
-pnpm test:unit
+pnpm exec vitest run
+# Node 26 原生 localStorage 與 jsdom 衝突時：
+NODE_OPTIONS=--no-experimental-webstorage pnpm exec vitest run
 ```
 
 ### Lint with [ESLint](https://eslint.org/)

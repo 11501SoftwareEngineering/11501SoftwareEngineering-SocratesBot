@@ -59,7 +59,7 @@ describe('App', () => {
     expect(studentApi.getCourseTopics).not.toHaveBeenCalled()
   })
 
-  it('Header 和頁面共用同一份課程資料，只打一次 API', async () => {
+  it('Header 只顯示我的課程，課程名稱保留於頁面標題且只查詢一次', async () => {
     vi.mocked(studentApi.getCourseTopics).mockResolvedValue({
       course_id: 'course-1',
       name: '公民思辨',
@@ -96,7 +96,8 @@ describe('App', () => {
     await vi.waitFor(() => expect(wrapper?.find('main article').text()).toContain('課程問題'))
     const nav = wrapper.find('header nav')
     expect(nav.text()).toContain('我的課程')
-    expect(nav.text()).toContain('公民思辨')
+    expect(nav.text()).not.toContain('公民思辨')
+    expect(wrapper.find('main h1').text()).toBe('公民思辨')
     expect(wrapper.find('header').text()).toContain('王小明')
     expect(studentApi.getCourseTopics).toHaveBeenCalledTimes(1)
   })

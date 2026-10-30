@@ -1,12 +1,13 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import type { UserRole } from '@/api/auth'
-import { HOME_ROUTE, useAuthStore } from '@/stores/auth'
+import { homeRouteFor, useAuthStore } from '@/stores/auth'
 
 declare module 'vue-router' {
   interface RouteMeta {
     requiresAuth?: boolean
     roles?: UserRole[]
     /** 已登入的人不需要看到的頁面（登入、註冊），會直接導回他的首頁 */
+    teaching?: boolean
     guestOnly?: boolean
     /** 瀏覽器分頁標題 */
     title?: string
@@ -17,8 +18,13 @@ const routes: RouteRecordRaw[] = [
   // 公開頁面
   {
     path: '/',
-    alias: '/announcements',
     name: 'Home',
+    component: () => import('@/views/common/HomeView.vue'),
+    meta: { title: '探究教室' },
+  },
+  {
+    path: '/announcements',
+    name: 'Announcements',
     component: () => import('@/views/common/AnnouncementsView.vue'),
     meta: { title: '公告' },
   },
@@ -53,9 +59,15 @@ const routes: RouteRecordRaw[] = [
   // 老師
   {
     path: '/teacher',
-    meta: { requiresAuth: true, roles: ['TEACHER'] },
+    meta: { requiresAuth: true, roles: ['TEACHER', 'STUDENT'], teaching: true },
     children: [
       { path: '', redirect: { name: 'TeacherCourses' } },
+      {
+        path: 'ai-settings',
+        name: 'TeacherAiSettings',
+        component: () => import('@/views/teacher/AiSettingsView.vue'),
+        meta: { requiresAuth: true, roles: ['TEACHER'], title: 'AI 用量與金鑰' },
+      },
       {
         path: 'courses',
         name: 'TeacherCourses',
@@ -69,10 +81,32 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '問題列表' },
       },
       {
+        path: 'courses/:courseId/topics/new',
+        name: 'TeacherSetup',
+        component: () => import('@/views/teacher/InquirySetupView.vue'),
+        meta: {
+          requiresAuth: true,
+          roles: ['TEACHER', 'STUDENT'],
+          teaching: true,
+          title: '新增探究',
+        },
+      },
+      {
+        path: 'courses/:courseId/topics/:topicId/setup',
+        name: 'TeacherSetupEdit',
+        component: () => import('@/views/teacher/InquirySetupView.vue'),
+        meta: {
+          requiresAuth: true,
+          roles: ['TEACHER', 'STUDENT'],
+          teaching: true,
+          title: '探究設定',
+        },
+      },
+      {
         path: 'courses/:courseId/topics/:topicId',
         name: 'TeacherTopic',
         component: () => import('@/views/teacher/TopicView.vue'),
-        meta: { title: '問題結果' },
+        meta: { title: '全班觀點' },
       },
     ],
   },
@@ -140,8 +174,11 @@ router.beforeEach((to) => {
 
   // 2. 已登入卻打開登入、註冊頁 → 回到自己的首頁
   if (to.meta.guestOnly && authStore.isAuthenticated && authStore.userRole) {
-    return { name: HOME_ROUTE[authStore.userRole] }
+    return { name: homeRouteFor(authStore.user!) }
   }
+
+  if (to.meta.teaching && authStore.userRole !== 'TEACHER' && !authStore.user?.has_ta_assignments)
+    return { name: 'Forbidden' }
 
   // 3. 身分不符（例如學生打開 /teacher）→ 沒有權限頁
   if (to.meta.roles && authStore.userRole && !to.meta.roles.includes(authStore.userRole)) {

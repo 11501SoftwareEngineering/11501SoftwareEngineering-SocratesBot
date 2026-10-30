@@ -13,6 +13,12 @@ export const HOME_ROUTE: Record<UserRole, string> = {
   SUPER_ADMIN: 'AdminTeachers',
 }
 
+export function homeRouteFor(user: User): string {
+  return user.role === 'STUDENT' && user.has_ta_assignments
+    ? 'TeacherCourses'
+    : HOME_ROUTE[user.role]
+}
+
 export const useAuthStore = defineStore(
   'auth',
   () => {

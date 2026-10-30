@@ -64,7 +64,7 @@ export function addTopic(courseId: string) {
     course_id: courseId,
     title,
     description: '',
-    age_range: pick(['13-15', '16-18', '18+']),
+    age_range: pick(['13-15', '16-18', 'university_plus']),
     max_rounds: pick([5, 10, 15]),
     created_at: new Date().toISOString(),
   })
@@ -104,7 +104,7 @@ export function addStudents(courseId: string, count = 5) {
 export function finishTopicForClass(topicId: string) {
   const topic = db.topics.find((t) => t.id === topicId)
   if (!topic) return '請先進到某一個問題的頁面'
-  const students = db.enrollments.filter((e) => e.course_id === topic.course_id)
+  const students = db.enrollments.filter((e) => e.course_id === topic.course_id && e.role !== 'TA')
   let finished = 0
   for (const e of students) {
     let session = db.sessions.find((s) => s.topic_id === topicId && s.student_id === e.student_id)

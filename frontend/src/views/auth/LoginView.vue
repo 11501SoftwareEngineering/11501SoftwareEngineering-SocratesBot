@@ -12,7 +12,7 @@ import FormField from '@/components/common/FormField.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getApiErrorMessage } from '@/lib/utils'
-import { HOME_ROUTE, useAuthStore } from '@/stores/auth'
+import { homeRouteFor, useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
 const route = useRoute()
@@ -21,7 +21,6 @@ const router = useRouter()
 const form = reactive({ account: '', password: '' })
 const errors = reactive({ account: '', password: '' })
 const formError = ref('')
-const showForgotHint = ref(false)
 
 const mutation = useMutation({
   mutationFn: () => authStore.login({ account: form.account.trim(), password: form.password }),
@@ -31,7 +30,7 @@ const mutation = useMutation({
     if (redirect.startsWith('/') && !redirect.startsWith('//')) {
       void router.replace(redirect)
     } else {
-      void router.replace({ name: HOME_ROUTE[user.role] })
+      void router.replace({ name: homeRouteFor(user) })
     }
   },
   onError: (error) => {
@@ -80,19 +79,6 @@ function handleSubmit() {
         <Button type="submit" size="lg" :disabled="mutation.isPending.value">
           {{ mutation.isPending.value ? '登入中…' : '登入' }}
         </Button>
-      </div>
-      <div class="text-right">
-        <button
-          type="button"
-          class="rounded text-body text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          :aria-expanded="showForgotHint"
-          @click="showForgotHint = !showForgotHint"
-        >
-          忘記密碼?
-        </button>
-        <p v-if="showForgotHint" class="mt-1 text-body text-muted-foreground">
-          請聯絡老師或管理員協助重設密碼。
-        </p>
       </div>
     </form>
   </AuthCard>

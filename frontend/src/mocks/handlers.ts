@@ -9,6 +9,7 @@ import { delay, http, HttpResponse } from 'msw'
 import {
   aiOpening,
   db,
+  syncDbFromStorage,
   DEMO_PASSWORD,
   newId,
   newInviteCode,
@@ -18,6 +19,10 @@ import {
   type DbUser,
 } from './db'
 import { scenarios, type ApiGroup } from './scenarios'
+import { teachingAccess, teachingDenial } from './teachingAccess'
+import { teacherAiHandlers, recordDemoUsage } from './teacherAiHandlers'
+import { taHandlers } from './taHandlers'
+import { defaultSetup, inquiryHandlers, reportFor } from './inquiryHandlers'
 
 const BASE = '*/api/v1'
 
@@ -54,6 +59,7 @@ function tokenFor(user: DbUser) {
 }
 
 function userFromRequest(request: Request): DbUser | undefined {
+  syncDbFromStorage()
   const header = request.headers.get('Authorization') ?? ''
   const id = header.replace(/^Bearer\s+mock-token\./, '')
   return db.users.find((u) => u.id === id)
@@ -68,6 +74,10 @@ function authorize(request: Request, roles?: DbRole[]): DbUser | Response {
   const path = new URL(request.url).pathname
   if (user.must_change_password && !PASSWORD_CHANGE_EXEMPT.some((p) => path.endsWith(p))) {
     return fail(403, 'Password change required')
+  }
+  if (roles?.includes('TEACHER') && user.role === 'USER') {
+    const error = teachingDenial(request, user)
+    return error ?? user
   }
   if (roles && !roles.includes(user.role)) {
     if (roles.includes('SUPERADMIN')) return fail(403, 'Admin privileges required')
@@ -111,21 +121,40 @@ function profile(user: DbUser) {
     role: user.role,
     preferred_language: 'zh-TW',
     must_change_password: user.must_change_password,
+    has_ta_assignments: db.enrollments.some(
+      (member) =>
+        member.student_id === user.id &&
+        member.role === 'TA' &&
+        db.courses.some((course) => course.id === member.course_id),
+    ),
   }
 }
 
 // ---------- 課程、題目的查詢 ----------
 
 const teacherCourse = (teacher: DbUser, courseId: string) =>
-  db.courses.find((c) => c.id === courseId && c.teacher_id === teacher.id)
+  db.courses.find((c) => c.id === courseId && teachingAccess(teacher, courseId))
 
 const isEnrolled = (studentId: string, courseId: string) =>
-  db.enrollments.some((e) => e.student_id === studentId && e.course_id === courseId)
+  db.enrollments.some(
+    (e) => e.student_id === studentId && e.course_id === courseId && e.role !== 'TA',
+  )
 
-const studentsOf = (courseId: string) => db.enrollments.filter((e) => e.course_id === courseId)
+const studentsOf = (courseId: string) =>
+  db.enrollments.filter((e) => e.course_id === courseId && e.role !== 'TA')
 
 const completedSessions = (topicId: string) =>
-  db.sessions.filter((s) => s.topic_id === topicId && s.status === 'COMPLETED')
+  db.sessions.filter(
+    (s) =>
+      s.topic_id === topicId &&
+      s.status === 'COMPLETED' &&
+      !db.enrollments.some(
+        (member) =>
+          member.student_id === s.student_id &&
+          member.role === 'TA' &&
+          db.topics.some((topic) => topic.id === topicId && topic.course_id === member.course_id),
+      ),
+  )
 
 function teacherTopic(teacher: DbUser, topicId: string) {
   const topic = db.topics.find((t) => t.id === topicId)
@@ -205,13 +234,16 @@ export function completeSession(session: DbSession) {
 
 function sessionMessages(session: DbSession) {
   const topic = topicOf(session)
-  const max = topic?.max_rounds ?? 5
+  const max = session.setup_snapshot?.max_turns ?? topic?.max_rounds ?? 5
   return {
     session_id: session.id,
     topic_id: session.topic_id,
     status: session.status,
     max_rounds: max,
     remaining_rounds: Math.max(0, max - userRounds(session)),
+    awaiting_end_consent: session.awaiting_end_consent ?? false,
+    goal_achieved: session.goal_achieved ?? false,
+    completion_reason: session.completion_reason,
     messages: session.messages.map((m) => ({
       message_id: m.id,
       role: m.role,
@@ -229,6 +261,9 @@ const SAMPLE_TRANSCRIPTS = [
 // ---------- 所有 API ----------
 
 export const handlers = [
+  ...inquiryHandlers,
+  ...taHandlers,
+  ...teacherAiHandlers,
   // ===== 登入、註冊、帳號 =====
   route('auth', 'post', '/auth/register', async ({ request }) => {
     const data = await body<{ account: string; password: string; name: string }>(request)
@@ -281,6 +316,7 @@ export const handlers = [
   route('auth', 'put', '/auth/password', async ({ request }) => {
     const user = authorize(request)
     if (user instanceof Response) return user
+    if (!user.must_change_password) return fail(403, '僅初次登入可設定密碼。')
     const data = await body<{ old_password: string; new_password: string }>(request)
     if (data.old_password !== user.password) return fail(400, 'Current password is incorrect')
     if ((data.new_password ?? '').length < 8) return validationError('new_password', 'Too short')
@@ -361,12 +397,14 @@ export const handlers = [
     if (empty) return HttpResponse.json([])
     return HttpResponse.json(
       db.courses
-        .filter((c) => c.teacher_id === user.id)
+        .filter((c) => teachingAccess(user, c.id))
         .map((c) => ({
           course_id: c.id,
           name: c.name,
           description: c.description || null,
-          invite_code: c.invite_code,
+          invite_code: teachingAccess(user, c.id)?.permissions.includes('view_members')
+            ? c.invite_code
+            : '',
           student_count: studentsOf(c.id).length,
           topic_count: db.topics.filter((t) => t.course_id === c.id).length,
         })),
@@ -438,7 +476,12 @@ export const handlers = [
       return HttpResponse.json({
         course_id: course.id,
         name: course.name,
-        invite_code: course.invite_code,
+        invite_code: teachingAccess(user, course.id)?.permissions.includes('view_members')
+          ? course.invite_code
+          : '',
+        access: teachingAccess(user, course.id),
+        default_model_id: db.ai_settings?.[course.teacher_id]?.default_model_id ?? 'gpt-6-luna',
+        student_count: studentsOf(course.id).length,
         topics: topics.map((t) => ({
           topic_id: t.id,
           title: t.title,
@@ -447,6 +490,8 @@ export const handlers = [
           max_rounds: t.max_rounds,
           conclusion_count: db.conclusions.filter((k) => k.topic_id === t.id).length,
           answered_count: completedSessions(t.id).length,
+          publication_status: t.publication_status ?? 'published',
+          setup_version: t.setup_version ?? 1,
         })),
       })
     },
@@ -499,6 +544,8 @@ export const handlers = [
       age_range: string
       max_rounds: number
     }>(request)
+    if ((topic.publication_status ?? 'published') !== 'draft')
+      return fail(409, '活動已發布，無法再修改。')
     const title = (data.title ?? '').trim()
     if (!title) return validationError('title', 'Field required')
     topic.title = title
@@ -558,12 +605,8 @@ export const handlers = [
       if (!course || !isEnrolled(params.studentId ?? '', course.id)) {
         return fail(404, 'Student not found')
       }
-      const topicIds = new Set(db.topics.filter((t) => t.course_id === course.id).map((t) => t.id))
       db.enrollments = db.enrollments.filter(
         (e) => !(e.course_id === course.id && e.student_id === params.studentId),
-      )
-      db.sessions = db.sessions.filter(
-        (s) => !(s.student_id === params.studentId && topicIds.has(s.topic_id)),
       )
       return HttpResponse.json({ message: 'Student removed' })
     },
@@ -673,7 +716,7 @@ export const handlers = [
     if (empty) return HttpResponse.json([])
     return HttpResponse.json(
       db.enrollments
-        .filter((e) => e.student_id === user.id)
+        .filter((e) => e.student_id === user.id && e.role !== 'TA')
         .map((e) => db.courses.find((c) => c.id === e.course_id))
         .filter((c) => !!c)
         .map((c) => ({
@@ -694,7 +737,12 @@ export const handlers = [
     if (!/^[A-Z0-9]{4,12}$/.test(code)) return validationError('invite_code', 'Invalid format')
     const course = db.courses.find((c) => c.invite_code.toUpperCase() === code)
     if (!course) return fail(404, 'Invite code not found')
-    if (isEnrolled(user.id, course.id)) return fail(409, 'Already enrolled')
+    if (
+      db.enrollments.some(
+        (member) => member.student_id === user.id && member.course_id === course.id,
+      )
+    )
+      return fail(409, 'Already enrolled')
     db.enrollments.push({
       course_id: course.id,
       student_id: user.id,
@@ -729,13 +777,22 @@ export const handlers = [
       const course = db.courses.find((c) => c.id === params.courseId)
       if (!course) return fail(404, 'Course not found')
       if (!isEnrolled(user.id, course.id)) return fail(403, 'Course membership required')
-      const topics = empty ? [] : db.topics.filter((t) => t.course_id === course.id)
+      const topics = empty
+        ? []
+        : db.topics.filter((t) => t.course_id === course.id && t.publication_status !== 'draft')
       return HttpResponse.json({
         course_id: course.id,
         name: course.name,
-        invite_code: course.invite_code,
+        invite_code: teachingAccess(user, course.id)?.permissions.includes('view_members')
+          ? course.invite_code
+          : '',
+        access: teachingAccess(user, course.id),
+        default_model_id: db.ai_settings?.[course.teacher_id]?.default_model_id ?? 'gpt-6-luna',
+        student_count: studentsOf(course.id).length,
         topics: topics.map((t) => {
-          const session = db.sessions.find((s) => s.topic_id === t.id && s.student_id === user.id)
+          const session = db.sessions
+            .filter((s) => s.topic_id === t.id && s.student_id === user.id)
+            .slice(-1)[0]
           return {
             topic_id: t.id,
             title: t.title,
@@ -744,6 +801,7 @@ export const handlers = [
             session_id: session?.id ?? null,
             age_range: t.age_range,
             max_rounds: t.max_rounds,
+            content_language: t.source_language ?? 'zh-TW',
           }
         }),
       })
@@ -755,6 +813,8 @@ export const handlers = [
     if (user instanceof Response) return user
     const topic = db.topics.find((t) => t.id === params.topicId)
     if (!topic) return fail(404, 'Topic not found')
+    if (!isEnrolled(user.id, topic.course_id) || topic.publication_status === 'draft')
+      return fail(404, 'Topic not found')
     return HttpResponse.json({
       title: topic.title,
       background: topic.description || '這個問題沒有標準答案，重點是說出你的理由。',
@@ -769,17 +829,28 @@ export const handlers = [
     const topic = db.topics.find((t) => t.id === params.topicId)
     if (!topic) return fail(404, 'Topic not found')
     if (!isEnrolled(user.id, topic.course_id)) return fail(403, 'Course membership required')
-    let session = db.sessions.find((s) => s.topic_id === topic.id && s.student_id === user.id)
+    if (topic.publication_status === 'draft') return fail(404, 'Topic not found')
+    let session = db.sessions.find(
+      (s) => s.topic_id === topic.id && s.student_id === user.id && s.status !== 'ABANDONED',
+    )
     if (!session) {
       session = {
         id: newId('sess'),
         topic_id: topic.id,
         student_id: user.id,
         status: 'IN_PROGRESS',
-        is_anonymous: false,
+        is_anonymous: true,
         conclusion_id: null,
         summary: '',
-        messages: [{ id: newId('msg'), role: 'assistant', content: aiOpening(topic) }],
+        setup_snapshot: JSON.parse(JSON.stringify(defaultSetup(topic))),
+        model_id: topic.model_id ?? 'gpt-6-luna',
+        messages: [
+          {
+            id: newId('msg'),
+            role: 'assistant',
+            content: topic.setup?.opening_message ?? aiOpening(topic),
+          },
+        ],
       }
       db.sessions.push(session)
     }
@@ -792,6 +863,9 @@ export const handlers = [
     const session = db.sessions.find((s) => s.id === params.sessionId)
     if (!session) return fail(404, 'Session not found')
     if (session.student_id !== user.id) return fail(403, 'Not the session owner')
+    const topic = topicOf(session)
+    if (!topic || !isEnrolled(user.id, topic.course_id))
+      return fail(403, 'Course membership required')
     return HttpResponse.json(sessionMessages(session))
   }),
 
@@ -805,21 +879,60 @@ export const handlers = [
       const session = db.sessions.find((s) => s.id === params.sessionId)
       if (!session) return fail(404, 'Session not found')
       if (session.student_id !== user.id) return fail(403, 'Not the session owner')
-      if (session.status === 'COMPLETED') return fail(409, 'Session already completed')
-      const data = await body<{ content: string }>(request)
+      const topic = topicOf(session)
+      if (!topic || !isEnrolled(user.id, topic.course_id))
+        return fail(403, 'Course membership required')
+      const data = await body<{ content: string; request_id: string }>(request)
+      const requestId = data.request_id
+      if (requestId && session.processed_requests?.[requestId]) {
+        return new HttpResponse(
+          `event: done\ndata: ${JSON.stringify(session.processed_requests[requestId])}\n\n`,
+          { headers: { 'Content-Type': 'text/event-stream' } },
+        )
+      }
+      if (session.status !== 'IN_PROGRESS') return fail(409, 'Session already completed')
+      if (session.awaiting_end_consent) return fail(409, '請先選擇結束或繼續探究。')
       const content = (data.content ?? '').trim()
       if (!content) return validationError('content', 'Field required')
 
       session.messages.push({ id: newId('msg'), role: 'user', content })
-      const max = topicOf(session)?.max_rounds ?? 5
+      const max = session.setup_snapshot?.max_turns ?? topic.max_rounds ?? 5
+      if (userRounds(session) > max) {
+        session.messages.pop()
+        return fail(409, 'Session already completed')
+      }
       const remaining = Math.max(0, max - userRounds(session))
       const isLast = remaining === 0
       const pick = FOLLOW_UPS[(userRounds(session) - 1) % FOLLOW_UPS.length] ?? FOLLOW_UPS[0]
-      const reply = isLast
-        ? '謝謝你的分享！你已經從好幾個角度思考過這個問題了，這次的討論就到這裡。可以去看看大家的結論喔！'
-        : (pick?.(snippet(content)) ?? '')
-      const messageId = newId('msg')
+      // Deterministic demo progress, not an AI evaluation or a grading rule.
+      session.goal_achieved =
+        userRounds(session) >= 3 &&
+        session.messages.filter(
+          (m) => m.role === 'user' && m.content !== '略過這一題' && m.content.length >= 10,
+        ).length >= 3
+      session.awaiting_end_consent = !isLast && session.goal_achieved
+      const reply = isLast || session.awaiting_end_consent ? '' : (pick?.(snippet(content)) ?? '')
+      const messageId = reply ? newId('msg') : ''
+      if (reply) session.messages.push({ id: messageId, role: 'assistant', content: reply })
+      if (isLast) {
+        session.status = 'COMPLETED'
+        session.completed_at = new Date().toISOString()
+        session.completion_reason = 'max_turns'
+        reportFor(session)
+      }
+      const done = {
+        message_id: messageId,
+        is_guiding_question: !isLast && !session.awaiting_end_consent,
+        remaining_rounds: remaining,
+        is_completed: isLast,
+        awaiting_end_consent: session.awaiting_end_consent,
+      }
+      if (requestId) {
+        session.processed_requests ??= {}
+        session.processed_requests[requestId] = done
+      }
 
+      recordDemoUsage(topic.course_id, 'dialogue', session.model_id)
       const encoder = new TextEncoder()
       const speed = scenarios.typingSpeed
       const stream = new ReadableStream({
@@ -827,14 +940,6 @@ export const handlers = [
           for (let i = 0; i < reply.length; i += 2) {
             controller.enqueue(encoder.encode(`data: ${reply.slice(i, i + 2)}\n\n`))
             await sleep(speed * 2)
-          }
-          session.messages.push({ id: messageId, role: 'assistant', content: reply })
-          if (isLast) completeSession(session)
-          const done = {
-            message_id: messageId,
-            is_guiding_question: !isLast,
-            remaining_rounds: remaining,
-            is_completed: isLast,
           }
           controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify(done)}\n\n`))
           controller.close()
@@ -901,11 +1006,21 @@ export const handlers = [
       const user = authorize(request, ['USER'])
       if (user instanceof Response) return user
       const topic = db.topics.find((t) => t.id === params.topicId)
-      if (!topic) return fail(404, 'Topic not found')
+      if (!topic || !isEnrolled(user.id, topic.course_id)) return fail(404, 'Topic not found')
+      if (!topic.summary_published)
+        return HttpResponse.json({ topic_id: topic.id, total_answered: 0, conclusions: [] })
       return HttpResponse.json({
         topic_id: topic.id,
-        total_answered: empty ? 0 : completedSessions(topic.id).length,
-        conclusions: empty ? [] : conclusionStats(topic.id, user.id, false),
+        total_answered: empty ? 0 : topic.summary_published.report_count,
+        conclusions: empty
+          ? []
+          : topic.summary_published.groups.map((group) => ({
+              conclusion_id: group.group_id,
+              title: group.title,
+              count: group.count,
+              percentage: group.percentage,
+              students: [],
+            })),
       })
     },
   ),

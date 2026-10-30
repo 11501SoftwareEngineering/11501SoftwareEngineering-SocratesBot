@@ -33,6 +33,7 @@ export interface User {
   account: string
   name: string
   role: UserRole
+  has_ta_assignments?: boolean
   preferred_language: string
   /** 管理員建立的老師帳號第一次登入時為 true，要先改密碼才能用其他功能 */
   must_change_password: boolean

@@ -4,7 +4,6 @@ import { RouterView } from 'vue-router'
 import AppFooter from '@/components/common/AppFooter.vue'
 import AppHeader from '@/components/common/AppHeader.vue'
 import ChangePasswordDialog from '@/components/common/ChangePasswordDialog.vue'
-import { usePasswordDialog } from '@/composables/usePasswordDialog'
 import { useAuthStore } from '@/stores/auth'
 
 // Demo 模式（VITE_USE_MOCK=true）才載入 Debug 面板，正式版不會打包進來
@@ -14,12 +13,11 @@ const DebugPanel =
     : null
 
 const authStore = useAuthStore()
-const passwordDialog = usePasswordDialog()
 
 // 老師第一次登入要先改密碼：強制打開、不能關
 const passwordOpen = computed({
-  get: () => authStore.mustChangePassword || passwordDialog.isOpen.value,
-  set: (value: boolean) => (passwordDialog.isOpen.value = value),
+  get: () => authStore.mustChangePassword,
+  set: () => undefined,
 })
 
 // 重新整理後，用保存的 token 跟後端確認身分（GET /users/me）
@@ -29,7 +27,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex min-h-dvh flex-col bg-background text-foreground">
+  <div class="socratic-app flex min-h-dvh flex-col bg-background text-foreground">
     <a
       href="#main"
       class="sr-only z-50 rounded-lg bg-card px-4 py-2 focus:not-sr-only focus:fixed focus:left-4 focus:top-4"
@@ -41,9 +39,8 @@ onMounted(() => {
     </main>
     <AppFooter />
     <ChangePasswordDialog
-      v-if="authStore.isAuthenticated"
+      v-if="authStore.isAuthenticated && authStore.mustChangePassword"
       v-model:open="passwordOpen"
-      :forced="authStore.mustChangePassword"
     />
     <component :is="DebugPanel" v-if="DebugPanel" />
   </div>

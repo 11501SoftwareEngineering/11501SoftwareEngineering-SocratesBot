@@ -10,7 +10,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useQueryClient } from '@tanstack/vue-query'
 import { ROLE_LABELS } from '@/api/auth'
 import { getApiErrorMessage } from '@/lib/utils'
-import { HOME_ROUTE, useAuthStore } from '@/stores/auth'
+import { homeRouteFor, useAuthStore } from '@/stores/auth'
 import {
   addAnnouncement,
   addCourse,
@@ -63,6 +63,7 @@ const queryClient = useQueryClient()
 const ACCOUNTS = [
   { account: 's001', label: '學生 王小明', note: '有一題完成、一題進行中' },
   { account: 's012', label: '學生 鄭心怡', note: '還沒開始作答' },
+  { account: 'ta', label: '助教 示範助教', note: '老師可勾選權限' },
   { account: 'wang', label: '老師 王老師', note: '有兩門課' },
   { account: 'chen', label: '老師 陳老師', note: '第一次登入，要先改密碼' },
   { account: 'admin', label: '管理員', note: '管理老師帳號' },
@@ -74,7 +75,7 @@ async function loginAs(account: string) {
   message.value = ''
   try {
     const user = await authStore.login({ account, password: DEMO_PASSWORD })
-    await router.push({ name: HOME_ROUTE[user.role] })
+    await router.push({ name: homeRouteFor(user) })
     message.value = `已切換成 ${user.name}`
   } catch (err) {
     const reason = getApiErrorMessage(err)
@@ -104,7 +105,7 @@ async function handleAddAnnouncement() {
   await run(() => addAnnouncement(announcementTitle.value, announcementContent.value))
   announcementTitle.value = ''
   announcementContent.value = ''
-  if (route.name !== 'Home') await router.push({ name: 'Home' })
+  if (route.name !== 'Announcements') await router.push({ name: 'Announcements' })
 }
 
 async function handleReset() {
@@ -145,7 +146,9 @@ const btn =
       aria-label="Debug 面板"
       class="flex max-h-[min(640px,calc(100dvh-5rem))] w-[min(360px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-foreground/20 bg-card text-sm shadow-2xl"
     >
-      <header class="flex items-center justify-between bg-foreground px-4 py-2 text-background">
+      <header
+        class="flex items-center justify-between border-b border-border bg-workspace px-4 py-2 text-workspace-foreground"
+      >
         <p class="font-bold">Debug 面板（假資料模式）</p>
         <button
           type="button"
@@ -343,7 +346,7 @@ const btn =
 
     <button
       type="button"
-      class="flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-bold text-background shadow-lg hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring"
+      class="flex items-center gap-1.5 rounded-full border border-border bg-workspace px-4 py-2 text-sm font-bold text-workspace-foreground shadow-lg hover:bg-muted focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring"
       :aria-expanded="open"
       aria-controls="debug-panel"
       @click="toggle"

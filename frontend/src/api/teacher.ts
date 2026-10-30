@@ -1,3 +1,4 @@
+import type { TeachingAccess } from './ta'
 import { apiClient } from './client'
 
 /**
@@ -21,7 +22,7 @@ export interface CoursePayload {
 }
 
 /** Figma「新增問題」的年齡層選項 ⚠️ 欄位名稱 age_range 是前端假設的 */
-export const AGE_RANGES = ['13-15', '16-18', '18+'] as const
+export const AGE_RANGES = ['13-15', '16-18', 'university_plus'] as const
 export type AgeRange = (typeof AGE_RANGES)[number]
 
 /** Figma「新增問題」的回合數選項 ⚠️ 欄位名稱 max_rounds 是前端假設的 */
@@ -40,9 +41,14 @@ export interface TeacherTopic {
   conclusion_count: number
   /** 已完成作答的學生人數 */
   answered_count: number
+  publication_status?: 'draft' | 'published'
+  setup_version?: number
 }
 
 export interface TeacherCourseTopics {
+  default_model_id?: string
+  access?: TeachingAccess
+  student_count?: number
   course_id: string
   name: string
   invite_code: string

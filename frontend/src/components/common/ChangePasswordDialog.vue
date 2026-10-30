@@ -1,9 +1,8 @@
 <script setup lang="ts">
 /**
- * 修改密碼。從帳號選單打開；老師帳號第一次登入（must_change_password）時會強制打開，
- * 改完才能用其他功能（後端也會擋）。
+ * 僅初次登入可設定新密碼。沒有一般帳號選單入口、郵件或忘記密碼流程。
  */
-import { computed, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { useMutation } from '@tanstack/vue-query'
 import { authApi } from '@/api/auth'
 import FormDialog from '@/components/common/FormDialog.vue'
@@ -12,26 +11,19 @@ import { Input } from '@/components/ui/input'
 import { getApiErrorMessage } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
 
-const props = defineProps<{ forced?: boolean }>()
 const open = defineModel<boolean>('open', { default: false })
 
 const authStore = useAuthStore()
 const form = reactive({ oldPassword: '', newPassword: '', confirm: '' })
 const errors = reactive({ oldPassword: '', newPassword: '', confirm: '' })
 const formError = ref('')
-const done = ref(false)
 
 watch(open, (isOpen) => {
   if (!isOpen) return
   Object.assign(form, { oldPassword: '', newPassword: '', confirm: '' })
   Object.assign(errors, { oldPassword: '', newPassword: '', confirm: '' })
   formError.value = ''
-  done.value = false
 })
-
-const description = computed(() =>
-  props.forced ? '這是第一次登入，請先把管理員給你的初始密碼改成自己的密碼。' : undefined,
-)
 
 const mutation = useMutation({
   mutationFn: () =>
@@ -46,6 +38,7 @@ const mutation = useMutation({
 })
 
 function handleSubmit() {
+  if (!authStore.mustChangePassword) return
   errors.oldPassword = form.oldPassword ? '' : '請輸入原密碼'
   errors.newPassword = form.newPassword.length >= 8 ? '' : '新密碼至少要 8 個字元'
   errors.confirm = form.confirm === form.newPassword ? '' : '兩次輸入的新密碼不一樣'
@@ -58,11 +51,11 @@ function handleSubmit() {
 <template>
   <FormDialog
     v-model:open="open"
-    title="修改密碼"
-    :description="description"
-    submit-text="修改"
-    :cancel-text="forced ? '登出' : '取消'"
-    :dismissible="!forced"
+    title="設定首次登入密碼"
+    description="這是第一次登入，請先把管理員給你的初始密碼改成自己的密碼。完成後不提供自行修改密碼功能。"
+    submit-text="設定密碼"
+    cancel-text="登出"
+    :dismissible="false"
     :loading="mutation.isPending.value"
     :error="formError"
     @submit="handleSubmit"
