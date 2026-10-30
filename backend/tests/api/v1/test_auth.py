@@ -166,6 +166,9 @@ def test_me_rejected_refresh_clears_cookies(auth_client: TestClient) -> None:
         "/api/v1/auth/login",
         json={"account": "gina", "password": "password1"},
     )
+    # Drop the login refresh first: httpx2 2.16+ reuses the jar, so set() alone
+    # may leave the real cookie on the next request.
+    auth_client.cookies.pop(REFRESH_COOKIE, None)
     auth_client.cookies.set(REFRESH_COOKIE, "not-a-real-refresh")
     response = auth_client.get("/api/v1/users/me")
     assert response.status_code == 401
