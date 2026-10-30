@@ -51,10 +51,11 @@ export default {
             letterSpacing: '0em',
           },
         ],
+        // Figma 文字樣式「Caption」：14px / 行高 1.5（2026-10 依元件頁 Card_News 核對，原本誤寫成 12px）
         caption: [
-          '12px',
+          '14px',
           {
-            lineHeight: '19.5px',
+            lineHeight: '1.5',
             fontWeight: '400',
             letterSpacing: '0em',
           },

@@ -12,6 +12,8 @@ import { cn } from '@/lib/utils'
  */
 
 interface Props {
+  /** 搭配 FormField 時由 v-bind="field" 傳進來，讓 <label for> 對得到這個欄位 */
+  id?: string
   class?: HTMLAttributes['class']
   type?: string
   placeholder?: string
@@ -25,6 +27,7 @@ const modelValue = defineModel<string>()
 
 <template>
   <input
+    :id="id"
     v-model="modelValue"
     data-slot="input"
     :type="type || 'text'"
@@ -45,5 +48,5 @@ const modelValue = defineModel<string>()
         props.class,
       )
     "
-  >
+  />
 </template>
