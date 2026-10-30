@@ -104,6 +104,10 @@
 - 呼叫方式: GET /student/courses/{courseId}/topics
 - 輸入資料: 無
 - 成功回應: 課程代號, 課程名稱, 課程邀請碼, 題目清單，包含 題目代號, 標題, 描述, 狀態, 對話代號
+- 前端串接：約定回應型別為 `CourseTopics`，使用 `studentApi.getCourseTopics(courseId)`；課程欄位為 `course_id`、`name`、`invite_code`、`topics`。
+- Figma 問題卡片另顯示 `age_range`（年齡層文字）與 `round_count`（回合數）；這兩個欄位尚未在既有 API 規格定義，前端將它們設為可選，缺值顯示「未提供」，實際串接時須核對欄位名稱。
+- 頁面：`/student/courses/:courseId`，僅 `STUDENT` 可用；GET 使用 `useQuery`（頁首共用快取），搜尋使用頁面內 `ref`，不新增 Pinia store。
+- 搜尋在已取得的題目標題與描述中進行；點選題目前往既有 `StudentChat` 路由，由題目頁負責建立或進入 Session。
 - 錯誤:
     - 未登入或憑證過期
     - 尚未加入該課程

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import router from '@/router'
+import { useAuthStore } from '@/stores/auth'
 
 // 後端 API 規格文件（docs/API功能規格.md）裡的路徑都是 /api/v1/... 開頭，
 // 例如 /api/v1/auth/login，如果這裡沒有補上 /api/v1，所有請求都會 404。
@@ -21,9 +21,8 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('access_token')
-      router.push('/login')
+      void useAuthStore().logout()
     }
     return Promise.reject(error)
-  }
+  },
 )
