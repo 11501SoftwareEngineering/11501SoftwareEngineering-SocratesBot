@@ -1,11 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, defineAsyncComponent, onMounted } from 'vue'
 import { RouterView } from 'vue-router'
 import AppFooter from '@/components/common/AppFooter.vue'
 import AppHeader from '@/components/common/AppHeader.vue'
 import ChangePasswordDialog from '@/components/common/ChangePasswordDialog.vue'
 import { usePasswordDialog } from '@/composables/usePasswordDialog'
 import { useAuthStore } from '@/stores/auth'
+
+// Demo 模式（VITE_USE_MOCK=true）才載入 Debug 面板，正式版不會打包進來
+const DebugPanel =
+  import.meta.env.VITE_USE_MOCK === 'true'
+    ? defineAsyncComponent(() => import('@/mocks/DebugPanel.vue'))
+    : null
 
 const authStore = useAuthStore()
 const passwordDialog = usePasswordDialog()
@@ -39,5 +45,6 @@ onMounted(() => {
       v-model:open="passwordOpen"
       :forced="authStore.mustChangePassword"
     />
+    <component :is="DebugPanel" v-if="DebugPanel" />
   </div>
 </template>

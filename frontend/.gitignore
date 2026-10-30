@@ -48,3 +48,6 @@ __screenshots__/
 # Vite
 *.timestamp-*-*.mjs
 .histoire
+
+# MSW 的 Service Worker：pnpm dev:mock / build:demo 執行時用 msw init 自動產生，不放進 repo
+public/mockServiceWorker.js
