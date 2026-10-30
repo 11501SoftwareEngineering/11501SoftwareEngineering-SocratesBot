@@ -37,6 +37,21 @@ pnpm dev
 
 請在 `frontend` 目錄執行，並開啟終端機顯示的網址。首頁為公告；課程頁位於 `/student/courses/:courseId`，需要學生登入與既有課程 API。
 
+### Demo 模式（不用後端，用假資料）
+
+```sh
+pnpm dev:mock      # 開發用，打開終端機顯示的網址
+pnpm build:demo    # 打包成可以部署的 Demo 版（dist/）
+```
+
+- 所有 `/api/v1/...` 請求會被瀏覽器裡的假後端（`src/mocks/`，用 MSW）攔截，前端程式完全不用改。
+- 假後端的回傳格式、錯誤訊息照後端 OpenAPI；後端還沒做的 API（AI 對話、語音、結論統計等）照 `docs/API功能規格.md` 先做，Demo 模式會把 `src/config/features.ts` 的功能全部打開。
+- 左下角的 **🐞 Debug** 按鈕可以：一鍵切換學生／老師／管理員、讓某組 API 變成空資料／錯誤／很慢／一直載入、新增課程／問題／學生、讓全班完成作答、直接結束對話、新增公告、重置假資料。
+- 假帳號：學生 `s001`～`s012`、老師 `wang` `lin` `chen`（chen 第一次登入要改密碼）、管理員 `admin`，密碼都是 `password123`。
+- 假資料存在瀏覽器的 localStorage，重新整理不會不見。
+- 一般的 `pnpm dev` 會打真的後端；正式版打包（`pnpm build`）不會包含假後端和 Debug 面板。
+- `public/mockServiceWorker.js` 是 MSW 的檔案，`pnpm dev:mock`、`pnpm build:demo` 執行時會自動產生（`msw init`），不放進 repo，也不要手動修改。
+
 ### 元件展示（Histoire）
 
 ```sh
