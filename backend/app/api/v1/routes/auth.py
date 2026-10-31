@@ -21,13 +21,6 @@ from app.schemas.auth import (
 )
 from app.services import auth as auth_service
 
-
-def _client_ip(request: Request) -> str:
-    if request.client is None:
-        return "unknown"
-    return request.client.host
-
-
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -57,7 +50,6 @@ async def register(
 
 @router.post("/login", response_model=LoginResponse, responses=LOGIN_RESPONSES)
 async def login(
-    request: Request,
     payload: LoginRequest,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -66,7 +58,6 @@ async def login(
     """Log in; set refresh cookies and Bearer access header.
 
     Args:
-        request: Used for client IP rate limiting.
         payload: Login body (account, password).
         response: Used for Set-Cookie and ``Authorization``.
         db: Async SQLAlchemy session (injected).
@@ -83,7 +74,6 @@ async def login(
         payload,
         response,
         redis=redis,
-        client_ip=_client_ip(request),
     )
 
 

@@ -157,33 +157,6 @@ def test_login_success_clears_account_failure_counter(auth_client: TestClient) -
     )
 
 
-def test_login_ip_rate_limit_across_accounts(auth_client: TestClient) -> None:
-    """Per-IP limit must fire even when each account is under its own cap."""
-    max_attempts = settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS
-    for i in range(max_attempts):
-        account = f"spray{i}"
-        auth_client.post(
-            "/api/v1/auth/register",
-            json={"account": account, "password": "password1", "name": account},
-        )
-        failed = auth_client.post(
-            "/api/v1/auth/login",
-            json={"account": account, "password": "wrong-pass"},
-        )
-        assert failed.status_code == 401
-
-    auth_client.post(
-        "/api/v1/auth/register",
-        json={"account": "sprayx", "password": "password1", "name": "SprayX"},
-    )
-    blocked = auth_client.post(
-        "/api/v1/auth/login",
-        json={"account": "sprayx", "password": "password1"},
-    )
-    assert blocked.status_code == 429
-    assert blocked.json()["detail"] == LOGIN_RATE_LIMITED_DETAIL
-
-
 def test_me_requires_auth(auth_client: TestClient) -> None:
     assert auth_client.get("/api/v1/users/me").status_code == 401
 

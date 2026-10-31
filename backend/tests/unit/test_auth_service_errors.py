@@ -96,7 +96,6 @@ def test_login_rejects_user_without_password(monkeypatch: pytest.MonkeyPatch) ->
     redis.ttl = AsyncMock(return_value=-1)
     redis.expire = AsyncMock(return_value=True)
     redis.delete = AsyncMock(return_value=0)
-    redis.decr = AsyncMock(return_value=0)
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(
@@ -105,12 +104,11 @@ def test_login_rejects_user_without_password(monkeypatch: pytest.MonkeyPatch) ->
                 LoginRequest(account="nopw", password="password1"),
                 Response(),
                 redis=redis,
-                client_ip="127.0.0.1",
             )
         )
     assert exc.value.status_code == 401
-    # begin_login_attempt bumps account + IP; failure does not clear.
-    assert redis.incr.await_count == 2
+    # begin_login_attempt bumps account; failure does not clear.
+    assert redis.incr.await_count == 1
     redis.expire.assert_awaited()
     redis.delete.assert_not_awaited()
 

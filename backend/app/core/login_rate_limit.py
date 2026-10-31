@@ -1,4 +1,4 @@
-"""Redis-backed login brute-force limits (per account and per client IP).
+"""Redis-backed login brute-force limits (per account).
 
 Fail-open: Redis errors skip enforcement so login stays available when Redis is down.
 """
@@ -16,7 +16,6 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _ACCOUNT_KEY = "login:fail:account:{account}"
-_IP_KEY = "login:fail:ip:{ip}"
 
 
 class RedisCounter(Protocol):
@@ -32,11 +31,7 @@ class RedisCounter(Protocol):
 
 
 def _account_key(account: str) -> str:
-    return _ACCOUNT_KEY.format(account=account.strip().lower())
-
-
-def _ip_key(ip: str) -> str:
-    return _IP_KEY.format(ip=ip.strip() or "unknown")
+    return _ACCOUNT_KEY.format(account=account)
 
 
 async def _bump(redis: RedisCounter, key: str, window: int) -> int:
@@ -52,9 +47,8 @@ async def begin_login_attempt(
     redis: RedisCounter,
     *,
     account: str,
-    client_ip: str,
 ) -> None:
-    """Reserve one attempt (INCR account+IP); raise 429 when either exceeds max.
+    """Reserve one attempt (INCR account); raise 429 when it exceeds max.
 
     Counts the in-flight attempt before password verify so concurrent callers
     cannot all observe an under-limit snapshot. Redis errors fail open.
@@ -62,28 +56,21 @@ async def begin_login_attempt(
     max_attempts = settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS
     window = settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS
     account_key = _account_key(account)
-    ip_key = _ip_key(client_ip)
 
     try:
         account_count = await _bump(redis, account_key, window)
-        ip_count = await _bump(redis, ip_key, window)
     except Exception:
         logger.warning("login rate-limit begin failed; allowing attempt", exc_info=True)
         return
 
-    if account_count <= max_attempts and ip_count <= max_attempts:
+    if account_count <= max_attempts:
         return
 
     retry_after = 1
     try:
-        if account_count > max_attempts:
-            ttl = await redis.ttl(account_key)
-            if ttl > retry_after:
-                retry_after = ttl
-        if ip_count > max_attempts:
-            ttl = await redis.ttl(ip_key)
-            if ttl > retry_after:
-                retry_after = ttl
+        ttl = await redis.ttl(account_key)
+        if ttl > retry_after:
+            retry_after = ttl
     except Exception:
         logger.warning("login rate-limit ttl read failed", exc_info=True)
 
@@ -98,18 +85,12 @@ async def clear_login_failures(
     redis: RedisCounter,
     *,
     account: str,
-    client_ip: str,
 ) -> None:
-    """After success: wipe account counter; undo this attempt's IP increment.
+    """After success: wipe account counter.
 
-    IP budget stays shared across accounts (no spray bypass via a throwaway login).
     Redis errors fail open (success path continues).
     """
     try:
         await redis.delete(_account_key(account))
-        ip_key = _ip_key(client_ip)
-        remaining = await redis.decr(ip_key)
-        if remaining <= 0:
-            await redis.delete(ip_key)
     except Exception:
         logger.warning("login rate-limit clear failed; continuing", exc_info=True)
