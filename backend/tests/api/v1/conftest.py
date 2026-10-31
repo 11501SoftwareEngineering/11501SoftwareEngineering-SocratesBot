@@ -181,14 +181,55 @@ def auth_client(client: TestClient, store: FakeStore, monkeypatch: pytest.Monkey
         pass
 
     class _Redis:
+        """Minimal async Redis stand-in for login rate-limit counters."""
+
+        def __init__(self) -> None:
+            self._values: dict[str, int] = {}
+            self._ttls: dict[str, int] = {}
+
         async def ping(self) -> bool:
             return True
+
+        async def get(self, name: str) -> str | None:
+            if name not in self._values:
+                return None
+            return str(self._values[name])
+
+        async def incr(self, name: str) -> int:
+            self._values[name] = self._values.get(name, 0) + 1
+            return self._values[name]
+
+        async def decr(self, name: str) -> int:
+            self._values[name] = self._values.get(name, 0) - 1
+            return self._values[name]
+
+        async def expire(self, name: str, time: int) -> bool:
+            if name in self._values:
+                self._ttls[name] = time
+                return True
+            return False
+
+        async def delete(self, *names: str) -> int:
+            removed = 0
+            for name in names:
+                if name in self._values:
+                    del self._values[name]
+                    removed += 1
+                self._ttls.pop(name, None)
+            return removed
+
+        async def ttl(self, name: str) -> int:
+            if name not in self._values:
+                return -2
+            return self._ttls.get(name, -1)
 
     async def provide_db():
         return _Db()
 
+    redis = _Redis()
+
     async def provide_redis():
-        return _Redis()
+        return redis
 
     app.dependency_overrides[get_db] = provide_db
     app.dependency_overrides[get_redis] = provide_redis
