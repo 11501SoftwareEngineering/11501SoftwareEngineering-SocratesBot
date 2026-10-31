@@ -3,12 +3,11 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
 
 from app.core.enums import SessionStatus
 from app.crud.session import SQLAlchemySessionStore, get_or_create_session_id
 from app.models.session import Session
-from app.services.session import update_session_privacy
+from app.services.session import NotSessionOwnerError, update_session_privacy
 from tests.integration.test_session_crud import (
     create_course_and_topic,
     create_student,
@@ -159,15 +158,13 @@ def test_non_owner_cannot_update_privacy_in_database() -> None:
             )
             store = SQLAlchemySessionStore(db)
 
-            with pytest.raises(HTTPException) as exc_info:
+            with pytest.raises(NotSessionOwnerError):
                 await update_session_privacy(
                     store=store,
                     session_id=session_id,
                     current_user_id=outsider.id,
                     is_anonymous=True,
                 )
-
-            assert exc_info.value.status_code == 403
 
             saved = await db.get(Session, session_id, populate_existing=True)
 

@@ -24,6 +24,14 @@ class CourseAccessDeniedError(Exception):
     """The user is not a member of the topic's course."""
 
 
+class SessionNotFoundError(Exception):
+    """The requested session does not exist."""
+
+
+class NotSessionOwnerError(Exception):
+    """The caller is not the session owner."""
+
+
 class SessionStore(Protocol):
     """Storage operations to be implemented by the CRUD layer."""
 
@@ -121,16 +129,10 @@ async def _get_owned_session(
     session = await store.get_session(session_id)
 
     if session is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found",
-        )
+        raise SessionNotFoundError("Session not found")
 
     if session.user_id != current_user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not the session owner",
-        )
+        raise NotSessionOwnerError("Not the session owner")
 
     return session
 
@@ -159,10 +161,7 @@ async def update_session_privacy(
     updated_session = await store.set_is_anonymous(session_id, is_anonymous)
 
     if updated_session is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found",
-        )
+        raise SessionNotFoundError("Session not found")
 
     return UpdateSessionPrivacyResponse(
         session_id=updated_session.id,
@@ -188,6 +187,18 @@ async def update_student_session_privacy(
             is_anonymous=is_anonymous,
         )
         await db.commit()
+    except SessionNotFoundError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
+        ) from exc
+    except NotSessionOwnerError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not the session owner",
+        ) from exc
     except Exception:
         await db.rollback()
         raise
@@ -201,11 +212,22 @@ async def get_session_result(
     session_id: UUID,
     current_user_id: UUID,
 ) -> SessionResultResponse:
-    session = await _get_owned_session(
-        store=store,
-        session_id=session_id,
-        current_user_id=current_user_id,
-    )
+    try:
+        session = await _get_owned_session(
+            store=store,
+            session_id=session_id,
+            current_user_id=current_user_id,
+        )
+    except SessionNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
+        ) from exc
+    except NotSessionOwnerError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not the session owner",
+        ) from exc
 
     if session.status != SessionStatus.COMPLETED:
         raise HTTPException(
