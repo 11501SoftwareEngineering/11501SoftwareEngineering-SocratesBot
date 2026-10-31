@@ -98,7 +98,6 @@ async def login_user(
     response: Response,
     *,
     redis: RedisCounter,
-    client_ip: str,
 ) -> LoginResponse:
     """Authenticate; set refresh cookies and Bearer access header.
 
@@ -107,7 +106,6 @@ async def login_user(
         payload: Login body (account, password).
         response: Used for Set-Cookie and ``Authorization`` header.
         redis: Redis client for login failure counters.
-        client_ip: Caller IP used for per-IP rate limiting.
 
     Returns:
         ``LoginResponse`` profile fields (no tokens in JSON).
@@ -116,13 +114,12 @@ async def login_user(
         HTTPException: 429 if rate-limited; 401 if credentials are invalid.
 
     Rate limiting reserves an attempt in Redis before password verify (atomic
-    INCR). Failures leave the counters; success clears the account key and
-    undoes this attempt's IP bump. Redis errors fail open.
+    INCR). Failures leave the counters; success clears the account key.
+    Redis errors fail open.
     """
     await begin_login_attempt(
         redis,
         account=payload.account,
-        client_ip=client_ip,
     )
 
     current_user = await user.get_user_by_account(db, payload.account)
@@ -143,7 +140,6 @@ async def login_user(
     await clear_login_failures(
         redis,
         account=payload.account,
-        client_ip=client_ip,
     )
 
     db_role = UserRole(current_user.role)
