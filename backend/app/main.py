@@ -18,6 +18,7 @@ from app.core.migration import run_migrations
 from app.core.redis import close_redis
 from app.core.validation_errors import sanitize_validation_errors
 from app.middleware import CsrfMiddleware, RequestLoggingMiddleware
+from scripts.seed.runner import run_seed_db
 
 logging.basicConfig(
     level=logging.INFO, format="%(levelname)s:     %(name)s - %(message)s"
@@ -30,6 +31,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # 正式環境請於部署流程執行: make -C backend db-upgrade
     if settings.APP_ENV == "development":
         await run_migrations()
+        # Opt-in only; never writes config.yaml (use `make seed` for that).
+        if settings.SEED_DEV_DATA:
+            # No credential dump on hot reload; use `make seed` for the summary.
+            await run_seed_db(print_summary=False)
     yield
     await close_redis()
     await engine.dispose()

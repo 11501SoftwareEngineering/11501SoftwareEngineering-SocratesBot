@@ -1,12 +1,13 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup lock dev fix check test test-integration \
+.PHONY: help setup lock dev fix check test test-integration seed db-reset \
 	db-prod db-prod-down db-dev db-dev-down \
 	db-revision db-upgrade db-downgrade db-current db-heads \
 	db-migration-check openapi-export openapi-site
 
 help:
 	@echo "App: setup, lock, dev, fix, check, test, test-integration"
+	@echo "Seed: seed, db-reset [CONFIRM=1]"
 	@echo "Docs: openapi-export, openapi-site [OUT=dir] [PORT=8080]"
 	@echo "Docker: db-dev, db-dev-down, db-prod, db-prod-down"
 	@echo 'Migrations: db-revision message="...", db-upgrade, db-downgrade, db-current, db-heads'
@@ -14,6 +15,7 @@ help:
 	@echo ""
 	@echo "From repo root: make -C backend db-upgrade"
 	@echo "                make -C backend db-migration-check"
+	@echo "                make -C backend seed"
 
 setup:
 	uv sync --locked
@@ -65,6 +67,18 @@ db-upgrade:
 
 db-downgrade:
 	$(ALEMBIC) downgrade -1
+
+# Development fake data (APP_ENV=development required). See docs/測試資料.md.
+seed:
+	PYTHONPATH=. uv run --locked python -m scripts.seed_dev
+	PYTHONPATH=. uv run --locked python -m scripts.seed_config_assist
+
+# Wipe schema → upgrade → seed. Interactive confirm, or CONFIRM=1.
+db-reset:
+	@CONFIRM="$(CONFIRM)" PYTHONPATH=. uv run --locked python -m scripts.confirm_db_reset
+	$(ALEMBIC) downgrade base
+	$(ALEMBIC) upgrade head
+	$(MAKE) seed
 
 db-current:
 	$(ALEMBIC) current
