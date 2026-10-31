@@ -1,93 +1,100 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { authApi } from '@/api/auth'
+/**
+ * 登入頁。對應 Figma「Login」（node 125:62）。
+ * API：POST /auth/login（token 在回應的 Authorization header）
+ */
+import { reactive, ref } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useMutation } from '@tanstack/vue-query'
+import AppLogo from '@/components/common/AppLogo.vue'
+import AuthCard from '@/components/common/AuthCard.vue'
+import FormField from '@/components/common/FormField.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getApiErrorMessage } from '@/lib/utils'
-import { useAuthStore } from '@/stores/auth'
+import { HOME_ROUTE, useAuthStore } from '@/stores/auth'
 
-// 對應 Figma「Login_test」畫面（node 125:62）。
-// 這版是照 Login_test 的 auto layout 結構重刻的：卡片內用 flex 分成
-// 「Logo 區 / 欄位區 / 按鈕區」三段，欄位區整體往左內縮一點（對應 Figma 的 pl-34），
-// 按鈕跟忘記密碼則整組靠右對齊（對應 Figma 的 items-end）。
 const authStore = useAuthStore()
+const route = useRoute()
 const router = useRouter()
 
-const account = ref('')
-const password = ref('')
-const errorMessage = ref('')
-const isSubmitting = ref(false)
+const form = reactive({ account: '', password: '' })
+const errors = reactive({ account: '', password: '' })
+const formError = ref('')
+const showForgotHint = ref(false)
 
-async function handleLogin() {
-  errorMessage.value = ''
-  isSubmitting.value = true
-  try {
-    const res = await authApi.login({ account: account.value, password: password.value })
-    authStore.setAuth(res.data.access_token, {
-      id: res.data.account,
-      email: res.data.account,
-      name: res.data.name,
-      role: res.data.role,
-    })
-    if (res.data.role === 'STUDENT') router.push('/student/courses')
-    else if (res.data.role === 'TEACHER') router.push('/teacher/dashboard')
-    else router.push('/admin/users')
-  } catch (err) {
-    errorMessage.value = getApiErrorMessage(err, '帳號或密碼錯誤')
-  } finally {
-    isSubmitting.value = false
-  }
+const mutation = useMutation({
+  mutationFn: () => authStore.login({ account: form.account.trim(), password: form.password }),
+  onSuccess: (user) => {
+    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+    // 只接受站內路徑，避免被導到外部網站
+    if (redirect.startsWith('/') && !redirect.startsWith('//')) {
+      void router.replace(redirect)
+    } else {
+      void router.replace({ name: HOME_ROUTE[user.role] })
+    }
+  },
+  onError: (error) => {
+    formError.value = getApiErrorMessage(error, '登入失敗，請稍後再試')
+  },
+})
+
+function handleSubmit() {
+  errors.account = form.account.trim() ? '' : '請輸入帳號'
+  errors.password = form.password ? '' : '請輸入密碼'
+  formError.value = ''
+  if (errors.account || errors.password) return
+  mutation.mutate()
 }
 </script>
 
 <template>
-  <div class="flex justify-center px-4 py-12">
-    <div class="flex w-full max-w-[626px] flex-col items-center gap-5 rounded-2xl border border-border bg-card px-[68px] py-[27px] shadow-elevated">
-      <!-- TODO(設計組): Figma 現在放的是正式的吉祥物截圖，麻煩請輸出透明背景的 SVG/PNG
-           圖檔給前端，換掉下面這個佔位方塊。 -->
-      <div class="flex w-full justify-center pt-[30px]">
-        <div class="flex h-44 w-44 items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground">
-          Logo 佔位
-        </div>
+  <AuthCard>
+    <AppLogo :size="200" class="mx-auto" />
+
+    <p
+      v-if="authStore.sessionExpired"
+      role="status"
+      class="mt-6 rounded-lg bg-secondary/60 px-4 py-2 text-center text-body text-foreground"
+    >
+      登入已過期，請重新登入
+    </p>
+
+    <form class="mt-8 flex flex-col gap-5" novalidate @submit.prevent="handleSubmit">
+      <FormField v-slot="field" label="帳號" :error="errors.account">
+        <Input v-model="form.account" v-bind="field" :id="field.id" autocomplete="username" />
+      </FormField>
+      <FormField v-slot="field" label="密碼" :error="errors.password || formError">
+        <Input
+          v-model="form.password"
+          v-bind="field"
+          :id="field.id"
+          type="password"
+          autocomplete="current-password"
+        />
+      </FormField>
+
+      <div class="flex items-center justify-end gap-4">
+        <Button as-child variant="ghost" size="lg" class="font-medium">
+          <RouterLink :to="{ name: 'Register' }">註冊</RouterLink>
+        </Button>
+        <Button type="submit" size="lg" :disabled="mutation.isPending.value">
+          {{ mutation.isPending.value ? '登入中…' : '登入' }}
+        </Button>
       </div>
-
-      <form class="flex w-full flex-col gap-8" @submit.prevent="handleLogin">
-        <div class="flex w-full flex-col gap-8 pl-8">
-          <div class="flex w-full items-center gap-4">
-            <label for="login-account" class="w-[108px] shrink-0 font-heading text-h1-title text-foreground">帳號：</label>
-            <Input id="login-account" v-model="account" class="flex-1" placeholder="請輸入帳號" autocomplete="username" />
-          </div>
-
-          <div class="flex w-full flex-col gap-1">
-            <div class="flex w-full items-center gap-4">
-              <label for="login-password" class="w-[108px] shrink-0 font-heading text-h1-title text-foreground">密碼：</label>
-              <Input id="login-password" v-model="password" type="password" class="flex-1" placeholder="請輸入密碼" autocomplete="current-password" />
-            </div>
-            <p v-if="errorMessage" class="w-full text-right text-h2-title text-destructive">
-              {{ errorMessage }}
-            </p>
-          </div>
-        </div>
-
-        <div class="flex w-full flex-col items-end gap-2 pt-2">
-          <div class="flex items-center gap-4">
-            <Button type="button" variant="ghost" size="lg">
-              註冊
-            </Button>
-            <Button type="submit" size="lg" :disabled="isSubmitting">
-              {{ isSubmitting ? '登入中...' : '登入' }}
-            </Button>
-          </div>
-
-          <!-- TODO(前端組): 忘記密碼流程還沒有對應頁面/API，先放可 hover 的文字佔位。
-               Figma 這裡 hover 時「顏色不變、只加底線」，所以用 hover:underline，
-               不要加 hover:text-* 之類會變色的 class。 -->
-          <button type="button" class="text-h2-title text-muted-foreground hover:underline">
-            忘記密碼?
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
+      <div class="text-right">
+        <button
+          type="button"
+          class="rounded text-body text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          :aria-expanded="showForgotHint"
+          @click="showForgotHint = !showForgotHint"
+        >
+          忘記密碼?
+        </button>
+        <p v-if="showForgotHint" class="mt-1 text-body text-muted-foreground">
+          請聯絡老師或管理員協助重設密碼。
+        </p>
+      </div>
+    </form>
+  </AuthCard>
 </template>
