@@ -37,6 +37,17 @@ pnpm dev
 
 請在 `frontend` 目錄執行，並開啟終端機顯示的網址。首頁為公告；課程頁位於 `/student/courses/:courseId`，需要學生登入與既有課程 API。
 
+### 元件展示（Histoire）
+
+```sh
+pnpm story:dev     # 開發時預覽所有元件，打開終端機顯示的網址
+pnpm story:build   # 輸出靜態網站到 .histoire/dist
+```
+
+- 元件都照 Figma 元件頁做，每個元件旁邊的 `*.story.vue` 就是它的展示頁。
+- `components/ui/` 是 shadcn-vue 產生後依 Figma 調整過的基礎元件；`components/common/` 是組合好的共用元件（清單卡片、表單對話框、確認對話框、搜尋框、載入／錯誤／空狀態等）。
+- 新頁面請優先組合這些元件，不要在頁面裡另外刻樣式。
+
 ### 公告資料
 
 公告固定讀取 `src/data/announcements.ts`，可直接修改其中的文字與日期，不會發出公告 API 請求。
