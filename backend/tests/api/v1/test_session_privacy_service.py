@@ -3,11 +3,14 @@ from dataclasses import replace
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import HTTPException
 
 from app.core.enums import SessionStatus
 from app.schemas.session import SessionData
-from app.services.session import update_session_privacy
+from app.services.session import (
+    NotSessionOwnerError,
+    SessionNotFoundError,
+    update_session_privacy,
+)
 
 
 class FakeStore:
@@ -69,7 +72,7 @@ def test_non_owner_cannot_update_privacy() -> None:
     )
     store = FakeStore([session])
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(NotSessionOwnerError):
         asyncio.run(
             update_session_privacy(
                 store=store,
@@ -79,15 +82,14 @@ def test_non_owner_cannot_update_privacy() -> None:
             )
         )
 
-    assert exc_info.value.status_code == 403
     assert store.sessions[session.id].is_anonymous is False
     assert store.updates == []
 
 
-def test_missing_session_returns_404() -> None:
+def test_missing_session_returns_not_found() -> None:
     store = FakeStore([])
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(SessionNotFoundError):
         asyncio.run(
             update_session_privacy(
                 store=store,
@@ -97,12 +99,11 @@ def test_missing_session_returns_404() -> None:
             )
         )
 
-    assert exc_info.value.status_code == 404
     assert store.updates == []
     assert store.sessions == {}
 
 
-def test_session_deleted_before_update_returns_404(
+def test_session_deleted_before_update_returns_not_found(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = SessionData(
@@ -123,7 +124,7 @@ def test_session_deleted_before_update_returns_404(
 
     monkeypatch.setattr(store, "set_is_anonymous", delete_before_update)
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(SessionNotFoundError, match="Session not found"):
         asyncio.run(
             update_session_privacy(
                 store=store,
@@ -133,7 +134,5 @@ def test_session_deleted_before_update_returns_404(
             )
         )
 
-    assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Session not found"
     assert store.sessions == {}
     assert store.updates == []
