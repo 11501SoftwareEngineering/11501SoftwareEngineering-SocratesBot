@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:mock": "msw init && vite --mode mock",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "test:unit": "vitest",
     "build-only": "vite build",
+    "build:demo": "msw init && run-p type-check \"build-only --mode mock {@}\" --",
     "type-check": "vue-tsc --build",
     "lint": "run-s \"lint:*\"",
     "lint:oxlint": "oxlint . --fix",
@@ -51,6 +53,7 @@
     "histoire": "1.0.0-beta.1",
     "jiti": "^2.7.0",
     "jsdom": "^30.0.1",
+    "msw": "^2.15.0",
     "npm-run-all2": "^9.0.3",
     "oxlint": "~1.82.0",
     "postcss": "^8.5.28",
@@ -66,5 +69,10 @@
   },
   "engines": {
     "node": "^22.18.0 || >=24.12.0"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }
