@@ -1,9 +1,53 @@
 import { apiClient } from './client'
 
-// TODO(負責管理員端的組員):
-// 依 docs/API功能規格.md 的「老師管理員模組」段落補上老師帳號的增刪查功能。
+/**
+ * 管理員：老師帳號管理。
+ * 欄位名稱已對照後端 backend/app/schemas/admin.py。
+ */
+
+export interface Teacher {
+  id: string
+  account: string
+  name: string
+  created_at: string
+}
+
+export interface CreateTeacherPayload {
+  account: string
+  name: string
+}
+
+/** 建立或重設密碼後回傳的一次性初始密碼，只會出現這一次 */
+export interface TeacherPasswordResponse {
+  account: string
+  name: string
+  password: string
+}
+
+export const adminKeys = {
+  teachers: ['admin', 'teachers'] as const,
+}
+
 export const adminApi = {
-  getTeachers() {
-    return apiClient.get('/admin/teachers')
+  async getTeachers() {
+    const res = await apiClient.get<Teacher[]>('/admin/teachers')
+    return res.data
+  },
+  async createTeacher(payload: CreateTeacherPayload) {
+    const res = await apiClient.post<TeacherPasswordResponse>('/admin/teachers', payload)
+    return res.data
+  },
+  deleteTeacher(teacherId: string) {
+    return apiClient.delete(`/admin/teachers/${encodeURIComponent(teacherId)}`)
+  },
+  /**
+   * 重設老師密碼。
+   * ⚠️ API 規格還沒有這支，路徑是前端先假設的，後端做好後要核對。
+   */
+  async resetTeacherPassword(teacherId: string) {
+    const res = await apiClient.post<TeacherPasswordResponse>(
+      `/admin/teachers/${encodeURIComponent(teacherId)}/reset-password`,
+    )
+    return res.data
   },
 }

@@ -13,10 +13,23 @@ export function useVoiceRecorder() {
 
   let mediaRecorder: MediaRecorder | null = null
   let chunks: BlobPart[] = []
+  // Demo（假資料）模式下沒有麥克風也能操作：假裝在錄音，停止時上傳空的音檔
+  let fakeRecording = false
 
   async function startRecording() {
     errorMessage.value = ''
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch {
+      if (import.meta.env.VITE_USE_MOCK === 'true') {
+        fakeRecording = true
+        isRecording.value = true
+        return
+      }
+      errorMessage.value = '無法使用麥克風，請確認瀏覽器已允許麥克風權限。'
+      return
+    }
     chunks = []
     mediaRecorder = new MediaRecorder(stream)
     mediaRecorder.ondataavailable = (event) => {
@@ -26,26 +39,33 @@ export function useVoiceRecorder() {
     isRecording.value = true
   }
 
+  async function transcribe(audioBlob: Blob) {
+    isRecording.value = false
+    isTranscribing.value = true
+    try {
+      const { text } = await studentApi.transcribeAudio(audioBlob)
+      return text
+    } catch (err) {
+      errorMessage.value = '語音辨識失敗，請再試一次或改用文字輸入。'
+      throw err
+    } finally {
+      isTranscribing.value = false
+    }
+  }
+
   function stopRecording(): Promise<string> {
+    if (fakeRecording) {
+      fakeRecording = false
+      return transcribe(new Blob([], { type: 'audio/webm' }))
+    }
     return new Promise((resolve, reject) => {
       if (!mediaRecorder) {
         reject(new Error('尚未開始錄音'))
         return
       }
 
-      mediaRecorder.onstop = async () => {
-        isRecording.value = false
-        isTranscribing.value = true
-        try {
-          const audioBlob = new Blob(chunks, { type: 'audio/webm' })
-          const res = await studentApi.transcribeAudio(audioBlob)
-          resolve(res.data.text)
-        } catch (err) {
-          errorMessage.value = '語音辨識失敗,請再試一次或改用文字輸入。'
-          reject(err)
-        } finally {
-          isTranscribing.value = false
-        }
+      mediaRecorder.onstop = () => {
+        transcribe(new Blob(chunks, { type: 'audio/webm' })).then(resolve, reject)
       }
 
       mediaRecorder.stop()
@@ -62,5 +82,12 @@ export function useVoiceRecorder() {
     return null
   }
 
-  return { isRecording, isTranscribing, errorMessage, startRecording, stopRecording, toggleRecording }
+  return {
+    isRecording,
+    isTranscribing,
+    errorMessage,
+    startRecording,
+    stopRecording,
+    toggleRecording,
+  }
 }
