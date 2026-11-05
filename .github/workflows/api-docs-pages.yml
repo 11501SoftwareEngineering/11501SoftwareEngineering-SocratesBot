@@ -29,11 +29,8 @@ permissions:
 
 jobs:
   api-docs:
-    # Pin to full commit SHA (Sonar / supply-chain); comment is the release tag.
-    # Bumped after release of fastAPI-docs-pages v1.1.1.
     uses: dytsou/fastAPI-docs-pages/.github/workflows/publish.yml@194257efb94b2e638b41f242e13ead32f6045b8e # v1.3.1
     with:
-      # publish.yml installs uv via SHA-pinned astral-sh/setup-uv.
       setup-command: |
         cd backend && uv python install 3.13 && uv sync --locked --no-build
       # Each tree uses its own exporter + lockfile (main ships export_openapi.py).
