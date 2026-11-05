@@ -1,10 +1,12 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import ActiveUser, get_db
+from app.api.deps import ActiveUser, get_db, get_redis
 from app.api.openapi_responses import (
+    LOGIN_RESPONSES,
     PASSWORD_CHANGE_RESPONSES,
     REGISTER_RESPONSES,
 )
@@ -46,11 +48,12 @@ async def register(
     return await auth_service.register_user(db, payload)
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login", response_model=LoginResponse, responses=LOGIN_RESPONSES)
 async def login(
     payload: LoginRequest,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
 ) -> LoginResponse:
     """Log in; set refresh cookies and Bearer access header.
 
@@ -58,14 +61,20 @@ async def login(
         payload: Login body (account, password).
         response: Used for Set-Cookie and ``Authorization``.
         db: Async SQLAlchemy session (injected).
+        redis: Redis client for login failure counters.
 
     Returns:
         ``LoginResponse`` profile fields (tokens are not in JSON).
 
     Raises:
-        HTTPException: 401 if credentials are invalid.
+        HTTPException: 429 if rate-limited; 401 if credentials are invalid.
     """
-    return await auth_service.login_user(db, payload, response)
+    return await auth_service.login_user(
+        db,
+        payload,
+        response,
+        redis=redis,
+    )
 
 
 @router.post("/logout", response_model=OkResponse)
