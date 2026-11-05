@@ -151,32 +151,28 @@ version: 0.2
 | `edit_summary` | 在 `summary` 階段重新產生及修訂摘要草稿；不能審閱、發布或撤回 |
 | `view_members` | 檢視學生名單；不能移除學生或管理助教 |
 
-### 取得學生名單
-- 功能說明: 取得課程的學生名單
-- 呼叫方式: GET /courses/{courseId}/students
-- 授權: 老師、助教需 `view_members`
-- 輸入資料: 無
-- 成功回應: 學生清單[`student_id`, `account_id`, `name`, `joined_at`]
+### 取得課程成員名單
+- 功能說明: 取得課程的學生及／或助教名單，以 `role` 參數區分
+- 呼叫方式: GET /courses/{courseId}/members?role={role}
+- 授權:
+    - `role=student`: 老師、助教需 `view_members`
+    - `role=ta` 或未帶 `role`: 老師
+- 輸入資料: `role`（query 參數，選填）
+    - `student`: 只回傳學生
+    - `ta`: 只回傳助教
+    - 未帶: 學生與助教一起回傳
+- 成功回應: 成員清單[`user_id`, `account_id`, `name`, `role`(`student` / `ta`), `joined_at`, `permissions`(僅 `ta` 有值，學生為空陣列)]
 - 錯誤:
+    - `role` 值無效 (422)
     - 無權限 (403)
     - 查無此課程 (404)
 
 ### 移除學生
 - 功能說明: 老師將學生從課程中移除，撤銷其課程資格；歷史資料保留政策依待決事項
-- 呼叫方式: DELETE /courses/{courseId}/students/{studentId}
+- 呼叫方式: DELETE /courses/{courseId}/students/{userId}
 - 授權: 老師
 - 輸入資料: 無
 - 成功回應: HTTP 204；學生已不在課程中時同樣 204
-- 錯誤:
-    - 非該課程老師 (403)
-    - 查無此課程 (404)
-
-### 取得助教列表
-- 功能說明: 查看課程已指派的助教及其權限
-- 呼叫方式: GET /courses/{courseId}/tas
-- 授權: 老師
-- 輸入資料: 無
-- 成功回應: 助教清單[`member_id`, `account_id`, `name`, `permissions`, `assigned_at`]
 - 錯誤:
     - 非該課程老師 (403)
     - 查無此課程 (404)
@@ -186,7 +182,7 @@ version: 0.2
 - 呼叫方式: POST /courses/{courseId}/tas
 - 授權: 老師
 - 輸入資料: `account_id`, `permissions`(僅接受 edit_topics, view_reports, edit_summary, view_members)
-- 成功回應: `member_id`, `account_id`, `name`, `permissions`, `message`
+- 成功回應: `user_id`, `account_id`, `name`, `permissions`, `message`
 - 錯誤:
     - 帳號未填寫或含未知權限 (422)
     - 非該課程老師 (403)
@@ -195,10 +191,10 @@ version: 0.2
 
 ### 更新助教權限
 - 功能說明: 老師逐項更新助教權限；儲存後下一次 API 請求立即依新權限檢查
-- 呼叫方式: PUT /courses/{courseId}/tas/{memberId}
+- 呼叫方式: PUT /courses/{courseId}/tas/{userId}
 - 授權: 老師
 - 輸入資料: `permissions`
-- 成功回應: `member_id`, `permissions`, `message`
+- 成功回應: `user_id`, `permissions`, `message`
 - 錯誤:
     - 含未知權限 (422)
     - 非該課程老師，或助教嘗試修改自己的權限 (403)
@@ -206,7 +202,7 @@ version: 0.2
 
 ### 撤銷助教
 - 功能說明: 老師撤銷助教的教學存取；原為學生者依核定政策恢復學生資格，並保存角色變更紀錄
-- 呼叫方式: DELETE /courses/{courseId}/tas/{memberId}
+- 呼叫方式: DELETE /courses/{courseId}/tas/{userId}
 - 授權: 老師
 - 輸入資料: 無
 - 成功回應: HTTP 204
