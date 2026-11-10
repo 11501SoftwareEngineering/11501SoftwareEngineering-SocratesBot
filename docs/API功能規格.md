@@ -19,7 +19,7 @@ version: 0.2
 - 成功回應: `account_id`, `name`, `role`, `message`
 - 錯誤:
     - 欄位未填寫或格式不符 (422)
-    - 帳號已存在或為保留帳號名稱 (409)
+    - 帳號已存在或為保留帳號名稱 (400)
 
 ### 使用者登入
 - 功能說明: 帳號密碼驗證並取得登入憑證
@@ -27,7 +27,7 @@ version: 0.2
 - 授權: 不需登入
 - 輸入資料: `account_id`, `password`
 - 成功回應: 回應標頭 `Authorization` 帶 access token
-    body: `account_id`, `name`, `role`（"USER" or "SUPERADMIN" or "TEACHER"）, `preferred_language`, `must_change_password`
+    body: `account_id`, `name`, `role`（陣列，可以包含以下身份："USER" or "SUPERADMIN" or "TEACHER"）, `preferred_language`, `must_change_password`
 - 錯誤:
     - 帳號或密碼未輸入 (422)
     - 帳號或密碼錯誤 (401)
@@ -298,7 +298,7 @@ version: 0.2
 - 呼叫方式: POST /topics/{topicId}/setup/generate
 - 授權: 設定權限
 - 輸入資料: `age_band`, `max_turns`, `content_language`, `course_description`, `model_id`
-- 成功回應: 同「取得題目設定」（`topic_id`, `course_id`, `version`, `topic_status`, `content_language`, `model_id`, `setup`，其中 `setup` 為 AI 建議）, `questions`[`question_id`, `text`]（釐清題）, `checks`（檢查結果）
+- 成功回應: 同「取得題目設定」
 - 錯誤:
     - 欄位不符規則 (422)
     - 無權限 (403)
@@ -311,7 +311,7 @@ version: 0.2
 - 呼叫方式: POST /topics/{topicId}/setup/refine
 - 授權: 設定權限
 - 輸入資料: `setup`（含手動修改）, `feedback`
-- 成功回應: 同「取得題目設定」（`topic_id`, `course_id`, `version`, `topic_status`, `content_language`, `model_id`, `setup`，其中 `setup` 為 AI 修訂結果）, `checks`
+- 成功回應: 同「取得題目設定」
 - 錯誤:
     - 欄位不符規則 (422)
     - 無權限 (403)
@@ -323,12 +323,12 @@ version: 0.2
 - 呼叫方式: PUT /topics/{topicId}/setup
 - 授權: 設定權限
 - 輸入資料: `expected_version`, `content_language`, `model_id`, `setup`
-- 成功回應: 同「取得題目設定」（`topic_id`, `course_id`, `version`, `topic_status`, `content_language`, `model_id`, `setup`）, `message`
+- 成功回應:「取得題目設定」的回應, `message`
 - 錯誤:
     - 欄位不符規則 (422)
     - 無權限 (403)
     - 查無此題目 (404)
-    - 版本不符，需重新取得最新設定後再送出 (409)
+    - 版本不符，需重新取得最新設定後再送出 (400)
     - 題目已不在設定階段 (400)
 
 ### 發布題目
@@ -336,7 +336,7 @@ version: 0.2
 - 呼叫方式: POST /topics/{topicId}/publish
 - 授權: 老師
 - 輸入資料: `expected_version`
-- 成功回應: 同「取得題目設定」（`topic_id`, `course_id`, `version`, `topic_status`, `content_language`, `model_id`, `setup`，`topic_status` 為 `conversation`）, `message`
+- 成功回應:「取得題目設定」的回應, `message`
 - 錯誤:
     - 非該課程老師 (403)
     - 查無此題目 (404)
@@ -462,7 +462,7 @@ version: 0.2
 - 錯誤:
     - 無權限 (403)
     - 查無此題目 (404)
-    - 題目仍在 `setup`，或沒有可用報告 (409)
+    - 題目仍在 `setup`，或沒有可用報告 (400)
     - AI 服務失敗 (502／503)
 
 ### 修訂摘要草稿
@@ -475,7 +475,7 @@ version: 0.2
     - 欄位不符規則 (422)
     - 無權限 (403)
     - 查無此摘要 (404)
-    - 版本不符 (409)
+    - 版本不符 (400)
 
 ### 標記摘要審閱完成
 - 功能說明: 老師確認統計範圍與表述後標記 `reviewed`
@@ -486,7 +486,7 @@ version: 0.2
 - 錯誤:
     - 非該課程老師 (403)
     - 查無此摘要 (404)
-    - 版本不符 (409)
+    - 版本不符 (400)
 
 ### 發布摘要
 - 功能說明: 老師將同一個 `reviewed` 版本發布給學生，成為不可變的發布快照
@@ -497,7 +497,7 @@ version: 0.2
 - 錯誤:
     - 非該課程老師 (403)
     - 查無此摘要 (404)
-    - 版本不符或尚未審閱 (409)
+    - 版本不符或尚未審閱 (400)
 
 ### 撤回摘要
 - 功能說明: 老師撤回目前發布版本，學生端不再取得該摘要
@@ -542,7 +542,7 @@ version: 0.2
 
 ### 設定 API key
 - 功能說明: 設定本人 API key；回應與日誌不得包含完整 key
-- 呼叫方式: PUT /users/me/ai/settings/api-key
+- 呼叫方式: PUT /users/me/ai/api-key
 - 輸入資料: `api_key`
 - 成功回應: `configured`, `masked_key`, `updated_at`
 - 錯誤:
@@ -551,7 +551,7 @@ version: 0.2
 
 ### 移除 API key
 - 功能說明: 移除本系統保存的 key（不等同於向供應商撤銷 key）；既有用量歷史保留
-- 呼叫方式: DELETE /users/me/ai/settings/api-key
+- 呼叫方式: DELETE /users/me/ai/api-key
 - 輸入資料: 無
 - 成功回應: HTTP 204
 - 錯誤:
@@ -559,7 +559,7 @@ version: 0.2
 
 ### 設定新題目預設模型
 - 功能說明: 設定本人新題目的預設模型，不更改已離開 `setup` 的題目及既有 Session
-- 呼叫方式: PATCH /users/me/ai/settings/model
+- 呼叫方式: PATCH /users/me/ai/model
 - 輸入資料: `model_id`
 - 成功回應: `default_model`{id, name}, `message`
 - 錯誤:
