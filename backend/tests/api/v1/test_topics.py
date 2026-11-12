@@ -9,7 +9,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.enums import UserRole
+from app.core.enums import SessionStatus, UserRole
 from app.crud import course as course_crud
 from app.crud import session as session_crud
 from app.crud import topic as topic_crud
@@ -43,6 +43,7 @@ def _topic(course_id, **overrides):
         "course_id": course_id,
         "title": "T1",
         "description": "Background",
+        "stage": "conversation",
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -92,6 +93,7 @@ def test_student_topic_list_has_session_fields(
                 "topic_id": str(started.id),
                 "title": "Started",
                 "description": "Background",
+                "stage": "conversation",
                 "status": "IN_PROGRESS",
                 "session_id": str(session_id),
             },
@@ -99,6 +101,7 @@ def test_student_topic_list_has_session_fields(
                 "topic_id": str(fresh.id),
                 "title": "Fresh",
                 "description": None,
+                "stage": "conversation",
                 "status": None,
                 "session_id": None,
             },
@@ -107,6 +110,60 @@ def test_student_topic_list_has_session_fields(
     list_mock.assert_awaited_once_with(
         course_route_db, course_id=course.id, user_id=user.id
     )
+
+
+def test_list_hides_setup_without_session_and_keeps_entered_topic(
+    auth_client: TestClient,
+    store: FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, student = _login(auth_client, store)
+    other_bearer, other = _login(auth_client, store, "student2")
+    course = _course()
+    _patch_role(monkeypatch, "STUDENT", course)
+    hidden = _topic(course.id, title="Hidden", stage="setup")
+    entered = _topic(course.id, title="Entered", stage="setup")
+    open_topic = _topic(course.id, title="Open", stage="conversation")
+    own_session = uuid4()
+    other_session = uuid4()
+    rows = {
+        student.id: [
+            (hidden, None, None),
+            (entered, SessionStatus.IN_PROGRESS.value, own_session),
+            (open_topic, None, None),
+        ],
+        other.id: [
+            (hidden, None, None),
+            (entered, None, None),
+            (open_topic, None, other_session),
+        ],
+    }
+
+    async def list_topics(_db, *, course_id, user_id):
+        assert course_id == course.id
+        return rows[user_id]
+
+    monkeypatch.setattr(topic_crud, "list_topics_with_user_session", list_topics)
+
+    own = auth_client.get(
+        f"/api/v1/courses/{course.id}/topics",
+        headers={"Authorization": bearer},
+    )
+    theirs = auth_client.get(
+        f"/api/v1/courses/{course.id}/topics",
+        headers={"Authorization": other_bearer},
+    )
+
+    assert own.status_code == 200
+    own_topics = own.json()["topics"]
+    assert [item["title"] for item in own_topics] == ["Entered", "Open"]
+    assert own_topics[0]["session_id"] == str(own_session)
+    assert str(other_session) not in own.text
+    assert theirs.status_code == 200
+    assert [item["topic_id"] for item in theirs.json()["topics"]] == [
+        str(open_topic.id)
+    ]
+    assert str(own_session) not in theirs.text
 
 
 @pytest.mark.parametrize("db_role", ["TEACHER", "TA"])

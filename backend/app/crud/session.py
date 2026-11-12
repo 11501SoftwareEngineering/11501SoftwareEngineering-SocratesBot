@@ -18,6 +18,14 @@ async def get_topic_course_id(
     return await db.scalar(statement)
 
 
+async def get_topic_stage(
+    db: AsyncSession,
+    topic_id: UUID,
+) -> str | None:
+    statement = select(Topic.stage).where(Topic.id == topic_id)
+    return await db.scalar(statement)
+
+
 async def is_course_member(
     db: AsyncSession,
     *,
@@ -85,6 +93,9 @@ class SQLAlchemySessionStore:
 
     async def get_topic_course_id(self, topic_id: UUID) -> UUID | None:
         return await get_topic_course_id(self._db, topic_id)
+
+    async def get_topic_stage(self, topic_id: UUID) -> str | None:
+        return await get_topic_stage(self._db, topic_id)
 
     async def is_course_member(
         self,

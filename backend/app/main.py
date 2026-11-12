@@ -18,6 +18,7 @@ from app.core.migration import run_migrations
 from app.core.redis import close_redis
 from app.core.validation_errors import sanitize_validation_errors
 from app.middleware import CsrfMiddleware, RequestLoggingMiddleware
+from app.services.inquiry_runner import fail_orphaned_attempts
 from scripts.seed.runner import run_seed_db
 
 logging.basicConfig(
@@ -35,6 +36,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if settings.SEED_DEV_DATA:
             # No credential dump on hot reload; use `make seed` for the summary.
             await run_seed_db(print_summary=False)
+    # Unit tests have no inquiry rows. Other processes fail attempts left running.
+    if settings.APP_ENV != "test":
+        await fail_orphaned_attempts()
     yield
     await close_redis()
     await engine.dispose()
