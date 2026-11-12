@@ -6,12 +6,17 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.enums import TopicStage
 from app.crud.session import SQLAlchemySessionStore
 from app.schemas.session import CreateSessionResponse
 
 
 class TopicNotFoundError(Exception):
     """The requested topic does not exist."""
+
+
+class TopicNotOpenError(Exception):
+    """The topic is still in setup, so a new dialogue is not created."""
 
 
 class CourseAccessDeniedError(Exception):
@@ -23,6 +28,10 @@ class SessionStore(Protocol):
 
     async def get_topic_course_id(self, topic_id: UUID) -> UUID | None:
         """Return the course ID, or None when the topic does not exist."""
+        ...
+
+    async def get_topic_stage(self, topic_id: UUID) -> str | None:
+        """Return the topic stage, or None when the topic does not exist."""
         ...
 
     async def is_course_member(self, user_id: UUID, course_id: UUID) -> bool:
@@ -55,6 +64,9 @@ async def create_or_enter_session(
 
     session_id = await store.get_session_id(user_id, topic_id)
     if session_id is None:
+        stage = await store.get_topic_stage(topic_id)
+        if stage == TopicStage.SETUP.value:
+            raise TopicNotOpenError("Topic is still in setup")
         session_id = await store.get_or_create_session_id(user_id, topic_id)
 
     return CreateSessionResponse(session_id=session_id, topic_id=topic_id)
@@ -80,6 +92,12 @@ async def create_or_enter_student_session(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Topic not found",
+        ) from exc
+    except TopicNotOpenError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Topic is still in setup",
         ) from exc
     except CourseAccessDeniedError as exc:
         await db.rollback()

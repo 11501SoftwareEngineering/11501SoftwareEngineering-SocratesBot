@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.core.enums import SessionStatus
+from app.core.enums import SessionStatus, TopicStage
 
 _EXAMPLE_COURSE_ID = UUID("11111111-1111-1111-1111-111111111111")
 _EXAMPLE_TOPIC_ID = UUID("33333333-3333-3333-3333-333333333333")
@@ -52,6 +52,7 @@ class StudentTopicListItem(BaseModel):
     topic_id: UUID = Field(examples=[_EXAMPLE_TOPIC_ID])
     title: str = Field(examples=[_EXAMPLE_TITLE])
     description: str | None = Field(default=None, examples=[_EXAMPLE_DESCRIPTION])
+    stage: TopicStage = Field(examples=[TopicStage.CONVERSATION])
     # Both null until the student enters the topic for the first time.
     status: SessionStatus | None = Field(
         default=None, examples=[SessionStatus.IN_PROGRESS]

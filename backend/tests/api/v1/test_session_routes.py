@@ -54,6 +54,9 @@ def test_create_session_returns_ids_and_commits(
     )
     monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=True))
     monkeypatch.setattr(session_crud, "get_session_id", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        session_crud, "get_topic_stage", AsyncMock(return_value="conversation")
+    )
     create_mock = AsyncMock(return_value=session_id)
     monkeypatch.setattr(session_crud, "get_or_create_session_id", create_mock)
 
@@ -121,6 +124,43 @@ def test_session_errors_return_http_status_and_roll_back(
     assert response.status_code == expected_status
     assert response.json() == {"detail": expected_detail}
     lookup_mock.assert_not_awaited()
+    create_mock.assert_not_awaited()
+    session_route_db.commit.assert_not_awaited()
+    session_route_db.rollback.assert_awaited_once()
+
+
+def test_setup_topic_without_session_does_not_insert(
+    auth_client: TestClient,
+    store: FakeStore,
+    session_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    student = seed_user(store, account_id="session-setup")
+    login = auth_client.post(
+        "/api/v1/auth/login",
+        json={"account_id": student.account_id, "password": "password1"},
+    )
+    assert login.status_code == 200
+
+    topic_id = uuid4()
+    monkeypatch.setattr(
+        session_crud, "get_topic_course_id", AsyncMock(return_value=uuid4())
+    )
+    monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=True))
+    monkeypatch.setattr(session_crud, "get_session_id", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        session_crud, "get_topic_stage", AsyncMock(return_value="setup")
+    )
+    create_mock = AsyncMock(return_value=uuid4())
+    monkeypatch.setattr(session_crud, "get_or_create_session_id", create_mock)
+
+    response = auth_client.post(
+        f"/api/v1/topics/{topic_id}/sessions",
+        headers={"Authorization": bearer_from(login)},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Topic is still in setup"
     create_mock.assert_not_awaited()
     session_route_db.commit.assert_not_awaited()
     session_route_db.rollback.assert_awaited_once()

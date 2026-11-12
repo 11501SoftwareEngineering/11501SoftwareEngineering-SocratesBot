@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import SessionStatus
+from app.core.enums import SessionStatus, TopicStage
 from app.models.session import Session
 from app.models.topic import Topic
 
@@ -53,6 +53,42 @@ async def update_topic(
     return topic
 
 
+async def save_inquiry(
+    db: AsyncSession,
+    topic: Topic,
+    *,
+    content_language: str | None,
+    age_band: str | None,
+    max_turns: int | None,
+    inquiry_topic: str | None,
+    core_question: str | None,
+    inquiry_focus: str | None,
+    background_info: str | None,
+    exclusions: str | None,
+    opening_message: str | None,
+) -> Topic:
+    """Persist the saved inquiry. This does not copy a generation attempt."""
+    topic.content_language = content_language
+    topic.age_band = age_band
+    topic.max_turns = max_turns
+    topic.inquiry_topic = inquiry_topic
+    topic.core_question = core_question
+    topic.inquiry_focus = inquiry_focus
+    topic.background_info = background_info
+    topic.exclusions = exclusions
+    topic.opening_message = opening_message
+    topic.version += 1
+    await db.flush()
+    return topic
+
+
+async def publish_topic(db: AsyncSession, topic: Topic) -> Topic:
+    topic.stage = TopicStage.CONVERSATION.value
+    topic.version += 1
+    await db.flush()
+    return topic
+
+
 async def delete_topic(db: AsyncSession, topic: Topic) -> None:
     await db.delete(topic)
     await db.flush()
@@ -91,7 +127,15 @@ async def list_topics_with_user_session(
             Session,
             (Session.topic_id == Topic.id) & (Session.user_id == user_id),
         )
-        .where(Topic.course_id == course_id)
+        .where(
+            Topic.course_id == course_id,
+            or_(
+                Topic.stage.in_(
+                    (TopicStage.CONVERSATION.value, TopicStage.SUMMARY.value)
+                ),
+                Session.id.is_not(None),
+            ),
+        )
         .order_by(Topic.created_at.asc(), Topic.id.asc())
     )
     result = await db.execute(statement)

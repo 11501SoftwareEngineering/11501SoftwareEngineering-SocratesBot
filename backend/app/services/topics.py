@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import CourseRole, SessionStatus
+from app.core.enums import CourseRole, SessionStatus, TopicStage
 from app.crud import course as course_crud
 from app.crud import session as session_crud
 from app.crud import topic as topic_crud
@@ -32,6 +32,21 @@ def _topic_not_found() -> HTTPException:
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Topic not found",
     )
+
+
+async def get_instructed_topic(
+    db: AsyncSession, teacher: User, topic_id: UUID
+) -> Topic:
+    """Return the topic if it exists and ``teacher`` instructs its course.
+
+    Raises:
+        HTTPException: 404 if the topic is missing; 403 if not an instructor.
+    """
+    topic = await topic_crud.get_topic_by_id(db, topic_id)
+    if topic is None:
+        raise _topic_not_found()
+    await courses_service.require_course_teacher(db, teacher, topic.course_id)
+    return topic
 
 
 def _write_response(topic: Topic, message: str) -> TopicWriteResponse:
@@ -121,20 +136,26 @@ async def _student_topics(
     session_rows = await topic_crud.list_topics_with_user_session(
         db, course_id=course.id, user_id=user.id
     )
-    return StudentCourseTopicsResponse(
-        course_id=course.id,
-        name=course.name,
-        invite_code=course.invitation_code,
-        topics=[
+    topics: list[StudentTopicListItem] = []
+    for topic, session_status, session_id in session_rows:
+        # A setup topic stays hidden until this student already has a session.
+        if session_id is None and topic.stage == TopicStage.SETUP.value:
+            continue
+        topics.append(
             StudentTopicListItem(
                 topic_id=topic.id,
                 title=topic.title,
                 description=topic.description,
+                stage=TopicStage(topic.stage),
                 status=SessionStatus(session_status) if session_status else None,
                 session_id=session_id,
             )
-            for topic, session_status, session_id in session_rows
-        ],
+        )
+    return StudentCourseTopicsResponse(
+        course_id=course.id,
+        name=course.name,
+        invite_code=course.invitation_code,
+        topics=topics,
     )
 
 
