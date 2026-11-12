@@ -56,8 +56,23 @@ class ModelCallError(Exception):
         super().__init__("model call failed")
 
 
+_REPLY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "reply": {"type": "string"},
+        "goal_reached": {"type": "boolean"},
+    },
+    "required": ["reply", "goal_reached"],
+}
+
+
 class ModelClient(Protocol):
     async def complete_json(self, *, instructions: str, material: str) -> dict: ...
+
+    async def complete_reply(
+        self, *, instructions: str, material: str
+    ) -> tuple[str, bool]: ...
 
 
 class OpenAIChatClient:
@@ -66,6 +81,38 @@ class OpenAIChatClient:
 
     async def complete_json(
         self, *, instructions: str, material: str, model: str | None = None
+    ) -> dict:
+        return await self._post(
+            name="inquiry_setup",
+            schema=_INQUIRY_SCHEMA,
+            instructions=instructions,
+            material=material,
+            model=model,
+        )
+
+    async def complete_reply(
+        self, *, instructions: str, material: str
+    ) -> tuple[str, bool]:
+        parsed = await self._post(
+            name="dialogue_reply",
+            schema=_REPLY_SCHEMA,
+            instructions=instructions,
+            material=material,
+        )
+        reply = parsed.get("reply")
+        goal_reached = parsed.get("goal_reached")
+        if not isinstance(reply, str) or not isinstance(goal_reached, bool):
+            raise ModelCallError(200)
+        return reply, goal_reached
+
+    async def _post(
+        self,
+        *,
+        name: str,
+        schema: dict[str, Any],
+        instructions: str,
+        material: str,
+        model: str | None = None,
     ) -> dict:
         key = settings.OPENAI_API_KEY.get_secret_value()
         payload = {
@@ -77,9 +124,9 @@ class OpenAIChatClient:
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "inquiry_setup",
+                    "name": name,
                     "strict": True,
-                    "schema": _INQUIRY_SCHEMA,
+                    "schema": schema,
                 },
             },
         }
