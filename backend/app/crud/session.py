@@ -53,6 +53,41 @@ async def get_session_id(
     return await db.scalar(statement)
 
 
+async def get_session_outcome(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    topic_id: UUID,
+) -> str | None:
+    statement = select(Session.outcome).where(
+        Session.user_id == user_id,
+        Session.topic_id == topic_id,
+    )
+    return await db.scalar(statement)
+
+
+async def insert_session_id(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    topic_id: UUID,
+) -> UUID | None:
+    """Insert one dialogue. A unique-pair conflict inserts nothing."""
+    statement = (
+        insert(Session)
+        .values(
+            user_id=user_id,
+            topic_id=topic_id,
+            status=SessionStatus.IN_PROGRESS.value,
+        )
+        .on_conflict_do_nothing(
+            constraint="uq_sessions_user_id_topic_id",
+        )
+        .returning(Session.id)
+    )
+    return await db.scalar(statement)
+
+
 async def get_or_create_session_id(
     db: AsyncSession,
     *,
@@ -114,6 +149,28 @@ class SQLAlchemySessionStore:
         topic_id: UUID,
     ) -> UUID | None:
         return await get_session_id(
+            self._db,
+            user_id=user_id,
+            topic_id=topic_id,
+        )
+
+    async def get_session_outcome(
+        self,
+        user_id: UUID,
+        topic_id: UUID,
+    ) -> str | None:
+        return await get_session_outcome(
+            self._db,
+            user_id=user_id,
+            topic_id=topic_id,
+        )
+
+    async def insert_session_id(
+        self,
+        user_id: UUID,
+        topic_id: UUID,
+    ) -> UUID | None:
+        return await insert_session_id(
             self._db,
             user_id=user_id,
             topic_id=topic_id,

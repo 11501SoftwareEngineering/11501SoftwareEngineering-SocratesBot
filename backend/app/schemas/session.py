@@ -6,7 +6,8 @@ from pydantic import BaseModel
 
 
 class CreateSessionResponse(BaseModel):
-    """Response returned when a student creates or enters a session."""
+    """Response returned when a student creates a dialogue."""
 
     session_id: UUID
     topic_id: UUID
+    session_status: str

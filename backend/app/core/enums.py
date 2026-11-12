@@ -30,6 +30,13 @@ class TaPermission(StrEnum):
     VIEW_MEMBERS = "view_members"
 
 
+class DialogueOutcome(StrEnum):
+    OPEN = "open"
+    COMPLETED = "completed"
+    ABANDONED = "abandoned"
+    CLOSED_BY_SUMMARY = "closed_by_summary"
+
+
 class TopicStage(StrEnum):
     SETUP = "setup"
     CONVERSATION = "conversation"

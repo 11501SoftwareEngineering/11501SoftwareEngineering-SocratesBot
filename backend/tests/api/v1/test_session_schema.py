@@ -13,18 +13,27 @@ def test_session_response_serializes_ids() -> None:
     session_id = uuid4()
     topic_id = uuid4()
 
-    response = CreateSessionResponse(session_id=session_id, topic_id=topic_id)
+    response = CreateSessionResponse(
+        session_id=session_id,
+        topic_id=topic_id,
+        session_status="open",
+    )
 
     assert response.model_dump(mode="json") == {
         "session_id": str(session_id),
         "topic_id": str(topic_id),
+        "session_status": "open",
     }
 
 
 @pytest.mark.parametrize("field", ["session_id", "topic_id"])
 def test_session_response_rejects_invalid_uuid(field: str) -> None:
     """Neither ID may contain a value that is not a UUID."""
-    payload = {"session_id": str(uuid4()), "topic_id": str(uuid4())}
+    payload = {
+        "session_id": str(uuid4()),
+        "topic_id": str(uuid4()),
+        "session_status": "open",
+    }
     payload[field] = "not-a-uuid"
 
     with pytest.raises(ValidationError, match=field):
@@ -34,7 +43,11 @@ def test_session_response_rejects_invalid_uuid(field: str) -> None:
 @pytest.mark.parametrize("field", ["session_id", "topic_id"])
 def test_session_response_requires_ids(field: str) -> None:
     """Both IDs must be present."""
-    payload = {"session_id": str(uuid4()), "topic_id": str(uuid4())}
+    payload = {
+        "session_id": str(uuid4()),
+        "topic_id": str(uuid4()),
+        "session_status": "open",
+    }
     del payload[field]
 
     with pytest.raises(ValidationError, match=field):
