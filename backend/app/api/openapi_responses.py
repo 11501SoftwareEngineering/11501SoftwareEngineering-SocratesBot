@@ -376,15 +376,19 @@ TOPIC_EXPLANATION_RESPONSES: dict[int | str, dict[str, Any]] = {
     ),
 }
 
-SESSION_ENTRY_RESPONSES: dict[int | str, dict[str, Any]] = {
+SESSION_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_example(
+        "Session already exists for this topic",
+        "Session already exists for this topic",
+    ),
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
     403: json_detail_examples(
-        "Session entry denied",
+        "Session creation denied",
         {
-            "course_membership_required": "Course membership required",
+            "course_student_required": "Course student required",
             "password_change_required": "Password change required",
         },
     ),

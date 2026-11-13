@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import ActiveUser, get_db
 from app.api.openapi_responses import (
     COURSE_TOPIC_LIST_RESPONSES,
-    SESSION_ENTRY_RESPONSES,
+    SESSION_CREATE_RESPONSES,
     TOPIC_CREATE_RESPONSES,
     TOPIC_DELETE_RESPONSES,
     TOPIC_EXPLANATION_RESPONSES,
@@ -88,15 +88,15 @@ async def get_topic_explanation(
 @router.post(
     "/topics/{topicId}/sessions",
     response_model=CreateSessionResponse,
-    responses=SESSION_ENTRY_RESPONSES,
+    responses=SESSION_CREATE_RESPONSES,
 )
-async def create_or_enter_session(
+async def create_session(
     topicId: UUID,
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CreateSessionResponse:
-    """Create or reuse the authenticated student's session for a topic."""
-    return await session_service.create_or_enter_student_session(
+    """Create the authenticated student's session for a topic."""
+    return await session_service.create_student_session(
         db,
         current_user.id,
         topicId,

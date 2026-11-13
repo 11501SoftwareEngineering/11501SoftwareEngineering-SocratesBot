@@ -20,8 +20,9 @@ from app.models.topic import Topic
 from app.models.user import User
 from app.services.session import (
     CourseAccessDeniedError,
+    SessionAlreadyExistsError,
     TopicNotFoundError,
-    create_or_enter_session,
+    create_session,
 )
 
 pytestmark = pytest.mark.integration
@@ -115,8 +116,13 @@ async def create_student(db: AsyncSession) -> User:
     return student
 
 
-@pytest.mark.parametrize("membership_role", ["STUDENT", "TA"])
-def test_course_membership_checks_user_and_course(membership_role: str) -> None:
+@pytest.mark.parametrize(
+    ("membership_role", "expected"),
+    [("STUDENT", True), ("TA", False)],
+)
+def test_course_student_check_ignores_other_roles(
+    membership_role: str, expected: bool
+) -> None:
     async def run() -> None:
         async with session_test_db() as db:
             course_a, _ = await create_course_and_topic(db)
@@ -133,19 +139,44 @@ def test_course_membership_checks_user_and_course(membership_role: str) -> None:
             )
             await db.flush()
 
-            is_member = await session_crud.is_course_member(
+            is_student = await session_crud.is_course_student(
                 db, user_id=member.id, course_id=course_a.id
             )
-            wrong_course = await session_crud.is_course_member(
+            wrong_course = await session_crud.is_course_student(
                 db, user_id=member.id, course_id=course_b.id
             )
-            wrong_user = await session_crud.is_course_member(
+            wrong_user = await session_crud.is_course_student(
                 db, user_id=outsider.id, course_id=course_a.id
             )
 
-            assert is_member is True
+            assert is_student is expected
             assert wrong_course is False
             assert wrong_user is False
+
+    asyncio.run(run())
+
+
+def test_left_student_is_not_a_course_student() -> None:
+    async def run() -> None:
+        async with session_test_db() as db:
+            course, _ = await create_course_and_topic(db)
+            student = await create_student(db)
+            db.add(
+                CourseMembership(
+                    course_id=course.id,
+                    user_id=student.id,
+                    role="STUDENT",
+                    left_at=datetime(2026, 1, 1, tzinfo=UTC),
+                )
+            )
+            await db.flush()
+
+            assert (
+                await session_crud.is_course_student(
+                    db, user_id=student.id, course_id=course.id
+                )
+                is False
+            )
 
     asyncio.run(run())
 
@@ -157,19 +188,13 @@ def test_create_session_stores_initial_values(is_anonymous: bool) -> None:
             _, topic = await create_course_and_topic(db)
             student = await create_student(db)
 
-            existing_id = await session_crud.get_session_id(
-                db,
-                user_id=student.id,
-                topic_id=topic.id,
-            )
-            assert existing_id is None
-
-            session_id = await session_crud.get_or_create_session_id(
+            session_id = await session_crud.create_session_id(
                 db,
                 user_id=student.id,
                 topic_id=topic.id,
                 is_anonymous=is_anonymous,
             )
+            assert session_id is not None
 
             created = await db.get(Session, session_id)
 
@@ -181,13 +206,6 @@ def test_create_session_stores_initial_values(is_anonymous: bool) -> None:
             assert created.started_at is not None
             assert created.completed_at is None
 
-            found_id = await session_crud.get_session_id(
-                db,
-                user_id=student.id,
-                topic_id=topic.id,
-            )
-            assert found_id == session_id
-
     asyncio.run(run())
 
 
@@ -195,22 +213,21 @@ def test_create_session_stores_initial_values(is_anonymous: bool) -> None:
     "session_status",
     [SessionStatus.IN_PROGRESS, SessionStatus.COMPLETED],
 )
-@pytest.mark.parametrize("is_anonymous", [True, False])
-def test_repeated_creation_preserves_existing_session(
+def test_repeated_creation_returns_none_and_preserves_session(
     session_status: SessionStatus,
-    is_anonymous: bool,
 ) -> None:
     async def run() -> None:
         async with session_test_db() as db:
             _, topic = await create_course_and_topic(db)
             student = await create_student(db)
 
-            original_id = await session_crud.get_or_create_session_id(
+            original_id = await session_crud.create_session_id(
                 db,
                 user_id=student.id,
                 topic_id=topic.id,
-                is_anonymous=is_anonymous,
+                is_anonymous=False,
             )
+            assert original_id is not None
             original = await db.get(Session, original_id)
             assert original is not None
 
@@ -223,18 +240,18 @@ def test_repeated_creation_preserves_existing_session(
             original.completed_at = completed_at
             await db.flush()
 
-            repeated_id = await session_crud.get_or_create_session_id(
+            repeated_id = await session_crud.create_session_id(
                 db,
                 user_id=student.id,
                 topic_id=topic.id,
-                is_anonymous=not is_anonymous,
+                is_anonymous=True,
             )
 
             await db.refresh(original)
 
-            assert repeated_id == original_id
+            assert repeated_id is None
             assert original.status == session_status.value
-            assert original.is_anonymous == is_anonymous
+            assert original.is_anonymous is False
             assert original.completed_at == completed_at
 
             session_count = await db.scalar(
@@ -258,50 +275,25 @@ def test_sessions_are_separate_for_each_user_and_topic() -> None:
             student_a = await create_student(db)
             student_b = await create_student(db)
 
-            session_aa = await session_crud.get_or_create_session_id(
-                db,
-                user_id=student_a.id,
-                topic_id=topic_a.id,
-                is_anonymous=True,
-            )
-            session_ba = await session_crud.get_or_create_session_id(
-                db,
-                user_id=student_b.id,
-                topic_id=topic_a.id,
-                is_anonymous=True,
-            )
-            session_ab = await session_crud.get_or_create_session_id(
-                db,
-                user_id=student_a.id,
-                topic_id=topic_b.id,
-                is_anonymous=True,
-            )
+            created = [
+                await session_crud.create_session_id(
+                    db, user_id=user.id, topic_id=topic.id, is_anonymous=False
+                )
+                for user, topic in (
+                    (student_a, topic_a),
+                    (student_b, topic_a),
+                    (student_a, topic_b),
+                )
+            ]
 
-            assert len({session_aa, session_ba, session_ab}) == 3
-
-            found_aa = await session_crud.get_session_id(
-                db, user_id=student_a.id, topic_id=topic_a.id
-            )
-            found_ba = await session_crud.get_session_id(
-                db, user_id=student_b.id, topic_id=topic_a.id
-            )
-            found_ab = await session_crud.get_session_id(
-                db, user_id=student_a.id, topic_id=topic_b.id
-            )
-            found_bb = await session_crud.get_session_id(
-                db, user_id=student_b.id, topic_id=topic_b.id
-            )
-
-            assert found_aa == session_aa
-            assert found_ba == session_ba
-            assert found_ab == session_ab
-            assert found_bb is None
+            assert None not in created
+            assert len(set(created)) == 3
 
     asyncio.run(run())
 
 
 @pytest.mark.parametrize("is_anonymous", [True, False])
-def test_service_creates_and_reuses_session_with_database(
+def test_service_creates_session_then_rejects_duplicate_with_database(
     is_anonymous: bool,
 ) -> None:
     async def run() -> None:
@@ -323,20 +315,20 @@ def test_service_creates_and_reuses_session_with_database(
                 initial_is_anonymous=is_anonymous,
             )
 
-            first = await create_or_enter_session(
+            first = await create_session(
                 user_id=student.id,
                 topic_id=topic.id,
                 store=store,
             )
-            second = await create_or_enter_session(
-                user_id=student.id,
-                topic_id=topic.id,
-                store=store,
-            )
+            with pytest.raises(SessionAlreadyExistsError):
+                await create_session(
+                    user_id=student.id,
+                    topic_id=topic.id,
+                    store=store,
+                )
 
             assert first.topic_id == topic.id
-            assert second.topic_id == topic.id
-            assert second.session_id == first.session_id
+            assert first.session_status is SessionStatus.IN_PROGRESS
 
             created = await db.get(Session, first.session_id)
             assert created is not None
@@ -370,7 +362,7 @@ def test_service_rejects_non_member_without_creating_session() -> None:
             )
 
             with pytest.raises(CourseAccessDeniedError):
-                await create_or_enter_session(
+                await create_session(
                     user_id=student.id,
                     topic_id=topic.id,
                     store=store,
@@ -393,7 +385,7 @@ def test_service_rejects_missing_topic_without_creating_session() -> None:
             )
 
             with pytest.raises(TopicNotFoundError):
-                await create_or_enter_session(
+                await create_session(
                     user_id=student.id,
                     topic_id=uuid4(),
                     store=store,

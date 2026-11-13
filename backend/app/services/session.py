@@ -1,4 +1,4 @@
-"""Business rules for entering a student's single session per topic."""
+"""Business rules for creating a student's single session per topic."""
 
 from typing import Protocol
 from uuid import UUID
@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.enums import SessionStatus
 from app.crud.session import SQLAlchemySessionStore
 from app.schemas.session import CreateSessionResponse
 
@@ -15,7 +16,11 @@ class TopicNotFoundError(Exception):
 
 
 class CourseAccessDeniedError(Exception):
-    """The user is not a member of the topic's course."""
+    """The user is not a student of the topic's course."""
+
+
+class SessionAlreadyExistsError(Exception):
+    """The student already has a session for this topic."""
 
 
 class SessionStore(Protocol):
@@ -25,54 +30,53 @@ class SessionStore(Protocol):
         """Return the course ID, or None when the topic does not exist."""
         ...
 
-    async def is_course_member(self, user_id: UUID, course_id: UUID) -> bool:
-        """Return whether the user currently belongs to the course."""
+    async def is_course_student(self, user_id: UUID, course_id: UUID) -> bool:
+        """Return whether the user is currently a student of the course."""
         ...
 
-    async def get_session_id(self, user_id: UUID, topic_id: UUID) -> UUID | None:
-        """Find an existing session regardless of completion status."""
-        ...
-
-    async def get_or_create_session_id(self, user_id: UUID, topic_id: UUID) -> UUID:
-        """Atomically create IN_PROGRESS or reuse an existing session unchanged."""
+    async def create_session_id(self, user_id: UUID, topic_id: UUID) -> UUID | None:
+        """Atomically create IN_PROGRESS; None if a session already exists."""
         ...
 
 
-async def create_or_enter_session(
+async def create_session(
     *,
     user_id: UUID,
     topic_id: UUID,
     store: SessionStore,
 ) -> CreateSessionResponse:
-    """Enter a session using the authenticated user's ID supplied by the route."""
+    """Create the authenticated student's session for a topic."""
     course_id = await store.get_topic_course_id(topic_id)
     if course_id is None:
         raise TopicNotFoundError("Topic not found")
 
-    # Check permission even when an old session already exists.
-    if not await store.is_course_member(user_id, course_id):
-        raise CourseAccessDeniedError("Course membership required")
+    if not await store.is_course_student(user_id, course_id):
+        raise CourseAccessDeniedError("Course student required")
 
-    session_id = await store.get_session_id(user_id, topic_id)
+    session_id = await store.create_session_id(user_id, topic_id)
     if session_id is None:
-        session_id = await store.get_or_create_session_id(user_id, topic_id)
+        raise SessionAlreadyExistsError("Session already exists")
 
-    return CreateSessionResponse(session_id=session_id, topic_id=topic_id)
+    return CreateSessionResponse(
+        session_id=session_id,
+        topic_id=topic_id,
+        session_status=SessionStatus.IN_PROGRESS,
+    )
 
 
-async def create_or_enter_student_session(
+async def create_student_session(
     db: AsyncSession,
     user_id: UUID,
     topic_id: UUID,
 ) -> CreateSessionResponse:
-    """Enter a student session and handle transactions and HTTP errors."""
+    """Create a student session and handle transactions and HTTP errors."""
     store = SQLAlchemySessionStore(
         db,
         initial_is_anonymous=False,
     )
 
     try:
-        result = await create_or_enter_session(
+        result = await create_session(
             user_id=user_id,
             topic_id=topic_id,
             store=store,
@@ -88,7 +92,13 @@ async def create_or_enter_student_session(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Course membership required",
+            detail="Course student required",
+        ) from exc
+    except SessionAlreadyExistsError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session already exists for this topic",
         ) from exc
     except Exception:
         await db.rollback()

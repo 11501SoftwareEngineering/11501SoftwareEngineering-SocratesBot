@@ -9,6 +9,8 @@ from app.models.course import CourseMembership
 from app.models.session import Session
 from app.models.topic import Topic
 
+_STUDENT_ROLE = "STUDENT"
+
 
 async def get_topic_course_id(
     db: AsyncSession,
@@ -18,40 +20,30 @@ async def get_topic_course_id(
     return await db.scalar(statement)
 
 
-async def is_course_member(
+async def is_course_student(
     db: AsyncSession,
     *,
     user_id: UUID,
     course_id: UUID,
 ) -> bool:
+    """Whether the user is an active STUDENT of the course (not teacher/TA)."""
     statement = select(CourseMembership.user_id).where(
         CourseMembership.user_id == user_id,
         CourseMembership.course_id == course_id,
+        CourseMembership.role == _STUDENT_ROLE,
         CourseMembership.left_at.is_(None),
     )
     return await db.scalar(statement) is not None
 
 
-async def get_session_id(
-    db: AsyncSession,
-    *,
-    user_id: UUID,
-    topic_id: UUID,
-) -> UUID | None:
-    statement = select(Session.id).where(
-        Session.user_id == user_id,
-        Session.topic_id == topic_id,
-    )
-    return await db.scalar(statement)
-
-
-async def get_or_create_session_id(
+async def create_session_id(
     db: AsyncSession,
     *,
     user_id: UUID,
     topic_id: UUID,
     is_anonymous: bool,
-) -> UUID:
+) -> UUID | None:
+    """Insert an IN_PROGRESS session; ``None`` if the user already has one."""
     statement = (
         insert(Session)
         .values(
@@ -65,20 +57,7 @@ async def get_or_create_session_id(
         )
         .returning(Session.id)
     )
-
-    session_id = await db.scalar(statement)
-    if session_id is not None:
-        return session_id
-
-    existing_session_id = await get_session_id(
-        db,
-        user_id=user_id,
-        topic_id=topic_id,
-    )
-    if existing_session_id is None:
-        raise RuntimeError("Session was not found after an insert conflict")
-
-    return existing_session_id
+    return await db.scalar(statement)
 
 
 class SQLAlchemySessionStore:
@@ -94,34 +73,23 @@ class SQLAlchemySessionStore:
     async def get_topic_course_id(self, topic_id: UUID) -> UUID | None:
         return await get_topic_course_id(self._db, topic_id)
 
-    async def is_course_member(
+    async def is_course_student(
         self,
         user_id: UUID,
         course_id: UUID,
     ) -> bool:
-        return await is_course_member(
+        return await is_course_student(
             self._db,
             user_id=user_id,
             course_id=course_id,
         )
 
-    async def get_session_id(
+    async def create_session_id(
         self,
         user_id: UUID,
         topic_id: UUID,
     ) -> UUID | None:
-        return await get_session_id(
-            self._db,
-            user_id=user_id,
-            topic_id=topic_id,
-        )
-
-    async def get_or_create_session_id(
-        self,
-        user_id: UUID,
-        topic_id: UUID,
-    ) -> UUID:
-        return await get_or_create_session_id(
+        return await create_session_id(
             self._db,
             user_id=user_id,
             topic_id=topic_id,
