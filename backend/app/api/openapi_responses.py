@@ -378,12 +378,8 @@ COURSE_TOPIC_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
-    403: json_detail_example(
-        "Course membership required",
-        "Course membership required",
-    ),
     404: json_detail_example(
-        "Course not found",
+        "Not a course member or course not found",
         "Course not found",
     ),
 }

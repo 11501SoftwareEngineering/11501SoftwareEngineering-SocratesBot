@@ -16,8 +16,7 @@ from app.api.openapi_responses import (
 )
 from app.schemas.session import CreateSessionResponse
 from app.schemas.topic import (
-    StudentCourseTopicsResponse,
-    TeacherCourseTopicsResponse,
+    CourseTopicsResponse,
     TopicCreateRequest,
     TopicExplanationResponse,
     TopicWriteResponse,
@@ -30,15 +29,16 @@ router = APIRouter(tags=["topics"])
 
 @router.get(
     "/courses/{courseId}/topics",
-    response_model=TeacherCourseTopicsResponse | StudentCourseTopicsResponse,
+    response_model=CourseTopicsResponse,
+    response_model_exclude_unset=True,
     responses=COURSE_TOPIC_LIST_RESPONSES,
 )
 async def list_course_topics(
     courseId: UUID,
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> TeacherCourseTopicsResponse | StudentCourseTopicsResponse:
-    """List a course's topics; the shape depends on the caller's role."""
+) -> CourseTopicsResponse:
+    """List a course's topics; fields depend on the caller's role."""
     return await topics_service.list_course_topics(db, current_user, courseId)
 
 

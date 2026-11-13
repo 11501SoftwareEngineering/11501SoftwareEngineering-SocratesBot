@@ -14,12 +14,10 @@ from app.crud import topic as topic_crud
 from app.models.topic import Topic
 from app.models.user import User
 from app.schemas.topic import (
-    StudentCourseTopicsResponse,
-    StudentTopicListItem,
-    TeacherCourseTopicsResponse,
-    TeacherTopicListItem,
+    CourseTopicsResponse,
     TopicCreateRequest,
     TopicExplanationResponse,
+    TopicListItem,
     TopicUpdateRequest,
     TopicWriteResponse,
 )
@@ -115,57 +113,58 @@ async def delete_topic(db: AsyncSession, user: User, topic_id: UUID) -> None:
 
 async def list_course_topics(
     db: AsyncSession, user: User, course_id: UUID
-) -> TeacherCourseTopicsResponse | StudentCourseTopicsResponse:
-    """List a course's topics in the former teacher or student shape.
-
-    Students get their own session state; teachers and TAs get answered counts.
+) -> CourseTopicsResponse:
+    """List a course's topics; fields depend on the caller's role.
 
     Raises:
-        HTTPException: 404 if the course is missing; 403 if not a member.
+        HTTPException: 404 if the course is missing or ``user`` is not a member.
     """
     course = await course_crud.get_course_by_id(db, course_id)
-    if course is None:
+    role = (
+        await courses_service.get_my_course_role(db, user, course_id)
+        if course
+        else None
+    )
+    if course is None or role is None:
         raise courses_service.course_not_found()
-    role = await courses_service.get_my_course_role(db, user, course_id)
-    if role is None:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Course membership required",
-        )
 
+    topics: list[TopicListItem]
     if role is CourseRole.STUDENT:
         session_rows = await topic_crud.list_topics_with_user_session(
             db, course_id=course.id, user_id=user.id
         )
-        return StudentCourseTopicsResponse(
-            course_id=course.id,
-            name=course.name,
-            invite_code=course.invitation_code,
-            topics=[
-                StudentTopicListItem(
-                    topic_id=topic.id,
-                    title=topic.title,
-                    description=topic.description,
-                    status=SessionStatus(session_status) if session_status else None,
-                    session_id=session_id,
-                )
-                for topic, session_status, session_id in session_rows
-            ],
-        )
-    count_rows = await topic_crud.list_topics_with_completed_count(db, course.id)
-    return TeacherCourseTopicsResponse(
-        course_id=course.id,
-        name=course.name,
-        invite_code=course.invitation_code,
-        topics=[
-            TeacherTopicListItem(
+        topics = [
+            TopicListItem(
+                topic_id=topic.id,
+                title=topic.title,
+                description=topic.description,
+                session_status=SessionStatus(session_status)
+                if session_status
+                else None,
+                session_id=session_id,
+            )
+            for topic, session_status, session_id in session_rows
+        ]
+    else:
+        student_count = await course_crud.count_active_students(db, course.id)
+        count_rows = await topic_crud.list_topics_with_completed_count(db, course.id)
+        topics = [
+            TopicListItem(
                 topic_id=topic.id,
                 title=topic.title,
                 description=topic.description,
                 answered_count=answered_count,
+                student_count=student_count,
             )
             for topic, answered_count in count_rows
-        ],
+        ]
+    return CourseTopicsResponse(
+        course_id=course.id,
+        name=course.name,
+        invite_code=course.invitation_code,
+        my_role=role,
+        my_permissions=[],
+        topics=topics,
     )
 
 

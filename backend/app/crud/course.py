@@ -146,6 +146,15 @@ async def get_course_role(
     return await db.scalar(statement)
 
 
+async def count_active_students(db: AsyncSession, course_id: UUID) -> int:
+    statement = (
+        select(func.count())
+        .select_from(CourseMembership)
+        .where(CourseMembership.course_id == course_id, *_active_student_filters())
+    )
+    return int(await db.scalar(statement) or 0)
+
+
 async def update_course(
     db: AsyncSession, course: Course, *, name: str, description: str | None
 ) -> Course:

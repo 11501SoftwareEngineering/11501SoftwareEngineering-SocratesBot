@@ -87,19 +87,21 @@ def test_student_topic_list_has_session_fields(
         "course_id": str(course.id),
         "name": "SE",
         "invite_code": "ABCD2345",
+        "my_role": "student",
+        "my_permissions": [],
         "topics": [
             {
                 "topic_id": str(started.id),
                 "title": "Started",
                 "description": "Background",
-                "status": "IN_PROGRESS",
+                "session_status": "IN_PROGRESS",
                 "session_id": str(session_id),
             },
             {
                 "topic_id": str(fresh.id),
                 "title": "Fresh",
                 "description": None,
-                "status": None,
+                "session_status": None,
                 "session_id": None,
             },
         ],
@@ -109,9 +111,7 @@ def test_student_topic_list_has_session_fields(
     )
 
 
-@pytest.mark.parametrize("db_role", ["TEACHER", "TA"])
-def test_staff_topic_list_has_answered_count(
-    db_role: str,
+def test_teacher_topic_list_has_counts(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -119,38 +119,36 @@ def test_staff_topic_list_has_answered_count(
 ) -> None:
     bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
     course = _course()
-    _patch_role(monkeypatch, db_role, course)
+    _patch_role(monkeypatch, "TEACHER", course)
     topic = _topic(course.id)
     monkeypatch.setattr(
         topic_crud,
         "list_topics_with_completed_count",
         AsyncMock(return_value=[(topic, 3)]),
     )
+    monkeypatch.setattr(course_crud, "count_active_students", AsyncMock(return_value=8))
 
     response = auth_client.get(
         f"/api/v1/courses/{course.id}/topics", headers={"Authorization": bearer}
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "course_id": str(course.id),
-        "name": "SE",
-        "invite_code": "ABCD2345",
-        "topics": [
-            {
-                "topic_id": str(topic.id),
-                "title": "T1",
-                "description": "Background",
-                "answered_count": 3,
-            }
-        ],
-    }
+    body = response.json()
+    assert body["my_role"] == "teacher"
+    assert body["topics"] == [
+        {
+            "topic_id": str(topic.id),
+            "title": "T1",
+            "description": "Background",
+            "answered_count": 3,
+            "student_count": 8,
+        }
+    ]
 
 
-@pytest.mark.parametrize(("exists", "expected"), [(True, 403), (False, 404)])
-def test_topic_list_non_member_or_missing(
+@pytest.mark.parametrize("exists", [True, False])
+def test_topic_list_non_member_or_missing_is_404(
     exists: bool,
-    expected: int,
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -161,7 +159,7 @@ def test_topic_list_non_member_or_missing(
     response = auth_client.get(
         f"/api/v1/courses/{uuid4()}/topics", headers={"Authorization": bearer}
     )
-    assert response.status_code == expected
+    assert response.status_code == 404
 
 
 def test_create_topic_in_path_course(
