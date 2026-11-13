@@ -228,9 +228,10 @@ async def add_student_membership(
     return existing
 
 
-async def list_course_students(
-    db: AsyncSession, course_id: UUID
+async def list_course_members(
+    db: AsyncSession, course_id: UUID, *, roles: tuple[str, ...]
 ) -> list[tuple[User, CourseMembership]]:
+    """Active STUDENT/TA members (``roles`` are DB values), by account."""
     statement = (
         select(User, CourseMembership)
         .join(
@@ -239,7 +240,8 @@ async def list_course_students(
         )
         .where(
             CourseMembership.course_id == course_id,
-            *_active_student_filters(),
+            CourseMembership.role.in_(roles),
+            CourseMembership.left_at.is_(None),
         )
         .order_by(User.account_id.asc())
     )
