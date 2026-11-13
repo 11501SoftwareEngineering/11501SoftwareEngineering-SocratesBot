@@ -157,6 +157,9 @@ async def list_my_courses(
 
     Each row keeps the shape of the former teacher / student list.
     """
+    teacher_rows = await course_crud.list_courses_for_instructor(db, user.id)
+    student_rows = await course_crud.list_student_courses(db, user.id)
+
     items: list[TeacherCourseListItem | StudentCourseListItem] = [
         TeacherCourseListItem(
             course_id=course.id,
@@ -166,9 +169,7 @@ async def list_my_courses(
             student_count=student_count,
             topic_count=topic_count,
         )
-        for course, student_count, topic_count in (
-            await course_crud.list_courses_for_instructor(db, user.id)
-        )
+        for course, student_count, topic_count in teacher_rows
     ]
     seen = {item.course_id for item in items}
     items.extend(
@@ -179,9 +180,7 @@ async def list_my_courses(
             teacher_name=teacher_name,
             active_topic_count=session_count,
         )
-        for course, teacher_name, session_count in (
-            await course_crud.list_student_courses(db, user.id)
-        )
+        for course, teacher_name, session_count in student_rows
         if course.id not in seen
     )
     items.sort(key=lambda item: (item.name, str(item.course_id)))
