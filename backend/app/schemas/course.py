@@ -31,6 +31,28 @@ class CourseCreateResponse(BaseModel):
     message: str = Field(default="Course created", examples=["Course created"])
 
 
+class CourseUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255, examples=["Software Engineering"])
+    description: str | None = Field(default=None, examples=["Fall 2026"])
+
+
+class CourseUpdateResponse(BaseModel):
+    course_id: UUID = Field(examples=[_EXAMPLE_COURSE_ID])
+    name: str = Field(examples=["Software Engineering"])
+    description: str | None = Field(default=None, examples=["Fall 2026"])
+    invite_code: str = Field(examples=[_EXAMPLE_INVITE])
+    message: str = Field(default="Course updated", examples=["Course updated"])
+
+
+class CourseDetailResponse(BaseModel):
+    course_id: UUID = Field(examples=[_EXAMPLE_COURSE_ID])
+    name: str = Field(examples=["Software Engineering"])
+    description: str | None = Field(default=None, examples=["Fall 2026"])
+    teacher_name: str = Field(examples=["Teacher One"])
+    my_role: CourseRole = Field(examples=[CourseRole.STUDENT])
+    invite_code: str = Field(examples=[_EXAMPLE_INVITE])
+
+
 class CourseListItem(BaseModel):
     """One row of ``GET /courses`` (teacher, TA and student courses merged)."""
 
