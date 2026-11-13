@@ -195,6 +195,42 @@ COURSE_JOIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     ),
 }
 
+COURSE_GET_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    404: json_detail_example(
+        "Not a course member or course not found",
+        "Course not found",
+    ),
+}
+
+COURSE_UPDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Course teacher required",
+        "Course teacher required",
+    ),
+    404: json_detail_example(
+        "Course not found",
+        "Course not found",
+    ),
+    422: json_detail_example(
+        "Request validation failed",
+        [
+            {
+                "type": "string_too_short",
+                "loc": ["body", "name"],
+                "msg": "String should have at least 1 character",
+            }
+        ],
+    ),
+}
+
 COURSE_DELETE_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,

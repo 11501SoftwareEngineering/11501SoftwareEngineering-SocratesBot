@@ -17,11 +17,14 @@ from app.models.user import User
 from app.schemas.course import (
     CourseCreateRequest,
     CourseCreateResponse,
+    CourseDetailResponse,
     CourseJoinRequest,
     CourseJoinResponse,
     CourseListItem,
     CourseStudentAddRequest,
     CourseStudentListItem,
+    CourseUpdateRequest,
+    CourseUpdateResponse,
     MessageResponse,
 )
 from app.services.course_invites import (
@@ -197,6 +200,46 @@ async def list_my_courses(db: AsyncSession, user: User) -> list[CourseListItem]:
         )
     items.sort(key=lambda item: (item.name, str(item.course_id)))
     return items
+
+
+async def get_course(
+    db: AsyncSession, user: User, course_id: UUID
+) -> CourseDetailResponse:
+    """Course info for a member; non-members get 404 like a missing course."""
+    course = await course_crud.get_course_by_id(db, course_id)
+    role = await get_my_course_role(db, user, course_id) if course else None
+    if course is None or role is None:
+        raise course_not_found()
+    return CourseDetailResponse(
+        course_id=course.id,
+        name=course.name,
+        description=course.description,
+        teacher_name=await course_crud.get_user_name(db, course.created_by),
+        my_role=role,
+        my_permissions=[],
+        invite_code=course.invitation_code,
+    )
+
+
+async def update_course(
+    db: AsyncSession, teacher: User, course_id: UUID, payload: CourseUpdateRequest
+) -> CourseUpdateResponse:
+    course = await require_course_teacher(db, teacher, course_id)
+    try:
+        course = await course_crud.update_course(
+            db, course, name=payload.name, description=payload.description
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return CourseUpdateResponse(
+        course_id=course.id,
+        name=course.name,
+        description=course.description,
+        invite_code=course.invitation_code,
+        message="Course updated",
+    )
 
 
 async def delete_course(db: AsyncSession, teacher: User, course_id: UUID) -> None:

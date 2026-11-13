@@ -1,4 +1,4 @@
-"""Course API tests: create / list / join / leave / members."""
+"""Course API tests: create / list / get / update / join / leave / members."""
 
 from __future__ import annotations
 
@@ -425,6 +425,117 @@ def test_old_role_prefixed_paths_are_gone(
     for path in ("/student/courses", "/teacher/courses"):
         response = auth_client.get(f"/api/v1{path}", headers={"Authorization": bearer})
         assert response.status_code in (404, 405)
+
+
+def test_get_course_returns_role_and_teacher_name(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "stud")
+    course = _course()
+    monkeypatch.setattr(course_crud, "get_course_by_id", AsyncMock(return_value=course))
+    monkeypatch.setattr(
+        course_crud, "get_course_role", AsyncMock(return_value="STUDENT")
+    )
+    monkeypatch.setattr(course_crud, "get_user_name", AsyncMock(return_value="Teacher"))
+
+    response = auth_client.get(
+        f"/api/v1/courses/{course.id}", headers={"Authorization": bearer}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "course_id": str(course.id),
+        "name": "SE",
+        "description": "Fall",
+        "teacher_name": "Teacher",
+        "my_role": "student",
+        "my_permissions": [],
+        "invite_code": "ABCD2345",
+    }
+
+
+def test_get_course_non_member_is_404(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "outsider")
+    monkeypatch.setattr(
+        course_crud, "get_course_by_id", AsyncMock(return_value=_course())
+    )
+    monkeypatch.setattr(course_crud, "get_course_role", AsyncMock(return_value=None))
+    response = auth_client.get(
+        f"/api/v1/courses/{uuid4()}", headers={"Authorization": bearer}
+    )
+    assert response.status_code == 404
+
+
+def test_update_course_by_teacher(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, user = _login(auth_client, store, "teach", UserRole.TEACHER)
+    course = _course(created_by=user.id)
+    monkeypatch.setattr(course_crud, "get_course_by_id", AsyncMock(return_value=course))
+    monkeypatch.setattr(
+        course_crud, "is_course_instructor", AsyncMock(return_value=True)
+    )
+
+    response = auth_client.put(
+        f"/api/v1/courses/{course.id}",
+        headers={"Authorization": bearer},
+        json={"name": "New", "description": None},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "course_id": str(course.id),
+        "name": "New",
+        "description": None,
+        "invite_code": "ABCD2345",
+        "message": "Course updated",
+    }
+    course_route_db.commit.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    ("body", "instructor", "exists", "expected"),
+    [
+        ({"name": ""}, True, True, 422),
+        ({"name": "x"}, False, True, 403),
+        ({"name": "x"}, True, False, 404),
+    ],
+)
+def test_update_course_errors(
+    body: dict,
+    instructor: bool,
+    exists: bool,
+    expected: int,
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
+    monkeypatch.setattr(
+        course_crud,
+        "get_course_by_id",
+        AsyncMock(return_value=_course() if exists else None),
+    )
+    monkeypatch.setattr(
+        course_crud, "is_course_instructor", AsyncMock(return_value=instructor)
+    )
+    response = auth_client.put(
+        f"/api/v1/courses/{uuid4()}", headers={"Authorization": bearer}, json=body
+    )
+    assert response.status_code == expected
+    course_route_db.commit.assert_not_awaited()
 
 
 def _patch_join(monkeypatch, *, role, prior=None):

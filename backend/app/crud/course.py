@@ -145,6 +145,19 @@ async def get_course_role(
     return await db.scalar(statement)
 
 
+async def update_course(
+    db: AsyncSession, course: Course, *, name: str, description: str | None
+) -> Course:
+    course.name = name
+    course.description = description
+    await db.flush()
+    return course
+
+
+async def get_user_name(db: AsyncSession, user_id: UUID) -> str:
+    return await db.scalar(select(User.name).where(User.id == user_id)) or ""
+
+
 async def delete_course(db: AsyncSession, course: Course) -> None:
     await db.delete(course)
     await db.flush()
