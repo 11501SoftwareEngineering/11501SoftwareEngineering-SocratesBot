@@ -1,4 +1,4 @@
-"""Pydantic schemas for teacher/student topic APIs."""
+"""Pydantic schemas for topic APIs."""
 
 from __future__ import annotations
 
@@ -17,19 +17,12 @@ _EXAMPLE_DESCRIPTION = "Discuss the role of AI in education"
 
 class TopicCreateRequest(BaseModel):
     title: str = Field(min_length=1, max_length=255, examples=[_EXAMPLE_TITLE])
-    description: str | None = Field(default=None, examples=[_EXAMPLE_DESCRIPTION])
-
-
-class TopicUpdateRequest(BaseModel):
-    title: str = Field(min_length=1, max_length=255, examples=[_EXAMPLE_TITLE])
-    description: str | None = Field(default=None, examples=[_EXAMPLE_DESCRIPTION])
 
 
 class TopicWriteResponse(BaseModel):
     topic_id: UUID = Field(examples=[_EXAMPLE_TOPIC_ID])
     course_id: UUID = Field(examples=[_EXAMPLE_COURSE_ID])
     title: str = Field(examples=[_EXAMPLE_TITLE])
-    description: str | None = Field(default=None, examples=[_EXAMPLE_DESCRIPTION])
     message: str = Field(examples=["Topic created"])
 
 

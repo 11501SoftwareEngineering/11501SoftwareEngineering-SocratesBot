@@ -11,14 +11,12 @@ from app.core.enums import CourseRole, SessionStatus
 from app.crud import course as course_crud
 from app.crud import session as session_crud
 from app.crud import topic as topic_crud
-from app.models.topic import Topic
 from app.models.user import User
 from app.schemas.topic import (
     CourseTopicsResponse,
     TopicCreateRequest,
     TopicExplanationResponse,
     TopicListItem,
-    TopicUpdateRequest,
     TopicWriteResponse,
 )
 from app.services import courses as courses_service
@@ -28,16 +26,6 @@ def _topic_not_found() -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Topic not found",
-    )
-
-
-def _write_response(topic: Topic, message: str) -> TopicWriteResponse:
-    return TopicWriteResponse(
-        topic_id=topic.id,
-        course_id=topic.course_id,
-        title=topic.title,
-        description=topic.description,
-        message=message,
     )
 
 
@@ -56,39 +44,17 @@ async def create_topic(
             course_id=course.id,
             created_by=user.id,
             title=payload.title,
-            description=payload.description,
         )
         await db.commit()
     except Exception:
         await db.rollback()
         raise
-    return _write_response(topic, "Topic created")
-
-
-async def update_topic(
-    db: AsyncSession, user: User, topic_id: UUID, payload: TopicUpdateRequest
-) -> TopicWriteResponse:
-    """Replace a topic's title and description (course cannot change).
-
-    Raises:
-        HTTPException: 404 if the topic is missing; 403 if not its teacher.
-    """
-    topic = await topic_crud.get_topic_by_id(db, topic_id)
-    if topic is None:
-        raise _topic_not_found()
-    await courses_service.require_course_teacher(db, user, topic.course_id)
-    try:
-        topic = await topic_crud.update_topic(
-            db,
-            topic,
-            title=payload.title,
-            description=payload.description,
-        )
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise
-    return _write_response(topic, "Topic updated")
+    return TopicWriteResponse(
+        topic_id=topic.id,
+        course_id=topic.course_id,
+        title=topic.title,
+        message="Topic created",
+    )
 
 
 async def delete_topic(db: AsyncSession, user: User, topic_id: UUID) -> None:

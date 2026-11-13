@@ -178,7 +178,7 @@ def test_create_topic_in_path_course(
     response = auth_client.post(
         f"/api/v1/courses/{course.id}/topics",
         headers={"Authorization": bearer},
-        json={"title": "New", "description": "Background"},
+        json={"title": "New", "description": "ignored"},
     )
 
     assert response.status_code == 200
@@ -186,15 +186,10 @@ def test_create_topic_in_path_course(
         "topic_id": str(topic.id),
         "course_id": str(course.id),
         "title": "New",
-        "description": "Background",
         "message": "Topic created",
     }
     create_mock.assert_awaited_once_with(
-        course_route_db,
-        course_id=course.id,
-        created_by=user.id,
-        title="New",
-        description="Background",
+        course_route_db, course_id=course.id, created_by=user.id, title="New"
     )
     course_route_db.commit.assert_awaited_once()
 
@@ -231,29 +226,16 @@ def test_create_topic_errors(
     create_mock.assert_not_awaited()
 
 
-def test_teacher_update_topic_endpoint_still_works(
-    auth_client: TestClient,
-    store: FakeStore,
-    course_route_db: AsyncMock,
-    monkeypatch: pytest.MonkeyPatch,
+def test_update_topic_endpoint_is_removed(
+    auth_client: TestClient, store: FakeStore
 ) -> None:
-    """Removed later together with the topic create rework (#171)."""
     bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
-    course = _course()
-    topic = _topic(course.id)
-    _patch_role(monkeypatch, "TEACHER", course)
-    monkeypatch.setattr(topic_crud, "get_topic_by_id", AsyncMock(return_value=topic))
-    updated = _topic(course.id, id=topic.id, title="New", description=None)
-    monkeypatch.setattr(topic_crud, "update_topic", AsyncMock(return_value=updated))
-
     response = auth_client.put(
-        f"/api/v1/teacher/topics/{topic.id}",
+        f"/api/v1/topics/{uuid4()}",
         headers={"Authorization": bearer},
-        json={"title": "New"},
+        json={"title": "x"},
     )
-
-    assert response.status_code == 200
-    assert response.json()["message"] == "Topic updated"
+    assert response.status_code == 405
 
 
 def test_delete_topic_by_teacher(

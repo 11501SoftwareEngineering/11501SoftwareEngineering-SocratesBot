@@ -23,13 +23,11 @@ async def create_topic(
     course_id: UUID,
     created_by: UUID,
     title: str,
-    description: str | None,
 ) -> Topic:
     topic = Topic(
         course_id=course_id,
         created_by=created_by,
         title=title,
-        description=description,
     )
     db.add(topic)
     await db.flush()
@@ -38,19 +36,6 @@ async def create_topic(
 
 async def get_topic_by_id(db: AsyncSession, topic_id: UUID) -> Topic | None:
     return await db.get(Topic, topic_id)
-
-
-async def update_topic(
-    db: AsyncSession,
-    topic: Topic,
-    *,
-    title: str,
-    description: str | None,
-) -> Topic:
-    topic.title = title
-    topic.description = description
-    await db.flush()
-    return topic
 
 
 async def delete_topic(db: AsyncSession, topic: Topic) -> None:
