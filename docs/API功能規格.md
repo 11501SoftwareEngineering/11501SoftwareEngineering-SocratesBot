@@ -433,7 +433,10 @@ version: 0.2
 - 呼叫方式: GET /topics/{topicId}/reports
 - 授權: 老師、助教需 `view_reports`
 - 輸入資料: 無
-- 成功回應: `class_size`, `completed_count`, `ready_count`, `processing_count`, `failed_count`, `reports`[個人報告的 `report` 結構, `student_display_name`]
+- 成功回應: `class_size`, `completed_count`, `ready_count`, `processing_count`, `failed_count`, `summary_version`（分群標籤所依據的摘要版本，即「取得教學端摘要」的最新版本；尚無摘要時為 null）, 
+    - `groups`[`group_id`, `name`, `count`]該版本的群組清單，供前端產生篩選 tag；尚無摘要時為空陣列
+    - `reports`[個人報告的 `report` 結構, `student_display_name`, `group_ids`(此學生在哪一 group)]
+    - 前端依 `group_ids` 做 tag 篩選，`group_ids` 為空且 `summary_version` 不為 null 者即為「未分類」
 - 錯誤:
     - 無權限 (403)
     - 查無此題目 (404)
@@ -444,7 +447,7 @@ version: 0.2
 - 授權: 老師、助教需 `edit_summary` 或 `view_reports`
 - 輸入資料: 無
 - 成功回應: `topic_status`, `published_version`（學生目前看到的版本號，沒有則 null）, `summary`（最新版本，題目尚未進入 `summary` 時為 null），結構為
-    - `summary_id`, `version`, `summary_status`（`draft` / `reviewed` / `published` / `withdrawn`）, `overview`, `viewpoint_summary`, `denominator`
+    - `summary_id`, `version`, `summary_status`（`draft` / `reviewed` / `published` / `withdrawn`）, `overview`, `viewpoint_summary`, `denominator`, `created_at`, `updated_at`（最後一次產生或修訂時間）
     - `groups`[`group_id`, `name`, `conditions`, `count`, `percentage`, `report_ids`]
     - `ungrouped_report_ids`
 - 錯誤:
