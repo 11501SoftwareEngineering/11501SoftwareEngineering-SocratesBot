@@ -129,18 +129,39 @@ PASSWORD_CHANGE_RESPONSES: dict[int | str, dict[str, Any]] = {
     ),
 }
 
-STUDENT_COURSE_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+COURSE_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+}
+
+COURSE_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
     403: json_detail_example(
-        "Student privileges required",
-        "Student privileges required",
+        "Teacher privileges required",
+        "Teacher privileges required",
+    ),
+    422: json_detail_example(
+        "Request validation failed",
+        [
+            {
+                "type": "string_too_short",
+                "loc": ["body", "name"],
+                "msg": "String should have at least 1 character",
+            }
+        ],
+    ),
+    503: json_detail_example(
+        "Could not allocate invitation code; retry later",
+        "Could not allocate invitation code; retry later",
     ),
 }
 
-STUDENT_COURSE_JOIN_RESPONSES: dict[int | str, dict[str, Any]] = {
+COURSE_JOIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: json_detail_examples(
         "Join rejected",
         {
@@ -173,61 +194,36 @@ STUDENT_COURSE_JOIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     ),
 }
 
-STUDENT_COURSE_LEAVE_RESPONSES: dict[int | str, dict[str, Any]] = {
+COURSE_DELETE_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
     403: json_detail_example(
-        "Student privileges required",
-        "Student privileges required",
+        "Only the course creator can delete this course",
+        "Only the course creator can delete this course",
     ),
 }
 
-TEACHER_COURSE_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+COURSE_LEAVE_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
     403: json_detail_example(
-        "Teacher privileges required",
-        "Teacher privileges required",
+        "Teachers and TAs cannot leave a course this way",
+        "Teachers and TAs cannot leave a course this way",
     ),
 }
 
-TEACHER_COURSE_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+COURSE_STUDENT_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
     403: json_detail_example(
-        "Teacher privileges required",
-        "Teacher privileges required",
-    ),
-    422: json_detail_example(
-        "Request validation failed",
-        [
-            {
-                "type": "string_too_short",
-                "loc": ["body", "name"],
-                "msg": "String should have at least 1 character",
-            }
-        ],
-    ),
-    503: json_detail_example(
-        "Could not allocate invitation code; retry later",
-        "Could not allocate invitation code; retry later",
-    ),
-}
-
-TEACHER_COURSE_STUDENT_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
-    401: json_detail_example(
-        AUTH_UNAUTHORIZED_DETAIL,
-        AUTH_UNAUTHORIZED_DETAIL,
-    ),
-    403: json_detail_example(
-        "Teacher privileges required",
-        "Teacher privileges required",
+        "Course teacher required",
+        "Course teacher required",
     ),
     404: json_detail_example(
         "Course not found",
@@ -267,28 +263,14 @@ TEACHER_COURSE_STUDENT_ADD_RESPONSES: dict[int | str, dict[str, Any]] = {
     ),
 }
 
-TEACHER_COURSE_DELETE_RESPONSES: dict[int | str, dict[str, Any]] = {
-    401: json_detail_example(
-        AUTH_UNAUTHORIZED_DETAIL,
-        AUTH_UNAUTHORIZED_DETAIL,
-    ),
-    403: json_detail_examples(
-        "Delete denied",
-        {
-            "not_teacher": "Teacher privileges required",
-            "not_creator": "Only the course creator can delete this course",
-        },
-    ),
-}
-
-TEACHER_COURSE_STUDENT_REMOVE_RESPONSES: dict[int | str, dict[str, Any]] = {
+COURSE_STUDENT_REMOVE_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
     403: json_detail_example(
-        "Teacher privileges required",
-        "Teacher privileges required",
+        "Course teacher required",
+        "Course teacher required",
     ),
     404: json_detail_example(
         "Course not found",
@@ -330,17 +312,14 @@ _TOPIC_TITLE_TOO_SHORT_422 = json_detail_example(
     ],
 )
 
-TEACHER_TOPIC_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+TOPIC_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
-    403: json_detail_examples(
-        "Create denied",
-        {
-            "not_teacher": "Teacher privileges required",
-            "not_instructor": "Course instructor required",
-        },
+    403: json_detail_example(
+        "Course teacher required",
+        "Course teacher required",
     ),
     404: json_detail_example(
         "Course not found",
@@ -368,31 +347,25 @@ TEACHER_TOPIC_UPDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     422: _TOPIC_TITLE_TOO_SHORT_422,
 }
 
-TEACHER_TOPIC_DELETE_RESPONSES: dict[int | str, dict[str, Any]] = {
+TOPIC_DELETE_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
-    403: json_detail_examples(
-        "Delete denied",
-        {
-            "not_teacher": "Teacher privileges required",
-            "not_instructor": "Course instructor required",
-        },
+    403: json_detail_example(
+        "Course teacher required",
+        "Course teacher required",
     ),
 }
 
-TEACHER_COURSE_TOPIC_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+COURSE_TOPIC_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
-    403: json_detail_examples(
-        "List denied",
-        {
-            "not_teacher": "Teacher privileges required",
-            "not_instructor": "Course instructor required",
-        },
+    403: json_detail_example(
+        "Course membership required",
+        "Course membership required",
     ),
     404: json_detail_example(
         "Course not found",
@@ -400,41 +373,21 @@ TEACHER_COURSE_TOPIC_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
     ),
 }
 
-STUDENT_COURSE_TOPIC_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+TOPIC_EXPLANATION_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
-    403: json_detail_examples(
-        "List denied",
-        {
-            "not_student": "Student privileges required",
-            "not_member": "Course membership required",
-        },
-    ),
-    404: json_detail_example(
-        "Course not found",
-        "Course not found",
-    ),
-}
-
-STUDENT_TOPIC_EXPLANATION_RESPONSES: dict[int | str, dict[str, Any]] = {
-    401: json_detail_example(
-        AUTH_UNAUTHORIZED_DETAIL,
-        AUTH_UNAUTHORIZED_DETAIL,
-    ),
-    403: json_detail_examples(
-        "Read denied",
-        {
-            "not_student": "Student privileges required",
-            "not_member": "Course membership required",
-        },
+    403: json_detail_example(
+        "Course membership required",
+        "Course membership required",
     ),
     404: json_detail_example(
         "Topic not found",
         "Topic not found",
     ),
 }
+
 SESSION_ENTRY_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,

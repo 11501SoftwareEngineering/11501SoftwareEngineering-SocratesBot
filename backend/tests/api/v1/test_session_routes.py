@@ -15,7 +15,7 @@ from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
 
 
 def test_create_session_requires_login(auth_client: TestClient) -> None:
-    response = auth_client.post(f"/api/v1/student/topics/{uuid4()}/sessions")
+    response = auth_client.post(f"/api/v1/topics/{uuid4()}/sessions")
 
     assert response.status_code == 401
     assert response.json() == {"detail": AUTH_UNAUTHORIZED_DETAIL}
@@ -58,7 +58,7 @@ def test_create_session_returns_ids_and_commits(
     monkeypatch.setattr(session_crud, "get_or_create_session_id", create_mock)
 
     response = auth_client.post(
-        f"/api/v1/student/topics/{topic_id}/sessions",
+        f"/api/v1/topics/{topic_id}/sessions",
         headers={"Authorization": bearer_from(login)},
     )
 
@@ -114,7 +114,7 @@ def test_session_errors_return_http_status_and_roll_back(
     monkeypatch.setattr(session_crud, "get_or_create_session_id", create_mock)
 
     response = auth_client.post(
-        f"/api/v1/student/topics/{topic_id}/sessions",
+        f"/api/v1/topics/{topic_id}/sessions",
         headers={"Authorization": bearer_from(login)},
     )
 
@@ -153,7 +153,7 @@ def test_enter_existing_session_returns_original_id(
     monkeypatch.setattr(session_crud, "get_or_create_session_id", create_mock)
 
     response = auth_client.post(
-        f"/api/v1/student/topics/{topic_id}/sessions",
+        f"/api/v1/topics/{topic_id}/sessions",
         headers={"Authorization": bearer_from(login)},
     )
 
@@ -191,7 +191,7 @@ def test_expired_token_cannot_create_session(
     )
 
     response = auth_client.post(
-        f"/api/v1/student/topics/{uuid4()}/sessions",
+        f"/api/v1/topics/{uuid4()}/sessions",
         headers={"Authorization": f"Bearer {expired_token}"},
     )
 
