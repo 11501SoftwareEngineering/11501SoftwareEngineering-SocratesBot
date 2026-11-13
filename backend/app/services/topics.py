@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import CourseRole, SessionStatus
 from app.crud import course as course_crud
-from app.crud import session as session_crud
 from app.crud import topic as topic_crud
 from app.models.user import User
 from app.schemas.topic import (
@@ -140,18 +139,14 @@ async def get_topic_explanation(
     """Return the topic's title and background (``key_terms`` not stored yet).
 
     Raises:
-        HTTPException: 404 if the topic is missing; 403 if not a member.
+        HTTPException: 404 if the topic is missing or ``user`` is not a member
+            of its course.
     """
     topic = await topic_crud.get_topic_by_id(db, topic_id)
     if topic is None:
         raise _topic_not_found()
-    if not await session_crud.is_course_member(
-        db, user_id=user.id, course_id=topic.course_id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Course membership required",
-        )
+    if await courses_service.get_my_course_role(db, user, topic.course_id) is None:
+        raise _topic_not_found()
     return TopicExplanationResponse(
         topic_id=topic.id,
         title=topic.title,

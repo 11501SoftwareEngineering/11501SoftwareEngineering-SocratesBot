@@ -370,12 +370,8 @@ TOPIC_EXPLANATION_RESPONSES: dict[int | str, dict[str, Any]] = {
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
-    403: json_detail_example(
-        "Course membership required",
-        "Course membership required",
-    ),
     404: json_detail_example(
-        "Topic not found",
+        "Not a course member or topic not found",
         "Topic not found",
     ),
 }

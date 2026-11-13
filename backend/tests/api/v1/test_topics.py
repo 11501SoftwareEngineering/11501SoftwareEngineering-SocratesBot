@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 
 from app.core.enums import UserRole
 from app.crud import course as course_crud
-from app.crud import session as session_crud
 from app.crud import topic as topic_crud
 from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
 
@@ -297,7 +296,9 @@ def test_delete_missing_topic_is_idempotent(
     course_route_db.commit.assert_not_awaited()
 
 
-def test_explanation_for_course_member(
+@pytest.mark.parametrize("db_role", ["TEACHER", "TA", "STUDENT"])
+def test_explanation_open_to_all_members(
+    db_role: str,
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -306,8 +307,8 @@ def test_explanation_for_course_member(
     bearer, _ = _login(auth_client, store)
     course = _course()
     topic = _topic(course.id)
+    _patch_role(monkeypatch, db_role, course)
     monkeypatch.setattr(topic_crud, "get_topic_by_id", AsyncMock(return_value=topic))
-    monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=True))
 
     response = auth_client.get(
         f"/api/v1/topics/{topic.id}/explanation", headers={"Authorization": bearer}
@@ -322,10 +323,9 @@ def test_explanation_for_course_member(
     }
 
 
-@pytest.mark.parametrize(("topic_exists", "expected"), [(True, 403), (False, 404)])
-def test_explanation_non_member_or_missing(
+@pytest.mark.parametrize("topic_exists", [True, False])
+def test_explanation_non_member_or_missing_is_404(
     topic_exists: bool,
-    expected: int,
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -333,13 +333,13 @@ def test_explanation_non_member_or_missing(
 ) -> None:
     bearer, _ = _login(auth_client, store)
     course = _course()
+    _patch_role(monkeypatch, None, course)
     monkeypatch.setattr(
         topic_crud,
         "get_topic_by_id",
         AsyncMock(return_value=_topic(course.id) if topic_exists else None),
     )
-    monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=False))
     response = auth_client.get(
         f"/api/v1/topics/{uuid4()}/explanation", headers={"Authorization": bearer}
     )
-    assert response.status_code == expected
+    assert response.status_code == 404
