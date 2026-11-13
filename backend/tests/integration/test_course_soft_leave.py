@@ -17,13 +17,13 @@ from app.crud import course as course_crud
 from app.crud import session as session_crud
 from app.crud import user as user_crud
 from app.models.course import CourseMembership
-from app.schemas.course import CourseJoinRequest, CourseStudentAddRequest
+from app.schemas.course import CourseJoinRequest
 from app.services import courses as courses_service
 from app.services.course_invites import generate_invite_code
 
 
 @pytest.mark.integration
-def test_soft_leave_blocks_invite_rejoin_teacher_can_readd() -> None:
+def test_soft_leave_blocks_invite_rejoin_but_crud_can_reenroll() -> None:
     async def _run() -> None:
         await engine.dispose()
         await run_migrations()
@@ -58,8 +58,7 @@ def test_soft_leave_blocks_invite_rejoin_teacher_can_readd() -> None:
             await db.commit()
 
             student_row = await user_crud.get_user_by_id(db, student.id)
-            teacher_row = await user_crud.get_user_by_id(db, teacher.id)
-            assert student_row is not None and teacher_row is not None
+            assert student_row is not None
 
             await courses_service.leave_course(db, student_row, course.id)
             membership = await db.scalar(
@@ -71,7 +70,7 @@ def test_soft_leave_blocks_invite_rejoin_teacher_can_readd() -> None:
             assert membership is not None
             assert membership.left_at is not None
             assert (
-                await session_crud.is_course_member(
+                await session_crud.is_course_student(
                     db, user_id=student.id, course_id=course.id
                 )
                 is False
@@ -86,11 +85,10 @@ def test_soft_leave_blocks_invite_rejoin_teacher_can_readd() -> None:
             assert exc_info.value.status_code == 400
             assert exc_info.value.detail == "Cannot rejoin after leaving this course"
 
-            await courses_service.add_course_student(
-                db,
-                teacher_row,
-                course.id,
-                CourseStudentAddRequest(account_id=student.account_id),
+            # No teacher "add student" API any more; the CRUD re-enroll helper
+            # still clears ``left_at`` and is what a future re-add flow reuses.
+            await course_crud.add_student_membership(
+                db, course_id=course.id, user_id=student.id
             )
             active = await course_crud.get_student_membership(
                 db, course_id=course.id, user_id=student.id

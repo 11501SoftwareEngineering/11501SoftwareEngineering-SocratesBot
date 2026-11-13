@@ -1,9 +1,9 @@
 """Course routes; permissions follow the caller's in-course role."""
 
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ActiveUser, TeacherUser, UserAccount, get_db
@@ -14,10 +14,11 @@ from app.api.openapi_responses import (
     COURSE_JOIN_RESPONSES,
     COURSE_LEAVE_RESPONSES,
     COURSE_LIST_RESPONSES,
-    COURSE_STUDENT_LIST_RESPONSES,
+    COURSE_MEMBER_LIST_RESPONSES,
     COURSE_STUDENT_REMOVE_RESPONSES,
     COURSE_UPDATE_RESPONSES,
 )
+from app.core.enums import CourseRole
 from app.schemas.course import (
     CourseCreateRequest,
     CourseCreateResponse,
@@ -25,7 +26,7 @@ from app.schemas.course import (
     CourseJoinRequest,
     CourseJoinResponse,
     CourseListItem,
-    CourseStudentListItem,
+    CourseMemberListItem,
     CourseUpdateRequest,
     CourseUpdateResponse,
 )
@@ -133,16 +134,22 @@ async def leave_course(
 
 @router.get(
     "/{courseId}/members",
-    response_model=list[CourseStudentListItem],
-    responses=COURSE_STUDENT_LIST_RESPONSES,
+    response_model=list[CourseMemberListItem],
+    responses=COURSE_MEMBER_LIST_RESPONSES,
 )
 async def list_members(
     courseId: UUID,
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> list[CourseStudentListItem]:
-    """List the course's active students (course teacher only)."""
-    return await courses_service.list_course_students(db, current_user, courseId)
+    role: Annotated[
+        Literal["student", "ta"] | None,
+        Query(description="`student` or `ta`; omit for both"),
+    ] = None,
+) -> list[CourseMemberListItem]:
+    """List students and/or TAs; an invalid ``role`` is rejected with 422."""
+    return await courses_service.list_course_members(
+        db, current_user, courseId, CourseRole(role) if role else None
+    )
 
 
 @router.delete(

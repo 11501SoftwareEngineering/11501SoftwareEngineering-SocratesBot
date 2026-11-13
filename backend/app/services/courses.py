@@ -9,9 +9,8 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import CourseRole, UserRole
+from app.core.enums import CourseRole
 from app.crud import course as course_crud
-from app.crud import user as user_crud
 from app.models.course import Course
 from app.models.user import User
 from app.schemas.course import (
@@ -21,11 +20,9 @@ from app.schemas.course import (
     CourseJoinRequest,
     CourseJoinResponse,
     CourseListItem,
-    CourseStudentAddRequest,
-    CourseStudentListItem,
+    CourseMemberListItem,
     CourseUpdateRequest,
     CourseUpdateResponse,
-    MessageResponse,
 )
 from app.services.course_invites import (
     INVITE_ALPHABET,
@@ -366,64 +363,29 @@ async def leave_course(db: AsyncSession, user: User, course_id: UUID) -> None:
         raise
 
 
-async def _require_instructor(
-    db: AsyncSession, *, course_id: UUID, teacher: User
-) -> None:
-    course = await course_crud.get_course_by_id(db, course_id)
-    if course is None or not await course_crud.is_course_instructor(
-        db, course_id=course_id, teacher_id=teacher.id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Course not found",
-        )
-
-
-async def list_course_students(
-    db: AsyncSession, teacher: User, course_id: UUID
-) -> list[CourseStudentListItem]:
-    await require_course_teacher(db, teacher, course_id)
-    rows = await course_crud.list_course_students(db, course_id)
+async def list_course_members(
+    db: AsyncSession, user: User, course_id: UUID, role: CourseRole | None
+) -> list[CourseMemberListItem]:
+    """List students and/or TAs. Teacher only for now (TA ``view_members`` later)."""
+    await require_course_teacher(db, user, course_id)
+    if role is CourseRole.STUDENT:
+        db_roles = (course_crud.MEMBERSHIP_STUDENT,)
+    elif role is CourseRole.TA:
+        db_roles = (course_crud.MEMBERSHIP_TA,)
+    else:
+        db_roles = (course_crud.MEMBERSHIP_STUDENT, course_crud.MEMBERSHIP_TA)
+    rows = await course_crud.list_course_members(db, course_id, roles=db_roles)
     return [
-        CourseStudentListItem(
-            student_id=user.id,
-            account_id=user.account_id,
-            name=user.name,
+        CourseMemberListItem(
+            user_id=member.id,
+            account_id=member.account_id,
+            name=member.name,
+            role=_ROLE_BY_DB_VALUE[membership.role],
             joined_at=membership.joined_at,
+            permissions=[],
         )
-        for user, membership in rows
+        for member, membership in rows
     ]
-
-
-async def add_course_student(
-    db: AsyncSession,
-    teacher: User,
-    course_id: UUID,
-    payload: CourseStudentAddRequest,
-) -> MessageResponse:
-    await _require_instructor(db, course_id=course_id, teacher=teacher)
-    target = await user_crud.get_user_by_account(db, payload.account_id)
-    if target is None or target.role != UserRole.USER.value:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Student not found",
-        )
-    existing = await course_crud.get_student_membership(
-        db, course_id=course_id, user_id=target.id
-    )
-    if existing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Student is already in this course",
-        )
-    await _commit_student_enrollment(
-        db,
-        course_id=course_id,
-        user_id=target.id,
-        duplicate_detail="Student is already in this course",
-        missing_course_detail="Course not found",
-    )
-    return MessageResponse(message="Student added")
 
 
 async def remove_course_student(

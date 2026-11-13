@@ -57,10 +57,6 @@ class CourseDetailResponse(BaseModel):
     invite_code: str = Field(examples=[_EXAMPLE_INVITE])
 
 
-class MessageResponse(BaseModel):
-    message: str = Field(examples=["Student added"])
-
-
 class CourseListItem(BaseModel):
     """One row of ``GET /courses`` (teacher, TA and student courses merged)."""
 
@@ -97,12 +93,13 @@ class CourseJoinResponse(BaseModel):
     message: str = Field(default="Joined course", examples=["Joined course"])
 
 
-class CourseStudentListItem(BaseModel):
-    student_id: UUID = Field(examples=[_EXAMPLE_USER_ID])
+class CourseMemberListItem(BaseModel):
+    user_id: UUID = Field(examples=[_EXAMPLE_USER_ID])
     account_id: str = Field(examples=["alice"])
     name: str = Field(examples=["Alice"])
+    role: CourseRole = Field(examples=[CourseRole.STUDENT])
     joined_at: datetime = Field(examples=[_EXAMPLE_JOINED_AT])
-
-
-class CourseStudentAddRequest(BaseModel):
-    account_id: str = Field(min_length=1, max_length=64, examples=["alice"])
+    permissions: list[str] = Field(
+        default_factory=list,
+        description="TA permissions; empty for students",
+    )

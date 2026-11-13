@@ -5,7 +5,6 @@ from app.api.v1.routes import (
     auth,
     courses,
     health,
-    teacher_courses,
     teacher_topics,
     topics,
     users,
@@ -17,6 +16,5 @@ api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(admin_teachers.router)
 api_router.include_router(courses.router)
-api_router.include_router(teacher_courses.router)
 api_router.include_router(topics.router)
 api_router.include_router(teacher_topics.router)

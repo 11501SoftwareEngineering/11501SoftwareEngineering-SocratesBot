@@ -253,7 +253,7 @@ COURSE_LEAVE_RESPONSES: dict[int | str, dict[str, Any]] = {
     ),
 }
 
-COURSE_STUDENT_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+COURSE_MEMBER_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
@@ -266,35 +266,13 @@ COURSE_STUDENT_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
         "Course not found",
         "Course not found",
     ),
-}
-
-TEACHER_COURSE_STUDENT_ADD_RESPONSES: dict[int | str, dict[str, Any]] = {
-    400: json_detail_example(
-        "Student is already in this course",
-        "Student is already in this course",
-    ),
-    401: json_detail_example(
-        AUTH_UNAUTHORIZED_DETAIL,
-        AUTH_UNAUTHORIZED_DETAIL,
-    ),
-    403: json_detail_example(
-        "Teacher privileges required",
-        "Teacher privileges required",
-    ),
-    404: json_detail_examples(
-        "Course or student not found",
-        {
-            "course_not_found": "Course not found",
-            "student_not_found": "Student not found",
-        },
-    ),
     422: json_detail_example(
-        "Request validation failed",
+        "Invalid role query value",
         [
             {
-                "type": "string_too_short",
-                "loc": ["body", "account_id"],
-                "msg": "String should have at least 1 character",
+                "type": "literal_error",
+                "loc": ["query", "role"],
+                "msg": "Input should be 'student' or 'ta'",
             }
         ],
     ),
