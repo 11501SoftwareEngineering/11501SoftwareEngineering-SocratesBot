@@ -90,6 +90,21 @@ class OpenAIChatClient:
             model=model,
         )
 
+    async def complete_object(
+        self,
+        *,
+        name: str,
+        schema: dict[str, Any],
+        instructions: str,
+        material: str,
+    ) -> dict:
+        return await self._post(
+            name=name,
+            schema=schema,
+            instructions=instructions,
+            material=material,
+        )
+
     async def complete_reply(
         self, *, instructions: str, material: str
     ) -> tuple[str, bool]:
