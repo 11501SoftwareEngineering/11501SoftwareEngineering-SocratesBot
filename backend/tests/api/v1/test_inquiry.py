@@ -2,24 +2,19 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import threading
-from contextlib import asynccontextmanager
-from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.core.enums import UserRole
-from app.crud import attempt as attempt_crud
 from app.crud import course as course_crud
-from app.services import inquiry_runner
-from app.services.model_client import ModelCallError
+from app.crud import topic as topic_crud
+from app.services.model_client import ModelCallError, OpenAIChatClient
 from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
 
 KEY = "sk-test-do-not-leak"
@@ -53,6 +48,7 @@ def _topic(**overrides) -> SimpleNamespace:
         "stage": "setup",
         "version": 1,
         "content_language": None,
+        "model_id": "openai/gpt-4o-mini",
         "age_band": None,
         "max_turns": None,
         "inquiry_topic": None,
@@ -66,104 +62,10 @@ def _topic(**overrides) -> SimpleNamespace:
     return SimpleNamespace(**values)
 
 
-class _Attempts:
-    def __init__(self) -> None:
-        self.rows: dict = {}
-
-    def latest(self, topic_id):
-        rows = [row for row in self.rows.values() if row.topic_id == topic_id]
-        if not rows:
-            return None
-        return max(rows, key=lambda row: row.created_at)
-
-
-def _install_attempts(monkeypatch: pytest.MonkeyPatch) -> _Attempts:
-    memory = _Attempts()
-
-    async def create_inquiry_attempt(_db, *, topic_id, request_json):
-        row = SimpleNamespace(
-            id=uuid4(),
-            topic_id=topic_id,
-            kind="inquiry_fields",
-            status="pending",
-            request_json=request_json,
-            result_json=None,
-            lease_expires_at=None,
-            created_at=datetime.now(UTC),
-        )
-        memory.rows[row.id] = row
-        return row
-
-    async def get_attempt(_db, attempt_id):
-        return memory.rows.get(attempt_id)
-
-    async def latest_inquiry_attempt(_db, topic_id):
-        return memory.latest(topic_id)
-
-    async def mark_processing(_db, attempt_id):
-        row = memory.rows[attempt_id]
-        if row.status == "pending":
-            row.status = "processing"
-
-    async def refresh_lease(_db, attempt_id, *, seconds):
-        row = memory.rows[attempt_id]
-        if row.status == "processing":
-            row.lease_expires_at = datetime.now(UTC)
-
-    async def mark_ready_if_processing(_db, attempt_id, result_json):
-        row = memory.rows[attempt_id]
-        if row.status != "processing":
-            return False
-        row.status = "ready"
-        row.result_json = result_json
-        return True
-
-    async def mark_failed_if_processing(_db, attempt_id):
-        row = memory.rows[attempt_id]
-        if row.status != "processing":
-            return False
-        row.status = "failed"
-        row.result_json = None
-        return True
-
-    monkeypatch.setattr(attempt_crud, "create_inquiry_attempt", create_inquiry_attempt)
-    monkeypatch.setattr(attempt_crud, "get_attempt", get_attempt)
-    monkeypatch.setattr(attempt_crud, "latest_inquiry_attempt", latest_inquiry_attempt)
-    monkeypatch.setattr(attempt_crud, "mark_processing", mark_processing)
-    monkeypatch.setattr(attempt_crud, "refresh_lease", refresh_lease)
-    monkeypatch.setattr(
-        attempt_crud, "mark_ready_if_processing", mark_ready_if_processing
-    )
-    monkeypatch.setattr(
-        attempt_crud, "mark_failed_if_processing", mark_failed_if_processing
-    )
-    return memory
-
-
-@asynccontextmanager
-async def _scope():
-    yield SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock(), flush=AsyncMock())
-
-
-class _Gate:
-    def __init__(self, result=None, error: Exception | None = None) -> None:
-        self.started = threading.Event()
-        self.release = threading.Event()
-        self.result = result
-        self.error = error
-        self.calls = 0
-
-    async def complete_json(self, *, instructions: str, material: str) -> dict:
-        self.calls += 1
-        self.started.set()
-        await asyncio.to_thread(self.release.wait)
-        if self.error is not None:
-            raise self.error
-        return self.result
-
-
-def _ready(monkeypatch: pytest.MonkeyPatch, topic, *, instructor_id=None) -> None:
+def _ready(monkeypatch: pytest.MonkeyPatch, topic, *, instructor_id=None) -> AsyncMock:
     monkeypatch.setattr("app.crud.topic.get_topic_by_id", AsyncMock(return_value=topic))
+    recorded = AsyncMock()
+    monkeypatch.setattr(topic_crud, "record_inquiry_change", recorded)
 
     async def is_instructor(_db, *, course_id, teacher_id):
         assert course_id == topic.course_id
@@ -172,8 +74,8 @@ def _ready(monkeypatch: pytest.MonkeyPatch, topic, *, instructor_id=None) -> Non
         return teacher_id == instructor_id
 
     monkeypatch.setattr(course_crud, "is_course_instructor", is_instructor)
-    monkeypatch.setattr(inquiry_runner, "session_scope", _scope)
     monkeypatch.setattr(settings, "OPENAI_API_KEY", type(settings.OPENAI_API_KEY)(KEY))
+    return recorded
 
 
 def test_publish_rejects_blank_topic_and_bad_age(
@@ -194,7 +96,6 @@ def test_publish_rejects_blank_topic_and_bad_age(
     missing_topic = auth_client.post(
         f"/api/v1/topics/{topic.id}/publish",
         headers={"Authorization": bearer},
-        json={"expected_version": 1},
     )
     assert missing_topic.status_code == 409
     assert missing_topic.json()["detail"] == "Incomplete setup: topic"
@@ -205,17 +106,13 @@ def test_publish_rejects_blank_topic_and_bad_age(
     bad_age = auth_client.post(
         f"/api/v1/topics/{topic.id}/publish",
         headers={"Authorization": bearer},
-        json={"expected_version": 1},
     )
     assert bad_age.status_code == 409
     assert bad_age.json()["detail"] == "Incomplete setup: age_band"
     rejected = auth_client.put(
         f"/api/v1/topics/{topic.id}/setup",
         headers={"Authorization": bearer},
-        json={
-            "expected_version": 1,
-            "setup": {"age_band": "18+", "topic": "Cities", "core_question": "Why?"},
-        },
+        json={"setup": {"age_band": "18+", "topic": "Cities", "core_question": "Why?"}},
     )
     assert rejected.status_code == 422
     assert topic.stage == "setup"
@@ -227,7 +124,6 @@ def test_publish_rejects_blank_topic_and_bad_age(
     illegal_age = auth_client.post(
         f"/api/v1/topics/{topic.id}/publish",
         headers={"Authorization": bearer},
-        json={"expected_version": 1},
     )
     assert illegal_age.status_code == 409
     assert illegal_age.json()["detail"] == "Incomplete setup: age_band"
@@ -235,7 +131,7 @@ def test_publish_rejects_blank_topic_and_bad_age(
     course_route_db.commit.assert_not_awaited()
 
 
-def test_save_persists_fields_and_leaves_attempt_unsaved(
+def test_save_stores_fields_without_returning_a_version(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -243,24 +139,12 @@ def test_save_persists_fields_and_leaves_attempt_unsaved(
 ) -> None:
     bearer, _ = _login(auth_client, store)
     topic = _topic()
-    memory = _install_attempts(monkeypatch)
-    _ready(monkeypatch, topic)
-    attempt = SimpleNamespace(
-        id=uuid4(),
-        topic_id=topic.id,
-        status="ready",
-        result_json=GENERATED,
-        lease_expires_at=None,
-        created_at=datetime.now(UTC),
-    )
-    memory.rows[attempt.id] = attempt
+    recorded = _ready(monkeypatch, topic)
 
     response = auth_client.put(
         f"/api/v1/topics/{topic.id}/setup",
         headers={"Authorization": bearer},
         json={
-            "expected_version": 1,
-            "content_language": "zh-TW",
             "setup": {
                 "age_band": "university_plus",
                 "max_turns": 5,
@@ -268,7 +152,7 @@ def test_save_persists_fields_and_leaves_attempt_unsaved(
                 "core_question": "Who maintains them?",
                 "inquiry_focus": "the public cost",
                 "opening_message": "",
-            },
+            }
         },
     )
 
@@ -276,82 +160,38 @@ def test_save_persists_fields_and_leaves_attempt_unsaved(
     body = response.json()
     assert body["setup"]["topic"] == "Cities"
     assert "opening_message" not in body["setup"]
+    assert "version" not in body
     assert topic.opening_message is None
-    assert body["content_language"] == "zh-TW"
-    assert body["attempt"]["body"]["topic"] == "generated topic"
     assert topic.inquiry_topic == "Cities"
     assert topic.exclusions == "unspecified"
-    assert topic.version == 2
     assert topic.stage == "setup"
+    recorded.assert_awaited_once()
     course_route_db.commit.assert_awaited()
 
 
-def test_generation_returns_before_ready_and_later_read_is_instructor_only(
+def test_get_setup_is_instructor_only(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     bearer, teacher = _login(auth_client, store)
     outsider_bearer, _ = _login(auth_client, store, account="outsider")
     topic = _topic(inquiry_topic="saved topic", core_question="saved question")
-    memory = _install_attempts(monkeypatch)
-    gate = _Gate(result=GENERATED)
     _ready(monkeypatch, topic, instructor_id=teacher.id)
-    monkeypatch.setattr(inquiry_runner, "client", gate)
-    caplog.set_level(logging.INFO)
-
-    response = auth_client.post(
-        f"/api/v1/topics/{topic.id}/setup/generate",
-        headers={"Authorization": bearer},
-        json={
-            "age_band": "13-15",
-            "max_turns": 10,
-            "content_language": "zh-TW",
-            "course_description": DIALOGUE,
-        },
-    )
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "pending"
-    assert "body" not in response.json()
-    assert KEY not in response.text
-    course_route_db.commit.assert_awaited()
-    attempt_id = UUID(response.json()["attempt_id"])
-    assert gate.started.wait(5)
-    try:
-        waiting = auth_client.get(
-            f"/api/v1/topics/{topic.id}/setup",
-            headers={"Authorization": bearer},
-        )
-        assert waiting.status_code == 200
-        attempt = waiting.json()["attempt"]
-        assert attempt["status"] == "processing"
-        assert "body" not in attempt
-        assert waiting.json()["setup"]["topic"] == "saved topic"
-        assert memory.rows[attempt_id].status == "processing"
-    finally:
-        gate.release.set()
-        inquiry_runner.join(attempt_id)
 
     ready = auth_client.get(
         f"/api/v1/topics/{topic.id}/setup",
         headers={"Authorization": bearer},
     )
     assert ready.status_code == 200
-    assert ready.json()["attempt"]["status"] == "ready"
-    assert ready.json()["attempt"]["body"]["topic"] == "generated topic"
     assert ready.json()["setup"]["topic"] == "saved topic"
-    assert topic.inquiry_topic == "saved topic"
+    assert "version" not in ready.json()
     denied = auth_client.get(
         f"/api/v1/topics/{topic.id}/setup",
         headers={"Authorization": outsider_bearer},
     )
     assert denied.status_code == 403
-    stored = memory.rows[attempt_id]
-    assert KEY not in f"{stored.request_json} {stored.result_json} {caplog.text}"
-    assert DIALOGUE not in caplog.text
 
 
 def test_failed_regeneration_keeps_the_saved_inquiry(
@@ -363,39 +203,52 @@ def test_failed_regeneration_keeps_the_saved_inquiry(
 ) -> None:
     bearer, _ = _login(auth_client, store)
     topic = _topic(inquiry_topic="saved topic", core_question="saved question")
-    memory = _install_attempts(monkeypatch)
-    gate = _Gate(error=ModelCallError(503))
-    _ready(monkeypatch, topic)
-    monkeypatch.setattr(inquiry_runner, "client", gate)
+    recorded = _ready(monkeypatch, topic)
+
+    async def fail(self, *, instructions: str, material: str, model: str | None = None):
+        raise ModelCallError(503)
+
+    monkeypatch.setattr(OpenAIChatClient, "complete_json", fail)
     caplog.set_level(logging.INFO)
 
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/refine",
         headers={"Authorization": bearer},
-        json={
-            "setup": {"topic": "saved topic", "core_question": "saved question"},
-            "feedback": DIALOGUE,
-        },
+        json={"feedback": DIALOGUE},
     )
-    assert response.status_code == 200
-    assert response.json()["status"] == "pending"
-    course_route_db.commit.assert_awaited()
-    attempt_id = UUID(response.json()["attempt_id"])
-    try:
-        assert gate.started.wait(5)
-    finally:
-        gate.release.set()
-        inquiry_runner.join(attempt_id)
-
-    failed = auth_client.get(
-        f"/api/v1/topics/{topic.id}/setup",
-        headers={"Authorization": bearer},
-    )
-    assert failed.status_code == 200
-    assert failed.json()["attempt"]["status"] == "failed"
-    assert "body" not in failed.json()["attempt"]
-    assert failed.json()["setup"]["topic"] == "saved topic"
+    assert response.status_code == 503
     assert topic.inquiry_topic == "saved topic"
-    assert memory.rows[attempt_id].result_json is None
+    recorded.assert_not_awaited()
+    course_route_db.commit.assert_not_awaited()
     assert KEY not in caplog.text
     assert DIALOGUE not in caplog.text
+    assert DIALOGUE not in response.text
+
+
+def test_opening_message_is_not_stored(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store)
+    topic = _topic(opening_message=None)
+    recorded = _ready(monkeypatch, topic)
+
+    async def complete(
+        self, *, instructions: str, material: str, model: str | None = None
+    ):
+        return GENERATED
+
+    monkeypatch.setattr(OpenAIChatClient, "complete_json", complete)
+
+    response = auth_client.post(
+        f"/api/v1/topics/{topic.id}/setup/opening-message",
+        headers={"Authorization": bearer},
+        json={"setup": {"topic": "Cities", "core_question": "Why?"}},
+    )
+    assert response.status_code == 200
+    assert response.json() == {"opening_message": "Where should we start?"}
+    assert topic.opening_message is None
+    recorded.assert_not_awaited()
+    course_route_db.commit.assert_not_awaited()

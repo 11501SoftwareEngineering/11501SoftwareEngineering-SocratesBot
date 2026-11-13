@@ -492,7 +492,6 @@ INQUIRY_SETUP_WRITE_RESPONSES: dict[int | str, dict[str, Any]] = {
         "Inquiry was not saved",
         {
             "not_in_setup": "Topic is not in setup",
-            "version_conflict": "Version conflict",
         },
     ),
     401: _INQUIRY_UNAUTHORIZED,
@@ -515,7 +514,6 @@ INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
     409: json_detail_examples(
         "Inquiry was not published",
         {
-            "version_conflict": "Version conflict",
             "incomplete": "Incomplete setup: topic",
         },
     ),
