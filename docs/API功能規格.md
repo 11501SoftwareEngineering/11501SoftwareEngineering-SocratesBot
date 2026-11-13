@@ -84,7 +84,7 @@ version: 0.2
 - 呼叫方式: GET /courses/{courseId}
 - 授權: 老師、助教、學生
 - 輸入資料: 無
-- 成功回應: `course_id`, `name`, `description`, `teacher_name`, `my_role`, `my_permissions`, `invite_code`, `default_model`{id, name}
+- 成功回應: `course_id`, `name`, `description`, `teacher_name`, `my_role`, `my_permissions`, `invite_code`
 - 錯誤:
     - 非課程成員或查無此課程 (404)
 
@@ -237,8 +237,7 @@ version: 0.2
 | `conversation` | 學生對話 | 老師發布題目 | 鎖定八欄、內容語言與模型；學生可建立／繼續 Session |
 | `summary` | 觀點摘要 | 老師第一次產生摘要草稿 | 學生不能再建立 Session 或送出訊息；未完成的 Session 保留但不計入完成數；摘要內的細分狀態見 `summary_status` |
 
-- 「設定權限」指：老師、助教需 `edit_topics`
-- AI 長工作的傳輸方式（同步、輪詢或 SSE）待前後端共同確認，不得因前端請求逾時造成無提示中斷
+- 「設定權限」指：老師、助教需 `edit_topics` 權限
 
 ### 取得可用模型清單
 - 功能說明: 取得供應商目錄中的可用模型及單價
@@ -252,22 +251,23 @@ version: 0.2
 - 呼叫方式: GET /courses/{courseId}/topics
 - 授權: 老師、助教、學生
 - 輸入資料: 無
-- 成功回應: `course_id`, `name`, `invite_code`, `my_role`, `my_permissions`, `topics`[`topic_id`, `title`, `description`, `topic_status`（`setup` / `conversation` / `summary`）, `age_band`, `max_turns`, 依身分另含下列欄位]
+- 成功回應: `course_id`, `name`, `invite_code`, `my_role`, `my_permissions`, `topics`[`topic_id`, `title`, `description`, `topic_status`（內容見上方表格）, `age_band`, `max_turns`, 依身分另含下列欄位]
     - 學生: 只列 `conversation`、`summary` 階段的題目；另含 `session_status`（未進入時為 null）, `session_id`
     - 老師與助教: `answered_count`, `student_count`
 - 錯誤:
     - 非課程成員或查無此課程 (404)
 
 ### 建立題目
-- 功能說明: 在課程中建立新題目，只填標題；建立後 `topic_status` 為 `setup`，再進入題目完成設定
+- 功能說明: 「新增活動」頁送出後，後端以選定模型將課程描述交由 AI 產生八欄設定並建立題目，將 `topic_status` 設為 `setup`
 - 呼叫方式: POST /courses/{courseId}/topics
 - 授權: 老師、助教需 `edit_topics`
-- 輸入資料: `title`（作為八欄 `topic` 的初始值）
-- 成功回應: `topic_id`, `course_id`, `title`, `topic_status`（`setup`）, `version`, `message`
+- 輸入資料: `age_band`, `max_turns`, `content_language`, `model_id`（可用值見「取得可用模型清單」）, `course_description`（不可空白，最多 6000 字元）
+- 成功回應: 同「取得題目設定」
 - 錯誤:
-    - 標題未填寫 (422)
+    - 欄位未填寫或不符規則、模型代號無效 (422)
     - 無權限 (403)
     - 查無此課程 (404)
+    - AI 服務失敗 (502／503)
 
 ### 刪除題目
 - 功能說明: 老師刪除題目，連帶刪除對話、報告與摘要，沒有封存
@@ -284,20 +284,20 @@ version: 0.2
 ## 題目設定階段
 
 ### 取得題目設定
-- 功能說明: 開啟題目設定頁（`setup` 階段可編輯，之後唯讀）；尚未設定的欄位為 null
+- 功能說明: 開啟題目設定頁（`setup` 階段可編輯，之後唯讀），尚未設定的欄位為 null
 - 呼叫方式: GET /topics/{topicId}/setup
 - 授權: 設定權限
 - 輸入資料: 無
-- 成功回應: `topic_id`, `course_id`, `version`, `topic_status`, `content_language`, `model_id`, `setup`（八欄設定物件，欄位見上表）
+- 成功回應: `topic_id`, `course_id`, `topic_status`, `opening_message`, `model_id`, `setup`{八欄設定物件，欄位見上表}
 - 錯誤:
     - 無權限 (403)
     - 查無此題目 (404)
 
-### AI 產生題目設定
-- 功能說明: 將老師輸入的設定（年齡層、回合上限、內容語言、課程描述）交由 AI 整理成八欄建議，並產生釐清題（同一題目累計最多三題）；不寫入題目，需另呼叫儲存題目設定
-- 呼叫方式: POST /topics/{topicId}/setup/generate
+### AI 依回饋修訂題目設定
+- 功能說明: 「確認活動設定」頁的「重新產生」按鈕按下後呼叫，依老師回饋重新產生八欄設定
+- 呼叫方式: POST /topics/{topicId}/setup/refine
 - 授權: 設定權限
-- 輸入資料: `age_band`, `max_turns`, `content_language`, `course_description`, `model_id`
+- 輸入資料: `feedback`
 - 成功回應: 同「取得題目設定」
 - 錯誤:
     - 欄位不符規則 (422)
@@ -306,41 +306,41 @@ version: 0.2
     - 題目已不在設定階段 (400)
     - AI 服務失敗 (502／503)
 
-### AI 依回饋修訂題目設定
-- 功能說明: 以目前設定（含手動修改）與老師回饋重新產生八欄；不寫入題目，需另呼叫儲存題目設定
-- 呼叫方式: POST /topics/{topicId}/setup/refine
+### AI 重新產生開場訊息
+- 功能說明: 「確認活動設定」頁開場訊息欄的「重新產生」按鈕按下後呼叫，依目前設定（含手動修改）重新產生 `opening_message`
+- 呼叫方式: POST /topics/{topicId}/setup/opening-message
 - 授權: 設定權限
-- 輸入資料: `setup`（含手動修改）, `feedback`
-- 成功回應: 同「取得題目設定」
+- 輸入資料: `setup`（含手動修改）
+- 成功回應: `opening_message`
 - 錯誤:
     - 欄位不符規則 (422)
     - 無權限 (403)
     - 查無此題目 (404)
     - 題目已不在設定階段 (400)
+    - AI 服務失敗 (502／503)
 
 ### 儲存題目設定
-- 功能說明: 儲存 `setup` 階段的題目設定，以 `expected_version` 檢查並發衝突
+- 功能說明: 「確認活動設定」頁的「儲存草稿」按鈕按下後呼叫，儲存 `setup` 階段的八欄設定
 - 呼叫方式: PUT /topics/{topicId}/setup
 - 授權: 設定權限
-- 輸入資料: `expected_version`, `content_language`, `model_id`, `setup`
+- 輸入資料: `setup`
 - 成功回應:「取得題目設定」的回應, `message`
 - 錯誤:
     - 欄位不符規則 (422)
     - 無權限 (403)
     - 查無此題目 (404)
-    - 版本不符，需重新取得最新設定後再送出 (400)
     - 題目已不在設定階段 (400)
 
 ### 發布題目
-- 功能說明: 老師在交易內將題目從 `setup` 原子性轉為 `conversation`，固定八欄、內容語言與模型，開放學生對話；發布前前端須顯示確認
+- 功能說明: 將 `topic_status` 從 `setup` 轉為 `conversation`，固定已儲存的八欄、開場訊息與模型，開放學生對話
 - 呼叫方式: POST /topics/{topicId}/publish
 - 授權: 老師
-- 輸入資料: `expected_version`
+- 輸入資料: 無
 - 成功回應:「取得題目設定」的回應, `message`
 - 錯誤:
     - 非該課程老師 (403)
     - 查無此題目 (404)
-    - 版本不符，或設定未完整，需補齊或重新取得後再送出 (409)
+    - 設定未完整，需補齊後再送出 (409)
     - 題目已不在設定階段 (400)
 
 ---
@@ -357,7 +357,7 @@ version: 0.2
     - 非課程成員或查無此題目 (404)
 
 ### 建立對話 Session
-- 功能說明: 學生第一次進入題目時建立本人 Session，固定題目設定、內容語言、模型及設定版本。已有 Session 時（題目列表的 `session_id` 不為 null）前端應改用 `GET /sessions/{sessionId}/messages`
+- 功能說明: 學生第一次進入題目時建立本人 Session。已有 Session 時（題目列表的 `session_id` 不為 null）前端應改用 `GET /sessions/{sessionId}/messages`
 - 呼叫方式: POST /topics/{topicId}/sessions
 - 授權: 學生
 - 輸入資料: 無
