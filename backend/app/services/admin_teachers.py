@@ -23,7 +23,7 @@ async def list_teachers(db: AsyncSession) -> list[TeacherListItem]:
     return [
         TeacherListItem(
             id=teacher.id,
-            account=teacher.account_id,
+            account_id=teacher.account_id,
             name=teacher.name,
             created_at=teacher.created_at,
         )
@@ -42,12 +42,12 @@ async def create_teacher(
     Raises:
         HTTPException: 400 if the account is reserved or already exists.
     """
-    if is_reserved_super_admin_account(payload.account):
+    if is_reserved_super_admin_account(payload.account_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Account name reserved",
         )
-    existing = await user.get_user_by_account(db, payload.account)
+    existing = await user.get_user_by_account(db, payload.account_id)
     if existing is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -57,7 +57,7 @@ async def create_teacher(
     try:
         created = await user.create_user(
             db,
-            account_id=payload.account,
+            account_id=payload.account_id,
             name=payload.name,
             password=initial_password,
             role=UserRole.TEACHER,
@@ -70,7 +70,7 @@ async def create_teacher(
             detail="Account already exists",
         ) from None
     return TeacherCreateResponse(
-        account=created.account_id,
+        account_id=created.account_id,
         name=created.name,
         role=UserRole(created.role),
         password=initial_password,

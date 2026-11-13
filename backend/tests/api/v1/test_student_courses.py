@@ -21,7 +21,7 @@ def _login_student(
     student = seed_user(store, account_id=account, name="Alice")
     login = client.post(
         "/api/v1/auth/login",
-        json={"account": account, "password": "password1"},
+        json={"account_id": account, "password": "password1"},
     )
     assert login.status_code == 200
     return bearer_from(login), student
@@ -37,7 +37,7 @@ def test_teacher_blocked_from_student_routes(
     teacher = seed_user(store, account_id="teacher1", role=UserRole.TEACHER, name="T")
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": teacher.account_id, "password": "password1"},
+        json={"account_id": teacher.account_id, "password": "password1"},
     )
     assert login.status_code == 200
     bearer = bearer_from(login)

@@ -27,7 +27,7 @@ def _login_teacher(
     )
     login = client.post(
         "/api/v1/auth/login",
-        json={"account": account, "password": "password1"},
+        json={"account_id": account, "password": "password1"},
     )
     assert login.status_code == 200
     return bearer_from(login), teacher
@@ -41,7 +41,7 @@ def test_non_teacher_forbidden(auth_client: TestClient, store: FakeStore) -> Non
     student = seed_user(store, account_id="student1")
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
     response = auth_client.get(

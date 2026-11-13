@@ -42,7 +42,7 @@ def test_create_session_returns_ids_and_commits(
     student = seed_user(store, account_id="session-student")
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
 
@@ -96,7 +96,7 @@ def test_session_errors_return_http_status_and_roll_back(
     student = seed_user(store, account_id="session-denied")
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
 
@@ -136,7 +136,7 @@ def test_enter_existing_session_returns_original_id(
     student = seed_user(store, account_id="session-returning")
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
 

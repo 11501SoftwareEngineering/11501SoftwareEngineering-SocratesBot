@@ -5,13 +5,13 @@ from app.core.locales import DEFAULT_LANGUAGE_CODE as _DEFAULT_LANGUAGE_CODE
 
 
 class RegisterRequest(BaseModel):
-    account: str = Field(min_length=1, max_length=64, examples=["alice"])
+    account_id: str = Field(min_length=1, max_length=64, examples=["alice"])
     password: str = Field(min_length=8, max_length=128, examples=["password1"])
     name: str = Field(min_length=1, max_length=128, examples=["Alice"])
 
 
 class RegisterResponse(BaseModel):
-    account: str = Field(examples=["alice"])
+    account_id: str = Field(examples=["alice"])
     name: str = Field(examples=["Alice"])
     role: UserRole = Field(default=UserRole.USER, examples=[UserRole.USER])
     message: str = Field(
@@ -21,14 +21,14 @@ class RegisterResponse(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    account: str = Field(min_length=1, max_length=64, examples=["alice"])
+    account_id: str = Field(min_length=1, max_length=64, examples=["alice"])
     password: str = Field(min_length=1, max_length=128, examples=["password1"])
 
 
 class LoginResponse(BaseModel):
     """Login profile only; access JWT is ``Authorization`` response header."""
 
-    account: str = Field(examples=["alice"])
+    account_id: str = Field(examples=["alice"])
     name: str = Field(examples=["Alice"])
     # ``[USER]`` / ``[TEACHER]``, or ``[SUPERADMIN, TEACHER]`` when config-elevated.
     role: list[UserRole] = Field(examples=[[UserRole.SUPERADMIN, UserRole.TEACHER]])
@@ -40,7 +40,7 @@ class LoginResponse(BaseModel):
 
 
 class CurrentUserResponse(BaseModel):
-    account: str = Field(examples=["alice"])
+    account_id: str = Field(examples=["alice"])
     name: str = Field(examples=["Alice"])
     # ``[USER]`` / ``[TEACHER]``, or ``[SUPERADMIN, TEACHER]`` when config-elevated.
     role: list[UserRole] = Field(examples=[[UserRole.SUPERADMIN, UserRole.TEACHER]])
