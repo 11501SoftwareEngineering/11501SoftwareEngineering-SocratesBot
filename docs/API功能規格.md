@@ -187,7 +187,7 @@ version: 0.2
     - 帳號未填寫或含未知權限 (422)
     - 非該課程老師 (403)
     - 查無此帳號 (404)
-    - 已是本課程助教，或帳號身分不允許（如本課程老師、管理員）(409)
+    - 已是本課程助教，或帳號身分不允許（如本課程老師、管理員）(400)
 
 ### 更新助教權限
 - 功能說明: 老師逐項更新助教權限；儲存後下一次 API 請求立即依新權限檢查
@@ -340,7 +340,7 @@ version: 0.2
 - 錯誤:
     - 非該課程老師 (403)
     - 查無此題目 (404)
-    - 版本不符，或設定未完整，需補齊或重新取得後再送出 (409)
+    - 版本不符，或設定未完整，需補齊或重新取得後再送出 (400)
     - 題目已不在設定階段 (400)
 
 ---
@@ -390,7 +390,7 @@ version: 0.2
     - 非此對話擁有者 (403)
     - 查無此對話 (404)
     - 對話已完成、已達回合上限，或題目已進入 `summary` (400)
-    - 同一 Session 有其他請求進行中，待其完成後再送出 (409)
+    - 同一 Session 有其他請求進行中，待其完成後再送出 (400)
     - AI 服務失敗 (502／503)
 
 ### 結束或繼續對話
@@ -404,7 +404,7 @@ version: 0.2
     - 非此對話擁有者 (403)
     - 查無此對話 (404)
     - 對話已結束（已完成或已退出），無法再變更 (400)
-    - 尚未達成探究目標就要求 `complete`，可繼續對話後再送出 (409)
+    - 尚未達成探究目標就要求 `complete`，可繼續對話後再送出 (400)
 
 ### 取得本人個人報告
 - 功能說明: 對話完成後取得本人結構化報告；報告準備中時回傳處理狀態供前端輪詢
@@ -422,7 +422,7 @@ version: 0.2
 - 錯誤:
     - 非此對話擁有者 (403)
     - 查無此對話 (404)
-    - 對話尚未完成 (409)
+    - 對話尚未完成 (400)
 
 ---
 
@@ -433,7 +433,10 @@ version: 0.2
 - 呼叫方式: GET /topics/{topicId}/reports
 - 授權: 老師、助教需 `view_reports`
 - 輸入資料: 無
-- 成功回應: `class_size`, `completed_count`, `ready_count`, `processing_count`, `failed_count`, `reports`[個人報告的 `report` 結構, `student_display_name`]
+- 成功回應: `class_size`, `completed_count`, `ready_count`, `processing_count`, `failed_count`, `summary_version`（分群標籤所依據的摘要版本，即「取得教學端摘要」的最新版本；尚無摘要時為 null）, 
+    - `groups`[`group_id`, `name`, `count`]該版本的群組清單，供前端產生篩選 tag；尚無摘要時為空陣列
+    - `reports`[個人報告的 `report` 結構, `student_display_name`, `group_ids`(此學生在哪一 group)]
+    - 前端依 `group_ids` 做 tag 篩選，`group_ids` 為空且 `summary_version` 不為 null 者即為「未分類」
 - 錯誤:
     - 無權限 (403)
     - 查無此題目 (404)
@@ -444,7 +447,7 @@ version: 0.2
 - 授權: 老師、助教需 `edit_summary` 或 `view_reports`
 - 輸入資料: 無
 - 成功回應: `topic_status`, `published_version`（學生目前看到的版本號，沒有則 null）, `summary`（最新版本，題目尚未進入 `summary` 時為 null），結構為
-    - `summary_id`, `version`, `summary_status`（`draft` / `reviewed` / `published` / `withdrawn`）, `overview`, `viewpoint_summary`, `denominator`
+    - `summary_id`, `version`, `summary_status`（`draft` / `reviewed` / `published` / `withdrawn`）, `overview`, `viewpoint_summary`, `denominator`, `created_at`, `updated_at`（最後一次產生或修訂時間）
     - `groups`[`group_id`, `name`, `conditions`, `count`, `percentage`, `report_ids`]
     - `ungrouped_report_ids`
 - 錯誤:
@@ -586,7 +589,7 @@ version: 0.2
 - 錯誤:
     - 帳號或姓名未填寫或格式無效 (422)
     - 非管理員 (403)
-    - 帳號已存在或為保留帳號名稱 (409)
+    - 帳號已存在或為保留帳號名稱 (400)
 
 ### 刪除老師帳號
 - 功能說明: 管理員刪除指定老師帳號，連帶刪除其課程（有其他授課老師的課程保留）
