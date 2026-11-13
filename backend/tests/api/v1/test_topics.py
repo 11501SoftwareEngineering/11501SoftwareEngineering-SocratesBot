@@ -233,29 +233,16 @@ def test_create_topic_errors(
     create_mock.assert_not_awaited()
 
 
-def test_teacher_update_topic_endpoint_still_works(
-    auth_client: TestClient,
-    store: FakeStore,
-    course_route_db: AsyncMock,
-    monkeypatch: pytest.MonkeyPatch,
+def test_update_topic_endpoint_is_removed(
+    auth_client: TestClient, store: FakeStore
 ) -> None:
-    """Removed later together with the topic create rework (#171)."""
     bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
-    course = _course()
-    topic = _topic(course.id)
-    _patch_role(monkeypatch, "TEACHER", course)
-    monkeypatch.setattr(topic_crud, "get_topic_by_id", AsyncMock(return_value=topic))
-    updated = _topic(course.id, id=topic.id, title="New", description=None)
-    monkeypatch.setattr(topic_crud, "update_topic", AsyncMock(return_value=updated))
-
     response = auth_client.put(
-        f"/api/v1/teacher/topics/{topic.id}",
+        f"/api/v1/topics/{uuid4()}",
         headers={"Authorization": bearer},
-        json={"title": "New"},
+        json={"title": "x"},
     )
-
-    assert response.status_code == 200
-    assert response.json()["message"] == "Topic updated"
+    assert response.status_code == 405
 
 
 def test_delete_topic_by_teacher(

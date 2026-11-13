@@ -649,37 +649,16 @@ def test_list_members_errors(
     assert response.status_code == expected
 
 
-def test_teacher_add_student_endpoint_still_works(
-    auth_client: TestClient,
-    store: FakeStore,
-    course_route_db: AsyncMock,
-    monkeypatch: pytest.MonkeyPatch,
+def test_old_add_student_endpoint_is_removed(
+    auth_client: TestClient, store: FakeStore
 ) -> None:
-    """Removed later together with the member-list rework (#169)."""
     bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
-    course = _course()
-    student = seed_user(store, account_id="alice", name="Alice")
-    monkeypatch.setattr(course_crud, "get_course_by_id", AsyncMock(return_value=course))
-    monkeypatch.setattr(
-        course_crud, "is_course_instructor", AsyncMock(return_value=True)
-    )
-    monkeypatch.setattr(
-        course_crud, "get_student_membership", AsyncMock(return_value=None)
-    )
-    add_mock = AsyncMock()
-    monkeypatch.setattr(course_crud, "add_student_membership", add_mock)
-
     response = auth_client.post(
-        f"/api/v1/teacher/courses/{course.id}/students",
+        f"/api/v1/courses/{uuid4()}/students",
         headers={"Authorization": bearer},
         json={"account_id": "alice"},
     )
-
-    assert response.status_code == 200
-    assert response.json() == {"message": "Student added"}
-    add_mock.assert_awaited_once_with(
-        course_route_db, course_id=course.id, user_id=student.id
-    )
+    assert response.status_code == 404
 
 
 def test_remove_student_soft_deletes(
