@@ -22,7 +22,7 @@ def elevated_client(
 def _login(client: TestClient, account: str, password: str = "password1") -> str:
     login = client.post(
         "/api/v1/auth/login",
-        json={"account": account, "password": password},
+        json={"account_id": account, "password": password},
     )
     assert login.status_code == 200
     return bearer_from(login)
@@ -44,7 +44,7 @@ def _register_and_login(
 ) -> str:
     client.post(
         "/api/v1/auth/register",
-        json={"account": account, "password": password, "name": name},
+        json={"account_id": account, "password": password, "name": name},
     )
     return _login(client, account, password)
 
@@ -69,7 +69,7 @@ def test_elevated_login_and_me_return_superadmin_role(
     seed_user(store, account_id="admin", password="password1", name="Admin")
     login = elevated_client.post(
         "/api/v1/auth/login",
-        json={"account": "admin", "password": "password1"},
+        json={"account_id": "admin", "password": "password1"},
     )
     assert login.status_code == 200
     assert login.json()["role"] == ["SUPERADMIN", "USER"]
@@ -88,11 +88,11 @@ def test_non_elevated_login_keeps_db_role(
 ) -> None:
     elevated_client.post(
         "/api/v1/auth/register",
-        json={"account": "peon", "password": "password1", "name": "Peon"},
+        json={"account_id": "peon", "password": "password1", "name": "Peon"},
     )
     login = elevated_client.post(
         "/api/v1/auth/login",
-        json={"account": "peon", "password": "password1"},
+        json={"account_id": "peon", "password": "password1"},
     )
     assert login.status_code == 200
     assert login.json()["role"] == ["USER"]
@@ -103,7 +103,7 @@ def test_non_elevated_forbidden(elevated_client: TestClient) -> None:
     response = elevated_client.post(
         "/api/v1/admin/teachers",
         headers={"Authorization": bearer},
-        json={"account": "t1", "name": "Teacher"},
+        json={"account_id": "t1", "name": "Teacher"},
     )
     assert response.status_code == 403
     assert response.json()["detail"] == "Admin privileges required"
@@ -118,7 +118,7 @@ def test_register_reserved_super_admin_account(
 ) -> None:
     response = elevated_client.post(
         "/api/v1/auth/register",
-        json={"account": "admin", "password": "password1", "name": "Squat"},
+        json={"account_id": "admin", "password": "password1", "name": "Squat"},
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "Account name reserved"
@@ -131,7 +131,7 @@ def test_create_teacher_reserved_account_name(
     response = elevated_client.post(
         "/api/v1/admin/teachers",
         headers={"Authorization": admin_bearer},
-        json={"account": "admin", "name": "Should Fail"},
+        json={"account_id": "admin", "name": "Should Fail"},
     )
     assert response.status_code == 400
     assert response.json()["detail"] == "Account name reserved"
@@ -145,11 +145,11 @@ def test_create_list_delete_teacher(
     created = elevated_client.post(
         "/api/v1/admin/teachers",
         headers={"Authorization": admin_bearer},
-        json={"account": "teach1", "name": "Teach One"},
+        json={"account_id": "teach1", "name": "Teach One"},
     )
     assert created.status_code == 200
     body = created.json()
-    assert body["account"] == "teach1"
+    assert body["account_id"] == "teach1"
     assert body["role"] == "TEACHER"
     assert "message" in body
     initial_password = body["password"]
@@ -162,12 +162,12 @@ def test_create_list_delete_teacher(
     assert listed.status_code == 200
     teachers = listed.json()
     assert len(teachers) == 1
-    assert teachers[0]["account"] == "teach1"
+    assert teachers[0]["account_id"] == "teach1"
     teacher_id = teachers[0]["id"]
 
     teacher_login = elevated_client.post(
         "/api/v1/auth/login",
-        json={"account": "teach1", "password": initial_password},
+        json={"account_id": "teach1", "password": initial_password},
     )
     assert teacher_login.status_code == 200
     assert teacher_login.json()["role"] == ["TEACHER"]
@@ -189,7 +189,7 @@ def test_create_list_delete_teacher(
     assert (
         elevated_client.post(
             "/api/v1/auth/login",
-            json={"account": "teach1", "password": initial_password},
+            json={"account_id": "teach1", "password": initial_password},
         ).status_code
         == 401
     )
@@ -199,7 +199,7 @@ def test_create_teacher_duplicate(
     elevated_client: TestClient, store: FakeStore
 ) -> None:
     admin_bearer = _seed_admin_and_login(elevated_client, store)
-    payload = {"account": "dup", "name": "Dup"}
+    payload = {"account_id": "dup", "name": "Dup"}
     assert (
         elevated_client.post(
             "/api/v1/admin/teachers",
@@ -270,14 +270,14 @@ def test_teacher_must_change_password_gate(
     created = elevated_client.post(
         "/api/v1/admin/teachers",
         headers={"Authorization": admin_bearer},
-        json={"account": "gated", "name": "Gated"},
+        json={"account_id": "gated", "name": "Gated"},
     )
     assert created.status_code == 200
     initial_password = created.json()["password"]
 
     teacher_login = elevated_client.post(
         "/api/v1/auth/login",
-        json={"account": "gated", "password": initial_password},
+        json={"account_id": "gated", "password": initial_password},
     )
     teacher_bearer = bearer_from(teacher_login)
     assert teacher_login.json()["must_change_password"] is True
@@ -312,6 +312,6 @@ def test_teacher_must_change_password_gate(
 
     relogin = elevated_client.post(
         "/api/v1/auth/login",
-        json={"account": "gated", "password": "password2"},
+        json={"account_id": "gated", "password": "password2"},
     )
     assert relogin.json()["must_change_password"] is False

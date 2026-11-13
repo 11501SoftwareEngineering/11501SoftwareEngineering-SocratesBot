@@ -22,7 +22,7 @@ def test_owner_can_get_completed_session_result(
 
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
 
@@ -77,7 +77,7 @@ def test_missing_session_returns_404(
 
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
 
@@ -110,7 +110,7 @@ def test_non_owner_cannot_get_session_result(
 
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
 
@@ -145,7 +145,7 @@ def test_owner_cannot_get_in_progress_session_result(
 
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
 
@@ -180,7 +180,7 @@ def test_invalid_session_id_returns_422(
 
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
 

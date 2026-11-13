@@ -49,7 +49,7 @@ def test_register_integrity_error_maps_to_400(monkeypatch: pytest.MonkeyPatch) -
         asyncio.run(
             auth_service.register_user(
                 db,
-                RegisterRequest(account="dup", password="password1", name="Dup"),
+                RegisterRequest(account_id="dup", password="password1", name="Dup"),
             )
         )
     assert exc.value.status_code == 400
@@ -70,7 +70,7 @@ def test_register_rejects_reserved_super_admin_account(
         asyncio.run(
             auth_service.register_user(
                 AsyncMock(),
-                RegisterRequest(account="boss", password="password1", name="Boss"),
+                RegisterRequest(account_id="boss", password="password1", name="Boss"),
             )
         )
     assert exc.value.status_code == 400
@@ -101,7 +101,7 @@ def test_login_rejects_user_without_password(monkeypatch: pytest.MonkeyPatch) ->
         asyncio.run(
             auth_service.login_user(
                 AsyncMock(),
-                LoginRequest(account="nopw", password="password1"),
+                LoginRequest(account_id="nopw", password="password1"),
                 Response(),
                 redis=redis,
             )
