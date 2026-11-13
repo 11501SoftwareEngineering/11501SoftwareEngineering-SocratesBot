@@ -19,11 +19,10 @@ from app.api.openapi_responses import (
 from app.schemas.course import (
     CourseCreateRequest,
     CourseCreateResponse,
+    CourseJoinRequest,
+    CourseJoinResponse,
+    CourseListItem,
     CourseStudentListItem,
-    StudentCourseListItem,
-    StudentJoinRequest,
-    StudentJoinResponse,
-    TeacherCourseListItem,
 )
 from app.services import courses as courses_service
 
@@ -32,14 +31,15 @@ router = APIRouter(prefix="/courses", tags=["courses"])
 
 @router.get(
     "",
-    response_model=list[TeacherCourseListItem | StudentCourseListItem],
+    response_model=list[CourseListItem],
+    response_model_exclude_unset=True,
     responses=COURSE_LIST_RESPONSES,
 )
 async def list_courses(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> list[TeacherCourseListItem | StudentCourseListItem]:
-    """Courses the caller teaches or studies in (merged)."""
+) -> list[CourseListItem]:
+    """Courses the caller teaches, assists in, or studies in (merged)."""
     return await courses_service.list_my_courses(db, current_user)
 
 
@@ -60,14 +60,14 @@ async def create_course(
 # captured as a course id.
 @router.post(
     "/join",
-    response_model=StudentJoinResponse,
+    response_model=CourseJoinResponse,
     responses=COURSE_JOIN_RESPONSES,
 )
 async def join_course(
-    payload: StudentJoinRequest,
+    payload: CourseJoinRequest,
     current_user: UserAccount,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> StudentJoinResponse:
+) -> CourseJoinResponse:
     return await courses_service.join_course(db, current_user, payload)
 
 

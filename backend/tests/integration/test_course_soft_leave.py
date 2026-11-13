@@ -17,7 +17,7 @@ from app.crud import course as course_crud
 from app.crud import session as session_crud
 from app.crud import user as user_crud
 from app.models.course import CourseMembership
-from app.schemas.course import CourseStudentAddRequest, StudentJoinRequest
+from app.schemas.course import CourseJoinRequest, CourseStudentAddRequest
 from app.services import courses as courses_service
 from app.services.course_invites import generate_invite_code
 
@@ -81,7 +81,7 @@ def test_soft_leave_blocks_invite_rejoin_teacher_can_readd() -> None:
                 await courses_service.join_course(
                     db,
                     student_row,
-                    StudentJoinRequest(invite_code=invite),
+                    CourseJoinRequest(invite_code=invite),
                 )
             assert exc_info.value.status_code == 400
             assert exc_info.value.detail == "Cannot rejoin after leaving this course"

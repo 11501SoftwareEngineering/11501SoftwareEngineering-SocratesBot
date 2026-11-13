@@ -9,18 +9,15 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from app.core.enums import SessionStatus
 from app.models.course import Course, CourseInstructor, CourseMembership
-from app.models.session import Session
 from app.models.topic import Topic
 from app.models.user import User
 
 MEMBERSHIP_STUDENT = "STUDENT"
 
-# (course, student_count, topic_count) — topic_count is total topics in the course
-InstructorCourseRow = tuple[Course, int, int]
-# (course, teacher_name, in_progress_session_count)
-StudentCourseRow = tuple[Course, str, int]
+# (course, teacher_name, topic_count, student_count)
+# topic_count is the total topics in the course; student_count is active students.
+MyCourseRow = tuple[Course, str, int, int]
 
 
 def _active_student_filters():
@@ -70,28 +67,7 @@ async def is_course_instructor(
     return await db.scalar(statement) is not None
 
 
-async def get_course_role(
-    db: AsyncSession, *, course_id: UUID, user_id: UUID
-) -> str | None:
-    """Return ``"TEACHER"`` / ``"TA"`` / ``"STUDENT"`` for an active member."""
-    if await is_course_instructor(db, course_id=course_id, teacher_id=user_id):
-        return "TEACHER"
-    statement = select(CourseMembership.role).where(
-        CourseMembership.course_id == course_id,
-        CourseMembership.user_id == user_id,
-        CourseMembership.left_at.is_(None),
-    )
-    return await db.scalar(statement)
-
-
-async def list_courses_for_instructor(
-    db: AsyncSession, teacher_id: UUID
-) -> list[InstructorCourseRow]:
-    """List instructed courses with counts in one query (scalar subqueries).
-
-    ``topic_count`` is the total number of topics in the course (not gated on
-    session status).
-    """
+def _course_count_subqueries():
     student_count = (
         select(func.count())
         .select_from(CourseMembership)
@@ -109,20 +85,64 @@ async def list_courses_for_instructor(
         .correlate(Course)
         .scalar_subquery()
     )
+    return student_count, topic_count
+
+
+async def _list_course_rows(db: AsyncSession, *membership_filters) -> list[MyCourseRow]:
+    creator = aliased(User)
+    student_count, topic_count = _course_count_subqueries()
     statement = (
-        select(Course, student_count, topic_count)
-        .join(
-            CourseInstructor,
-            CourseInstructor.course_id == Course.id,
-        )
-        .where(CourseInstructor.teacher_id == teacher_id)
-        .order_by(Course.name.asc())
+        select(Course, creator.name, topic_count, student_count)
+        .join(creator, creator.id == Course.created_by)
+        .where(*membership_filters)
+        .order_by(Course.name.asc(), Course.id.asc())
     )
     result = await db.execute(statement)
     return [
-        (course, int(students or 0), int(topics or 0))
-        for course, students, topics in result.all()
+        (course, teacher_name or "", int(topics or 0), int(students or 0))
+        for course, teacher_name, topics, students in result.all()
     ]
+
+
+async def list_instructed_courses(
+    db: AsyncSession, teacher_id: UUID
+) -> list[MyCourseRow]:
+    """Courses ``teacher_id`` instructs, with teacher name and counts."""
+    instructed = select(CourseInstructor.course_id).where(
+        CourseInstructor.teacher_id == teacher_id
+    )
+    return await _list_course_rows(db, Course.id.in_(instructed))
+
+
+async def list_member_courses(
+    db: AsyncSession, user_id: UUID
+) -> list[tuple[MyCourseRow, str]]:
+    """Courses where ``user_id`` is an active STUDENT/TA, with the DB role."""
+    membership_rows = await db.execute(
+        select(CourseMembership.course_id, CourseMembership.role).where(
+            CourseMembership.user_id == user_id,
+            CourseMembership.left_at.is_(None),
+        )
+    )
+    roles = dict(membership_rows.tuples().all())
+    if not roles:
+        return []
+    rows = await _list_course_rows(db, Course.id.in_(list(roles)))
+    return [(row, roles[row[0].id]) for row in rows]
+
+
+async def get_course_role(
+    db: AsyncSession, *, course_id: UUID, user_id: UUID
+) -> str | None:
+    """Return ``"TEACHER"`` / ``"TA"`` / ``"STUDENT"`` for an active member."""
+    if await is_course_instructor(db, course_id=course_id, teacher_id=user_id):
+        return "TEACHER"
+    statement = select(CourseMembership.role).where(
+        CourseMembership.course_id == course_id,
+        CourseMembership.user_id == user_id,
+        CourseMembership.left_at.is_(None),
+    )
+    return await db.scalar(statement)
 
 
 async def delete_course(db: AsyncSession, course: Course) -> None:
@@ -180,43 +200,6 @@ async def add_student_membership(
     existing.joined_at = now
     await db.flush()
     return existing
-
-
-async def list_student_courses(
-    db: AsyncSession, user_id: UUID
-) -> list[StudentCourseRow]:
-    """List joined courses with teacher name and in-progress session count."""
-    creator = aliased(User)
-    in_progress_session_count = (
-        select(func.count())
-        .select_from(Session)
-        .join(Topic, Topic.id == Session.topic_id)
-        .where(
-            Topic.course_id == Course.id,
-            Session.user_id == user_id,
-            Session.status == SessionStatus.IN_PROGRESS.value,
-        )
-        .correlate(Course)
-        .scalar_subquery()
-    )
-    statement = (
-        select(Course, creator.name, in_progress_session_count)
-        .join(
-            CourseMembership,
-            CourseMembership.course_id == Course.id,
-        )
-        .join(creator, creator.id == Course.created_by)
-        .where(
-            CourseMembership.user_id == user_id,
-            *_active_student_filters(),
-        )
-        .order_by(Course.name.asc())
-    )
-    result = await db.execute(statement)
-    return [
-        (course, teacher_name or "", int(sessions or 0))
-        for course, teacher_name, sessions in result.all()
-    ]
 
 
 async def list_course_students(

@@ -167,6 +167,7 @@ COURSE_JOIN_RESPONSES: dict[int | str, dict[str, Any]] = {
         {
             "invalid_invite_format": "Invalid invitation code format",
             "already_a_member": "Already a member of this course",
+            "already_teacher_or_ta": "Already a teacher or TA of this course",
             "cannot_rejoin_after_leaving": "Cannot rejoin after leaving this course",
         },
     ),

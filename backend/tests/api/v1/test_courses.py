@@ -91,6 +91,7 @@ def test_create_course_seeds_instructor_and_returns_invite(
         "name": "SE",
         "description": "Fall",
         "invite_code": "ABCD2345",
+        "my_role": "teacher",
         "message": "Course created",
     }
     create_mock.assert_awaited_once()
@@ -361,36 +362,60 @@ def test_list_courses_merges_teaching_and_studying(
     studied = _course(name="Studied", description=None)
     monkeypatch.setattr(
         course_crud,
-        "list_courses_for_instructor",
-        AsyncMock(return_value=[(taught, 5, 2)]),
+        "list_instructed_courses",
+        AsyncMock(return_value=[(taught, "Me", 2, 5)]),
     )
     monkeypatch.setattr(
         course_crud,
-        "list_student_courses",
-        AsyncMock(return_value=[(studied, "Other Teacher", 1)]),
+        "list_member_courses",
+        AsyncMock(return_value=[((studied, "Other Teacher", 4, 30), "STUDENT")]),
     )
 
     response = auth_client.get("/api/v1/courses", headers={"Authorization": bearer})
 
-    # Each row keeps the former teacher / student list shape.
     assert response.status_code == 200
     assert response.json() == [
         {
             "course_id": str(studied.id),
             "name": "Studied",
-            "invite_code": "ABCD2345",
+            "description": None,
             "teacher_name": "Other Teacher",
-            "active_topic_count": 1,
+            "topic_count": 4,
+            "my_role": "student",
+            "my_permissions": [],
+            "invite_code": "ABCD2345",
         },
         {
             "course_id": str(taught.id),
             "name": "Taught",
             "description": "Fall",
+            "teacher_name": "Me",
+            "topic_count": 2,
+            "my_role": "teacher",
+            "my_permissions": [],
             "invite_code": "ABCD2345",
             "student_count": 5,
-            "topic_count": 2,
         },
     ]
+
+
+def test_list_courses_student_has_no_student_count(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "stud")
+    monkeypatch.setattr(
+        course_crud, "list_instructed_courses", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        course_crud,
+        "list_member_courses",
+        AsyncMock(return_value=[((_course(), "T", 1, 9), "STUDENT")]),
+    )
+    body = auth_client.get("/api/v1/courses", headers={"Authorization": bearer}).json()
+    assert "student_count" not in body[0]
 
 
 def test_old_role_prefixed_paths_are_gone(
@@ -402,11 +427,12 @@ def test_old_role_prefixed_paths_are_gone(
         assert response.status_code in (404, 405)
 
 
-def _patch_join(monkeypatch, *, prior=None):
+def _patch_join(monkeypatch, *, role, prior=None):
     course = _course()
     monkeypatch.setattr(
         course_crud, "get_course_by_invitation_code", AsyncMock(return_value=course)
     )
+    monkeypatch.setattr(course_crud, "get_course_role", AsyncMock(return_value=role))
     monkeypatch.setattr(
         course_crud, "get_student_membership_row", AsyncMock(return_value=prior)
     )
@@ -422,7 +448,7 @@ def test_join_creates_student_membership(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bearer, user = _login(auth_client, store, "joiner")
-    course, add_mock = _patch_join(monkeypatch)
+    course, add_mock = _patch_join(monkeypatch, role=None)
 
     response = auth_client.post(
         "/api/v1/courses/join",
@@ -435,6 +461,7 @@ def test_join_creates_student_membership(
         "course_id": str(course.id),
         "name": "SE",
         "invite_code": "ABCD2345",
+        "my_role": "student",
         "message": "Joined course",
     }
     add_mock.assert_awaited_once_with(
@@ -449,7 +476,7 @@ def test_teacher_account_cannot_join(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bearer, _ = _login(auth_client, store, "teacher-joiner", UserRole.TEACHER)
-    _, add_mock = _patch_join(monkeypatch)
+    _, add_mock = _patch_join(monkeypatch, role=None)
     response = auth_client.post(
         "/api/v1/courses/join",
         headers={"Authorization": bearer},
@@ -460,21 +487,22 @@ def test_teacher_account_cannot_join(
     add_mock.assert_not_awaited()
 
 
-def test_join_rejected_when_already_member(
+@pytest.mark.parametrize("role", ["TA", "STUDENT"])
+def test_join_rejected_when_already_in_course(
+    role: str,
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bearer, _ = _login(auth_client, store, "joiner")
-    _, add_mock = _patch_join(monkeypatch, prior=SimpleNamespace(left_at=None))
+    _, add_mock = _patch_join(monkeypatch, role=role)
     response = auth_client.post(
         "/api/v1/courses/join",
         headers={"Authorization": bearer},
         json={"invite_code": "ABCD2345"},
     )
     assert response.status_code == 400
-    assert response.json()["detail"] == "Already a member of this course"
     add_mock.assert_not_awaited()
 
 
@@ -485,7 +513,7 @@ def test_join_after_leaving_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bearer, _ = _login(auth_client, store, "leaver")
-    _patch_join(monkeypatch, prior=SimpleNamespace(left_at=object()))
+    _patch_join(monkeypatch, role=None, prior=SimpleNamespace(left_at=object()))
     response = auth_client.post(
         "/api/v1/courses/join",
         headers={"Authorization": bearer},
