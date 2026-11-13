@@ -1,33 +1,40 @@
-"""Teacher inquiry setup: save, publish, and start a generation attempt."""
+"""Teacher inquiry setup. Create, refine, and the opening line wait for the model."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import GenerationStatus, TopicStage
-from app.crud import attempt as attempt_crud
+from app.core.config import settings
+from app.core.enums import TopicStage
 from app.crud import topic as topic_crud
-from app.models.generation_attempt import GenerationAttempt
 from app.models.topic import Topic
 from app.models.user import User
 from app.schemas.inquiry import (
-    GenerateInquiryRequest,
-    InquiryAttemptState,
+    CreateInquiryTopicRequest,
+    GeneratedInquiry,
     InquiryFields,
-    InquiryGenerationResponse,
     InquirySetupResponse,
-    PublishInquiryRequest,
+    InquirySetupWriteResponse,
+    OpeningMessageRequest,
+    OpeningMessageResponse,
     RefineInquiryRequest,
     SaveInquiryRequest,
-    fields_from_mapping,
     first_incomplete_field,
 )
-from app.services import inquiry_runner
+from app.services import courses as courses_service
+from app.services.inquiry_runner import INSTRUCTIONS
+from app.services.model_client import ModelCallError, OpenAIChatClient
 from app.services.topics import get_instructed_topic
+
+_OPENING_INSTRUCTIONS = (
+    "Write one opening message for this inquiry. "
+    "Return it in opening_message and keep the other fields unchanged. "
+    "The opening message may be empty. Do not name a student."
+)
 
 
 def _fields_of(topic: Topic) -> InquiryFields:
@@ -43,30 +50,19 @@ def _fields_of(topic: Topic) -> InquiryFields:
     )
 
 
-def _attempt_state(attempt: GenerationAttempt) -> InquiryAttemptState:
-    body = None
-    if attempt.status == GenerationStatus.READY.value and attempt.result_json:
-        body = fields_from_mapping(attempt.result_json)
-    return InquiryAttemptState(
-        attempt_id=attempt.id,
-        status=GenerationStatus(attempt.status),
-        body=body,
-    )
-
-
-def _response(
-    topic: Topic, attempt: GenerationAttempt | None, message: str | None = None
-) -> InquirySetupResponse:
+def _response(topic: Topic) -> InquirySetupResponse:
     return InquirySetupResponse(
         topic_id=topic.id,
         course_id=topic.course_id,
-        version=topic.version,
         topic_status=topic.stage,
-        content_language=topic.content_language,
+        opening_message=topic.opening_message,
+        model_id=topic.model_id,
         setup=_fields_of(topic),
-        attempt=_attempt_state(attempt) if attempt is not None else None,
-        message=message,
     )
+
+
+def _written(topic: Topic, message: str) -> InquirySetupWriteResponse:
+    return InquirySetupWriteResponse(**_response(topic).model_dump(), message=message)
 
 
 async def _require_setup(topic: Topic) -> None:
@@ -77,51 +73,118 @@ async def _require_setup(topic: Topic) -> None:
         )
 
 
-async def _reconcile(
-    db: AsyncSession, attempt: GenerationAttempt | None
-) -> GenerationAttempt | None:
-    if attempt is None:
-        return None
-    if not inquiry_runner.should_fail_processing(
-        status=attempt.status,
-        live=inquiry_runner.is_live(attempt.id),
-        lease_expires_at=attempt.lease_expires_at,
-        now=datetime.now(UTC),
-        startup=False,
-    ):
-        return attempt
-    await attempt_crud.mark_failed_if_processing(db, attempt.id)
-    await db.commit()
-    attempt.status = GenerationStatus.FAILED.value
-    attempt.result_json = None
-    return attempt
+def _model_failure(exc: ModelCallError) -> HTTPException:
+    code = (
+        status.HTTP_503_SERVICE_UNAVAILABLE
+        if exc.status_code in {429, 503}
+        else status.HTTP_502_BAD_GATEWAY
+    )
+    return HTTPException(status_code=code, detail="Inquiry generation failed")
+
+
+async def _complete(
+    model_id: str, instructions: str, material: str
+) -> GeneratedInquiry:
+    try:
+        raw = await OpenAIChatClient().complete_json(
+            instructions=instructions,
+            material=material,
+            model=model_id,
+        )
+        return GeneratedInquiry.model_validate(raw)
+    except ModelCallError as exc:
+        raise _model_failure(exc) from None
+    except ValidationError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Inquiry generation failed",
+        ) from None
+
+
+def _material(topic: Topic, *, feedback: str | None = None) -> str:
+    fields = _fields_of(topic)
+    lines = [
+        f"content_language: {topic.content_language}",
+        f"age_band: {fields.age_band}",
+        f"max_turns: {fields.max_turns}",
+        f"topic: {fields.topic}",
+        f"core_question: {fields.core_question}",
+        f"inquiry_focus: {fields.inquiry_focus}",
+        f"background_info: {fields.background_info}",
+        f"exclusions: {fields.exclusions}",
+        f"opening_message: {fields.opening_message}",
+    ]
+    if feedback is not None:
+        lines.append(f"feedback:\n{feedback}")
+    return "\n".join(lines)
+
+
+def _apply(topic: Topic, generated: GeneratedInquiry) -> None:
+    topic.title = generated.topic
+    topic.age_band = generated.age_band
+    topic.max_turns = generated.max_turns
+    topic.inquiry_topic = generated.topic
+    topic.core_question = generated.core_question
+    topic.inquiry_focus = generated.inquiry_focus or None
+    topic.background_info = generated.background_info or None
+    topic.exclusions = generated.exclusions
+    topic.opening_message = generated.opening_message or None
 
 
 async def get_inquiry_setup(
     db: AsyncSession, teacher: User, topic_id: UUID
 ) -> InquirySetupResponse:
     topic = await get_instructed_topic(db, teacher, topic_id)
-    attempt = await _reconcile(
-        db, await attempt_crud.latest_inquiry_attempt(db, topic.id)
+    return _response(topic)
+
+
+async def create_inquiry_topic(
+    db: AsyncSession,
+    user: User,
+    course_id: UUID,
+    payload: CreateInquiryTopicRequest,
+) -> InquirySetupResponse:
+    course = await courses_service.require_course_teacher(db, user, course_id)
+    generated = await _complete(
+        payload.model_id,
+        INSTRUCTIONS,
+        (
+            f"content_language: {payload.content_language}\n"
+            f"age_band: {payload.age_band}\n"
+            f"max_turns: {payload.max_turns}\n"
+            f"course_description:\n{payload.course_description}"
+        ),
     )
-    return _response(topic, attempt)
+    try:
+        topic = await topic_crud.create_topic(
+            db,
+            course_id=course.id,
+            created_by=user.id,
+            title=generated.topic,
+            description=payload.course_description,
+        )
+        topic.content_language = payload.content_language
+        topic.model_id = payload.model_id
+        topic.stage = TopicStage.SETUP.value
+        _apply(topic, generated)
+        await topic_crud.record_inquiry_change(db, topic)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return _response(topic)
 
 
 async def save_inquiry_setup(
     db: AsyncSession, teacher: User, topic_id: UUID, payload: SaveInquiryRequest
-) -> InquirySetupResponse:
+) -> InquirySetupWriteResponse:
     topic = await get_instructed_topic(db, teacher, topic_id)
     await _require_setup(topic)
-    if topic.version != payload.expected_version:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Version conflict",
-        )
     try:
         topic = await topic_crud.save_inquiry(
             db,
             topic,
-            content_language=payload.content_language,
+            content_language=topic.content_language,
             age_band=payload.setup.age_band,
             max_turns=payload.setup.max_turns,
             inquiry_topic=payload.setup.topic,
@@ -131,24 +194,21 @@ async def save_inquiry_setup(
             exclusions=payload.setup.exclusions or "unspecified",
             opening_message=payload.setup.opening_message,
         )
+        if payload.setup.topic:
+            topic.title = payload.setup.topic
+        await topic_crud.record_inquiry_change(db, topic)
         await db.commit()
     except Exception:
         await db.rollback()
         raise
-    attempt = await attempt_crud.latest_inquiry_attempt(db, topic.id)
-    return _response(topic, attempt, "Inquiry saved")
+    return _written(topic, "Inquiry saved")
 
 
 async def publish_inquiry(
-    db: AsyncSession, teacher: User, topic_id: UUID, payload: PublishInquiryRequest
-) -> InquirySetupResponse:
+    db: AsyncSession, teacher: User, topic_id: UUID
+) -> InquirySetupWriteResponse:
     topic = await get_instructed_topic(db, teacher, topic_id)
     await _require_setup(topic)
-    if topic.version != payload.expected_version:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Version conflict",
-        )
     missing = first_incomplete_field(
         age_band=topic.age_band,
         max_turns=topic.max_turns,
@@ -166,56 +226,60 @@ async def publish_inquiry(
     except Exception:
         await db.rollback()
         raise
-    attempt = await attempt_crud.latest_inquiry_attempt(db, topic.id)
-    return _response(topic, attempt, "Inquiry published")
-
-
-async def _start_attempt(
-    db: AsyncSession, topic: Topic, request_json: dict
-) -> InquiryGenerationResponse:
-    await _require_setup(topic)
-    try:
-        attempt = await attempt_crud.create_inquiry_attempt(
-            db, topic_id=topic.id, request_json=request_json
-        )
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise
-    inquiry_runner.schedule(attempt.id)
-    return InquiryGenerationResponse(
-        attempt_id=attempt.id,
-        status=GenerationStatus.PENDING,
-    )
-
-
-async def generate_inquiry(
-    db: AsyncSession, teacher: User, topic_id: UUID, payload: GenerateInquiryRequest
-) -> InquiryGenerationResponse:
-    topic = await get_instructed_topic(db, teacher, topic_id)
-    return await _start_attempt(
-        db,
-        topic,
-        {
-            "mode": "generate",
-            "age_band": payload.age_band,
-            "max_turns": payload.max_turns,
-            "content_language": payload.content_language,
-            "course_description": payload.course_description,
-        },
-    )
+    return _written(topic, "Inquiry published")
 
 
 async def refine_inquiry(
     db: AsyncSession, teacher: User, topic_id: UUID, payload: RefineInquiryRequest
-) -> InquiryGenerationResponse:
+) -> InquirySetupResponse:
     topic = await get_instructed_topic(db, teacher, topic_id)
-    return await _start_attempt(
-        db,
-        topic,
-        {
-            "mode": "refine",
-            "setup": payload.setup.model_dump(),
-            "feedback": payload.feedback,
-        },
+    await _require_setup(topic)
+    generated = await _complete(
+        topic.model_id or settings.OPENAI_MODEL,
+        INSTRUCTIONS,
+        _material(topic, feedback=payload.feedback),
     )
+    try:
+        _apply(topic, generated)
+        await topic_crud.save_inquiry(
+            db,
+            topic,
+            content_language=topic.content_language,
+            age_band=topic.age_band,
+            max_turns=topic.max_turns,
+            inquiry_topic=topic.inquiry_topic,
+            core_question=topic.core_question,
+            inquiry_focus=topic.inquiry_focus,
+            background_info=topic.background_info,
+            exclusions=topic.exclusions,
+            opening_message=topic.opening_message,
+        )
+        await topic_crud.record_inquiry_change(db, topic)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return _response(topic)
+
+
+async def opening_message(
+    db: AsyncSession, teacher: User, topic_id: UUID, payload: OpeningMessageRequest
+) -> OpeningMessageResponse:
+    topic = await get_instructed_topic(db, teacher, topic_id)
+    await _require_setup(topic)
+    draft = payload.setup
+    generated = await _complete(
+        topic.model_id or settings.OPENAI_MODEL,
+        _OPENING_INSTRUCTIONS,
+        (
+            f"age_band: {draft.age_band}\n"
+            f"max_turns: {draft.max_turns}\n"
+            f"topic: {draft.topic}\n"
+            f"core_question: {draft.core_question}\n"
+            f"inquiry_focus: {draft.inquiry_focus}\n"
+            f"background_info: {draft.background_info}\n"
+            f"exclusions: {draft.exclusions}\n"
+            f"opening_message: {draft.opening_message}"
+        ),
+    )
+    return OpeningMessageResponse(opening_message=generated.opening_message)

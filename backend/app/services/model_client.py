@@ -61,10 +61,12 @@ class OpenAIChatClient:
     def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
         self._transport = transport
 
-    async def complete_json(self, *, instructions: str, material: str) -> dict:
+    async def complete_json(
+        self, *, instructions: str, material: str, model: str | None = None
+    ) -> dict:
         key = settings.OPENAI_API_KEY.get_secret_value()
         payload = {
-            "model": settings.OPENAI_MODEL,
+            "model": model or settings.OPENAI_MODEL,
             "messages": [
                 {"role": "system", "content": instructions},
                 {"role": "user", "content": material},

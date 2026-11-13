@@ -13,10 +13,10 @@ from app.api.openapi_responses import (
     INQUIRY_SETUP_WRITE_RESPONSES,
 )
 from app.schemas.inquiry import (
-    GenerateInquiryRequest,
-    InquiryGenerationResponse,
     InquirySetupResponse,
-    PublishInquiryRequest,
+    InquirySetupWriteResponse,
+    OpeningMessageRequest,
+    OpeningMessageResponse,
     RefineInquiryRequest,
     SaveInquiryRequest,
 )
@@ -36,13 +36,13 @@ async def get_inquiry_setup(
     current_user: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InquirySetupResponse:
-    """Read the saved inquiry. The attempt body is included only when ready."""
+    """Read the saved inquiry."""
     return await inquiry_service.get_inquiry_setup(db, current_user, topicId)
 
 
 @router.put(
     "/topics/{topicId}/setup",
-    response_model=InquirySetupResponse,
+    response_model=InquirySetupWriteResponse,
     response_model_exclude_none=True,
     responses=INQUIRY_SETUP_WRITE_RESPONSES,
 )
@@ -51,29 +51,15 @@ async def save_inquiry_setup(
     payload: SaveInquiryRequest,
     current_user: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> InquirySetupResponse:
+) -> InquirySetupWriteResponse:
     """Save the eight fields during setup. This does not publish."""
     return await inquiry_service.save_inquiry_setup(db, current_user, topicId, payload)
 
 
 @router.post(
-    "/topics/{topicId}/setup/generate",
-    response_model=InquiryGenerationResponse,
-    responses=INQUIRY_SETUP_WRITE_RESPONSES,
-)
-async def generate_inquiry(
-    topicId: UUID,
-    payload: GenerateInquiryRequest,
-    current_user: TeacherUser,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> InquiryGenerationResponse:
-    """Start eight-field generation. The saved inquiry is left unchanged."""
-    return await inquiry_service.generate_inquiry(db, current_user, topicId, payload)
-
-
-@router.post(
     "/topics/{topicId}/setup/refine",
-    response_model=InquiryGenerationResponse,
+    response_model=InquirySetupResponse,
+    response_model_exclude_none=True,
     responses=INQUIRY_SETUP_WRITE_RESPONSES,
 )
 async def refine_inquiry(
@@ -81,22 +67,36 @@ async def refine_inquiry(
     payload: RefineInquiryRequest,
     current_user: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> InquiryGenerationResponse:
-    """Regenerate from the current fields and feedback without saving them."""
+) -> InquirySetupResponse:
+    """Regenerate the eight fields from feedback and store them when they change."""
     return await inquiry_service.refine_inquiry(db, current_user, topicId, payload)
 
 
 @router.post(
+    "/topics/{topicId}/setup/opening-message",
+    response_model=OpeningMessageResponse,
+    responses=INQUIRY_SETUP_WRITE_RESPONSES,
+)
+async def opening_message(
+    topicId: UUID,
+    payload: OpeningMessageRequest,
+    current_user: TeacherUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> OpeningMessageResponse:
+    """Draft an opening line from the supplied setup. This does not save it."""
+    return await inquiry_service.opening_message(db, current_user, topicId, payload)
+
+
+@router.post(
     "/topics/{topicId}/publish",
-    response_model=InquirySetupResponse,
+    response_model=InquirySetupWriteResponse,
     response_model_exclude_none=True,
     responses=INQUIRY_PUBLISH_RESPONSES,
 )
 async def publish_inquiry(
     topicId: UUID,
-    payload: PublishInquiryRequest,
     current_user: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> InquirySetupResponse:
+) -> InquirySetupWriteResponse:
     """Move a complete setup to conversation and freeze the inquiry fields."""
-    return await inquiry_service.publish_inquiry(db, current_user, topicId, payload)
+    return await inquiry_service.publish_inquiry(db, current_user, topicId)

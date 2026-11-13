@@ -8,6 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import SessionStatus, TopicStage
+from app.models.inquiry_revision import InquiryRevision
 from app.models.session import Session
 from app.models.topic import Topic
 
@@ -77,14 +78,60 @@ async def save_inquiry(
     topic.background_info = background_info
     topic.exclusions = exclusions
     topic.opening_message = opening_message
-    topic.version += 1
     await db.flush()
     return topic
 
 
+def inquiry_snapshot(topic: Topic) -> dict:
+    return {
+        "age_band": topic.age_band,
+        "max_turns": topic.max_turns,
+        "topic": topic.inquiry_topic,
+        "core_question": topic.core_question,
+        "inquiry_focus": topic.inquiry_focus,
+        "background_info": topic.background_info,
+        "exclusions": topic.exclusions,
+        "opening_message": topic.opening_message,
+    }
+
+
+def next_revision_version(
+    previous: dict | None, previous_version: int | None, current: dict
+) -> int | None:
+    """Next stored version, or None when the eight fields are unchanged."""
+    if previous == current:
+        return None
+    if previous_version is None:
+        return 1
+    return previous_version + 1
+
+
+async def record_inquiry_change(db: AsyncSession, topic: Topic) -> None:
+    """Append a revision when the inquiry changed. The number stays off the API."""
+    current = inquiry_snapshot(topic)
+    latest = await _latest_revision(db, topic.id)
+    previous = None if latest is None else latest.body
+    previous_version = None if latest is None else latest.version
+    version = next_revision_version(previous, previous_version, current)
+    if version is None:
+        return
+    db.add(InquiryRevision(topic_id=topic.id, version=version, body=current))
+    topic.version = version
+    await db.flush()
+
+
+async def _latest_revision(db: AsyncSession, topic_id: UUID) -> InquiryRevision | None:
+    statement = (
+        select(InquiryRevision)
+        .where(InquiryRevision.topic_id == topic_id)
+        .order_by(InquiryRevision.version.desc())
+        .limit(1)
+    )
+    return (await db.execute(statement)).scalar_one_or_none()
+
+
 async def publish_topic(db: AsyncSession, topic: Topic) -> Topic:
     topic.stage = TopicStage.CONVERSATION.value
-    topic.version += 1
     await db.flush()
     return topic
 

@@ -68,6 +68,7 @@ class Topic(Base):
         server_default="1",
     )
     content_language: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     age_band: Mapped[str | None] = mapped_column(String(32), nullable=True)
     max_turns: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Course title stays on ``title``. This is the inquiry topic and may be empty in setup.
