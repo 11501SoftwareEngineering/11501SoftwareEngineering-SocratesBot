@@ -50,7 +50,6 @@ async def get_or_create_session_id(
     *,
     user_id: UUID,
     topic_id: UUID,
-    is_anonymous: bool,
 ) -> UUID:
     statement = (
         insert(Session)
@@ -58,7 +57,6 @@ async def get_or_create_session_id(
             user_id=user_id,
             topic_id=topic_id,
             status=SessionStatus.IN_PROGRESS.value,
-            is_anonymous=is_anonymous,
         )
         .on_conflict_do_nothing(
             constraint="uq_sessions_user_id_topic_id",
@@ -82,14 +80,8 @@ async def get_or_create_session_id(
 
 
 class SQLAlchemySessionStore:
-    def __init__(
-        self,
-        db: AsyncSession,
-        *,
-        initial_is_anonymous: bool = False,
-    ) -> None:
+    def __init__(self, db: AsyncSession) -> None:
         self._db = db
-        self._initial_is_anonymous = initial_is_anonymous
 
     async def get_topic_course_id(self, topic_id: UUID) -> UUID | None:
         return await get_topic_course_id(self._db, topic_id)
@@ -125,5 +117,4 @@ class SQLAlchemySessionStore:
             self._db,
             user_id=user_id,
             topic_id=topic_id,
-            is_anonymous=self._initial_is_anonymous,
         )

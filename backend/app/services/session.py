@@ -66,10 +66,7 @@ async def create_or_enter_student_session(
     topic_id: UUID,
 ) -> CreateSessionResponse:
     """Enter a student session and handle transactions and HTTP errors."""
-    store = SQLAlchemySessionStore(
-        db,
-        initial_is_anonymous=False,
-    )
+    store = SQLAlchemySessionStore(db)
 
     try:
         result = await create_or_enter_session(
