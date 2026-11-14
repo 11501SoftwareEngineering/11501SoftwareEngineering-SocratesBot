@@ -131,6 +131,17 @@ def sort_permissions(permissions: Iterable[str]) -> list[str]:
     return sorted(set(permissions), key=lambda p: _PERMISSION_ORDER[TaPermission(p)])
 
 
+async def get_my_ta_permissions(
+    db: AsyncSession, user: User, course_id: UUID, role: CourseRole | None
+) -> list[str]:
+    """The caller's ordered TA permissions in ``course_id``; empty unless TA."""
+    if role is not CourseRole.TA:
+        return []
+    return sort_permissions(
+        await course_crud.get_ta_permissions(db, course_id=course_id, user_id=user.id)
+    )
+
+
 async def require_course_teacher_or_ta(
     db: AsyncSession, user: User, course_id: UUID, permission: TaPermission
 ) -> tuple[Course, CourseRole]:
@@ -244,6 +255,7 @@ async def get_course(
         description=course.description,
         teacher_name=await course_crud.get_user_name(db, course.created_by),
         my_role=role,
+        my_permissions=await get_my_ta_permissions(db, user, course.id, role),
         invite_code=course.invitation_code,
     )
 

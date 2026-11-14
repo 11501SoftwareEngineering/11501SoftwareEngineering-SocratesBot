@@ -50,6 +50,10 @@ class CourseDetailResponse(BaseModel):
     description: str | None = Field(default=None, examples=["Fall 2026"])
     teacher_name: str = Field(examples=["Teacher One"])
     my_role: CourseRole = Field(examples=[CourseRole.STUDENT])
+    my_permissions: list[TaPermission] = Field(
+        default_factory=list,
+        description="TA permissions in this course; empty for other roles",
+    )
     invite_code: str = Field(examples=[_EXAMPLE_INVITE])
 
 
