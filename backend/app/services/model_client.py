@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 from typing import Any, Protocol
 
 import httpx
@@ -12,6 +13,8 @@ import httpx
 from app.core.config import settings
 
 logger = logging.getLogger("app.model")
+# A provider can ask for a long pause. This request does not wait past two seconds.
+_MAX_RETRY_SECONDS = 2.0
 # httpx debug logs can print the Authorization header.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -116,9 +119,12 @@ def _retry_delay(response: httpx.Response) -> float | None:
     if raw is None:
         return None
     try:
-        return float(raw)
+        delay = float(raw)
     except ValueError:
         return None
+    if not math.isfinite(delay) or delay < 0 or delay > _MAX_RETRY_SECONDS:
+        return None
+    return delay
 
 
 def _parse_completion(response: httpx.Response) -> dict:

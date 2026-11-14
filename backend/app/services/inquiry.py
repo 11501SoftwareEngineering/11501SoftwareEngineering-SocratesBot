@@ -19,6 +19,7 @@ from app.schemas.inquiry import (
     InquiryFields,
     InquirySetupResponse,
     InquirySetupWriteResponse,
+    OpeningMessageDraft,
     OpeningMessageRequest,
     OpeningMessageResponse,
     RefineInquiryRequest,
@@ -26,10 +27,17 @@ from app.schemas.inquiry import (
     first_incomplete_field,
 )
 from app.services import courses as courses_service
-from app.services.inquiry_runner import INSTRUCTIONS
 from app.services.model_client import ModelCallError, OpenAIChatClient
 from app.services.topics import get_instructed_topic
 
+_INSTRUCTIONS = (
+    "Turn the teacher's notes into an eight-field inquiry. "
+    "Return only the JSON object. Do not name a student. "
+    "inquiry_focus must not prescribe a conclusion the student must accept. "
+    "background_info must not state unverified claims as facts. "
+    "Use exclusions 'unspecified' when the teacher gave no exclusion. "
+    "opening_message may be empty."
+)
 _OPENING_INSTRUCTIONS = (
     "Write one opening message for this inquiry. "
     "Return it in opening_message and keep the other fields unchanged. "
@@ -73,6 +81,18 @@ async def _require_setup(topic: Topic) -> None:
         )
 
 
+async def _locked_setup(db: AsyncSession, topic_id: UUID) -> Topic:
+    """Reload the topic under a row lock and refuse it unless it is still setup."""
+    topic = await topic_crud.lock_topic(db, topic_id)
+    if topic is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Topic not found",
+        )
+    await _require_setup(topic)
+    return topic
+
+
 def _model_failure(exc: ModelCallError) -> HTTPException:
     code = (
         status.HTTP_503_SERVICE_UNAVAILABLE
@@ -82,23 +102,32 @@ def _model_failure(exc: ModelCallError) -> HTTPException:
     return HTTPException(status_code=code, detail="Inquiry generation failed")
 
 
-async def _complete(
-    model_id: str, instructions: str, material: str
-) -> GeneratedInquiry:
+async def _model_json(model_id: str, instructions: str, material: str) -> dict:
     try:
-        raw = await OpenAIChatClient().complete_json(
+        return await OpenAIChatClient().complete_json(
             instructions=instructions,
             material=material,
             model=model_id,
         )
-        return GeneratedInquiry.model_validate(raw)
     except ModelCallError as exc:
         raise _model_failure(exc) from None
+
+
+def _validated(raw: dict, schema: type[GeneratedInquiry] | type[OpeningMessageDraft]):
+    try:
+        return schema.model_validate(raw)
     except ValidationError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Inquiry generation failed",
         ) from None
+
+
+async def _complete(
+    model_id: str, instructions: str, material: str
+) -> GeneratedInquiry:
+    raw = await _model_json(model_id, instructions, material)
+    return _validated(raw, GeneratedInquiry)
 
 
 def _material(topic: Topic, *, feedback: str | None = None) -> str:
@@ -147,7 +176,7 @@ async def create_inquiry_topic(
     course = await courses_service.require_course_teacher(db, user, course_id)
     generated = await _complete(
         payload.model_id,
-        INSTRUCTIONS,
+        _INSTRUCTIONS,
         (
             f"content_language: {payload.content_language}\n"
             f"age_band: {payload.age_band}\n"
@@ -179,8 +208,8 @@ async def save_inquiry_setup(
     db: AsyncSession, teacher: User, topic_id: UUID, payload: SaveInquiryRequest
 ) -> InquirySetupWriteResponse:
     topic = await get_instructed_topic(db, teacher, topic_id)
-    await _require_setup(topic)
     try:
+        topic = await _locked_setup(db, topic.id)
         topic = await topic_crud.save_inquiry(
             db,
             topic,
@@ -208,19 +237,19 @@ async def publish_inquiry(
     db: AsyncSession, teacher: User, topic_id: UUID
 ) -> InquirySetupWriteResponse:
     topic = await get_instructed_topic(db, teacher, topic_id)
-    await _require_setup(topic)
-    missing = first_incomplete_field(
-        age_band=topic.age_band,
-        max_turns=topic.max_turns,
-        topic=topic.inquiry_topic,
-        core_question=topic.core_question,
-    )
-    if missing is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Incomplete setup: {missing}",
-        )
     try:
+        topic = await _locked_setup(db, topic.id)
+        missing = first_incomplete_field(
+            age_band=topic.age_band,
+            max_turns=topic.max_turns,
+            topic=topic.inquiry_topic,
+            core_question=topic.core_question,
+        )
+        if missing is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Incomplete setup: {missing}",
+            )
         topic = await topic_crud.publish_topic(db, topic)
         await db.commit()
     except Exception:
@@ -236,10 +265,11 @@ async def refine_inquiry(
     await _require_setup(topic)
     generated = await _complete(
         topic.model_id or settings.OPENAI_MODEL,
-        INSTRUCTIONS,
+        _INSTRUCTIONS,
         _material(topic, feedback=payload.feedback),
     )
     try:
+        topic = await _locked_setup(db, topic.id)
         _apply(topic, generated)
         await topic_crud.save_inquiry(
             db,
@@ -268,7 +298,7 @@ async def opening_message(
     topic = await get_instructed_topic(db, teacher, topic_id)
     await _require_setup(topic)
     draft = payload.setup
-    generated = await _complete(
+    raw = await _model_json(
         topic.model_id or settings.OPENAI_MODEL,
         _OPENING_INSTRUCTIONS,
         (
@@ -282,4 +312,5 @@ async def opening_message(
             f"opening_message: {draft.opening_message}"
         ),
     )
+    generated = _validated(raw, OpeningMessageDraft)
     return OpeningMessageResponse(opening_message=generated.opening_message)

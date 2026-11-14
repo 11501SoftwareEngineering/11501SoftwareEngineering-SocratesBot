@@ -143,6 +143,19 @@ class OpeningMessageResponse(BaseModel):
     opening_message: str
 
 
+class OpeningMessageDraft(BaseModel):
+    """Model reply for an opening message. A blank echoed topic is ignored."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    opening_message: str = ""
+
+    @field_validator("opening_message")
+    @classmethod
+    def keep_model_text(cls, value: str) -> str:
+        return value.strip()
+
+
 class GeneratedInquiry(BaseModel):
     """Strict model output. Empty exclusions mean the teacher set no limit."""
 

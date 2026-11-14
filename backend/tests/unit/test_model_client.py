@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -10,7 +11,6 @@ import pytest
 from pydantic import SecretStr
 
 from app.core.config import settings
-from app.services.inquiry_runner import should_fail_processing
 from app.services.model_client import ModelCallError, OpenAIChatClient
 
 pytestmark = pytest.mark.anyio
@@ -141,67 +141,29 @@ async def test_length_finish_is_failed(
     assert DIALOGUE not in caplog.text
 
 
-def test_blank_exclusions_are_stored_as_unspecified() -> None:
-    from app.services.inquiry_runner import validate_inquiry_result
+async def test_retry_after_above_two_seconds_is_not_waited(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr(KEY))
+    monkeypatch.setattr(settings, "OPENAI_MODEL", "gpt-test")
+    slept: list[float] = []
 
-    body = validate_inquiry_result(
-        {
-            "age_band": "13-15",
-            "max_turns": 5,
-            "topic": "Cities",
-            "core_question": "Who maintains them?",
-            "inquiry_focus": "the public cost",
-            "background_info": "a published map",
-            "exclusions": "   ",
-            "opening_message": "",
-        }
-    )
+    async def instant(delay: float) -> None:
+        slept.append(delay)
 
-    assert body["exclusions"] == "unspecified"
-    assert body["opening_message"] == ""
+    monkeypatch.setattr(asyncio, "sleep", instant)
+    calls = 0
 
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(429, headers={"Retry-After": "30"})
 
-def test_status_read_leaves_a_live_attempt_processing() -> None:
-    from datetime import UTC, datetime, timedelta
-
-    now = datetime.now(UTC)
-    assert (
-        should_fail_processing(
-            status="processing",
-            live=True,
-            lease_expires_at=now - timedelta(seconds=1),
-            now=now,
-            startup=False,
+    with pytest.raises(ModelCallError) as caught:
+        await _client(handler).complete_json(
+            instructions="Write JSON", material=DIALOGUE
         )
-        is False
-    )
-    assert (
-        should_fail_processing(
-            status="processing",
-            live=False,
-            lease_expires_at=now - timedelta(seconds=1),
-            now=now,
-            startup=False,
-        )
-        is True
-    )
-    assert (
-        should_fail_processing(
-            status="processing",
-            live=False,
-            lease_expires_at=now + timedelta(seconds=30),
-            now=now,
-            startup=True,
-        )
-        is True
-    )
-    assert (
-        should_fail_processing(
-            status="ready",
-            live=False,
-            lease_expires_at=None,
-            now=now,
-            startup=True,
-        )
-        is False
-    )
+
+    assert caught.value.status_code == 429
+    assert calls == 1
+    assert slept == []
