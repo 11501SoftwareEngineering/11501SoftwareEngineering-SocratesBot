@@ -18,6 +18,47 @@ from app.services import summary_runner
 from app.services.summary_text import leaked_identifier, public_summary
 
 
+def _request(bodies: list[tuple[str, dict]]) -> dict:
+    labels = {
+        f"r{index}": report_id
+        for index, (report_id, _body) in enumerate(bodies, start=1)
+    }
+    material = [
+        {"label": label, "report": body}
+        for label, (_report_id, body) in zip(labels, bodies, strict=True)
+    ]
+    return {"labels": labels, "material": material}
+
+
+def _attempt_running(latest) -> bool:
+    return latest is not None and latest.status in {
+        GenerationStatus.PENDING.value,
+        GenerationStatus.PROCESSING.value,
+    }
+
+
+async def _enqueue(
+    db: AsyncSession, topic_id: UUID, bodies: list[tuple[str, dict]]
+) -> None:
+    latest = await summary_crud.latest_attempt(db, topic_id)
+    if _attempt_running(latest):
+        return
+    created = await summary_crud.insert_attempt(
+        db, topic_id=topic_id, request_json=_request(bodies)
+    )
+    await db.commit()
+    summary_runner.schedule(created.id)
+
+
+def _started(topic: Topic, published) -> dict:
+    return {
+        "topic_status": topic.stage,
+        "published_version": None if published is None else published.version,
+        "summary": None,
+        "preparation_status": GenerationStatus.PENDING.value,
+    }
+
+
 async def start_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -> dict:
     """Start a class summary from ready reports, unless one is already running.
 
@@ -36,33 +77,8 @@ async def start_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -> d
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="No ready reports"
         )
-    latest = await summary_crud.latest_attempt(db, topic.id)
-    if latest is None or latest.status not in {
-        GenerationStatus.PENDING.value,
-        GenerationStatus.PROCESSING.value,
-    }:
-        labels = {
-            f"r{index}": report_id
-            for index, (report_id, _body) in enumerate(bodies, start=1)
-        }
-        material = [
-            {"label": label, "report": body}
-            for label, (_report_id, body) in zip(labels, bodies, strict=True)
-        ]
-        created = await summary_crud.insert_attempt(
-            db,
-            topic_id=topic.id,
-            request_json={"labels": labels, "material": material},
-        )
-        await db.commit()
-        summary_runner.schedule(created.id)
-    published = await summary_crud.published(db, topic.id)
-    return {
-        "topic_status": topic.stage,
-        "published_version": None if published is None else published.version,
-        "summary": None,
-        "preparation_status": GenerationStatus.PENDING.value,
-    }
+    await _enqueue(db, topic.id, bodies)
+    return _started(topic, await summary_crud.published(db, topic.id))
 
 
 async def read_teacher_summary(
@@ -145,13 +161,7 @@ async def publish_summary(
             detail="Version mismatch or not reviewed",
         )
     draft = _draft_dict(row)
-    pairs = await report_crud_names(db, topic.id)
-    names = [name for _session, name in pairs]
-    identifiers = [str(session.id) for session, _name in pairs]
-    identifiers.extend(
-        item for group in draft["groups"] for item in group["report_ids"]
-    )
-    identifiers.extend(draft["ungrouped_report_ids"])
+    names, identifiers = _identity_values(draft, await report_crud_names(db, topic.id))
     if leaked_identifier(draft, names=names, identifiers=identifiers):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -195,21 +205,7 @@ async def read_published(db: AsyncSession, *, user: User, topic_id: UUID) -> dic
         HTTPException: 404 if the topic is missing or the caller is not a
             member of the course.
     """
-    topic = await db.get(Topic, topic_id)
-    if topic is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found"
-        )
-    member = await session_crud.is_course_member(
-        db, user_id=user.id, course_id=topic.course_id
-    )
-    instructor = await course_crud.is_course_instructor(
-        db, course_id=topic.course_id, teacher_id=user.id
-    )
-    if not member and not instructor:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found"
-        )
+    topic = await _visible_topic(db, user, topic_id)
     row = await summary_crud.published(db, topic.id)
     return {"summary": None if row is None else row.body}
 
@@ -245,6 +241,35 @@ def _draft(row: ClassSummary) -> dict:
         "summary_status": row.status,
         **_draft_dict(row),
     }
+
+
+def _identity_values(draft: dict, pairs) -> tuple[list[str], list[str]]:
+    names = [name for _session, name in pairs]
+    identifiers = [str(session.id) for session, _name in pairs]
+    identifiers.extend(
+        item for group in draft["groups"] for item in group["report_ids"]
+    )
+    identifiers.extend(draft["ungrouped_report_ids"])
+    return names, identifiers
+
+
+async def _visible_topic(db: AsyncSession, user: User, topic_id: UUID) -> Topic:
+    topic = await db.get(Topic, topic_id)
+    if topic is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found"
+        )
+    member = await session_crud.is_course_member(
+        db, user_id=user.id, course_id=topic.course_id
+    )
+    instructor = await course_crud.is_course_instructor(
+        db, course_id=topic.course_id, teacher_id=user.id
+    )
+    if not member and not instructor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found"
+        )
+    return topic
 
 
 def _draft_dict(row: ClassSummary) -> dict:
