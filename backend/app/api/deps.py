@@ -26,16 +26,16 @@ from app.models.user import User
 __all__ = [
     "ActiveUser",
     "CurrentUser",
-    "StudentUser",
     "SuperAdminUser",
     "TeacherUser",
+    "UserAccount",
     "get_current_active_user",
     "get_current_user",
     "get_db",
     "get_redis",
-    "require_student_user",
     "require_super_admin",
     "require_teacher",
+    "require_user_account",
 ]
 
 
@@ -134,7 +134,7 @@ async def require_super_admin(
 async def require_teacher(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
-    """Require ``UserRole.TEACHER`` for teacher-prefixed course APIs."""
+    """Require global ``UserRole.TEACHER`` (e.g. to create a course)."""
     if current_user.role != UserRole.TEACHER.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -143,10 +143,10 @@ async def require_teacher(
     return current_user
 
 
-async def require_student_user(
+async def require_user_account(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> User:
-    """Require ``UserRole.USER`` for student-prefixed course APIs."""
+    """Require global ``UserRole.USER`` (e.g. to join a course by invite code)."""
     if current_user.role != UserRole.USER.value:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -159,4 +159,4 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 ActiveUser = Annotated[User, Depends(get_current_active_user)]
 SuperAdminUser = Annotated[User, Depends(require_super_admin)]
 TeacherUser = Annotated[User, Depends(require_teacher)]
-StudentUser = Annotated[User, Depends(require_student_user)]
+UserAccount = Annotated[User, Depends(require_user_account)]
