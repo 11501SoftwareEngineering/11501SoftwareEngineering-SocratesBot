@@ -405,3 +405,80 @@ SESSION_ENTRY_RESPONSES: dict[int | str, dict[str, Any]] = {
         "Topic not found",
     ),
 }
+
+_COURSE_TEACHER_403 = json_detail_example(
+    "Course teacher required",
+    "Course teacher required",
+)
+_UNKNOWN_TA_PERMISSION_422 = json_detail_example(
+    "Request validation failed",
+    [
+        {
+            "type": "enum",
+            "loc": ["body", "permissions", 0],
+            "msg": (
+                "Input should be 'edit_topics', 'view_reports', "
+                "'edit_summary' or 'view_members'"
+            ),
+        }
+    ],
+)
+
+COURSE_TA_ASSIGN_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_examples(
+        (
+            "Only an active student of this course can become a TA; "
+            "the account is not a student here (or has left), is already "
+            "a TA, or is an admin"
+        ),
+        {
+            "not_student": "Account must be a student of this course",
+            "already_ta": "Already a TA of this course",
+            "admin": "Admins cannot be TAs",
+        },
+    ),
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: _COURSE_TEACHER_403,
+    404: json_detail_examples(
+        "Course or account not found",
+        {
+            "course_not_found": "Course not found",
+            "account_not_found": "Account not found",
+        },
+    ),
+    422: _UNKNOWN_TA_PERMISSION_422,
+}
+
+COURSE_TA_UPDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: _COURSE_TEACHER_403,
+    404: json_detail_examples(
+        "Course or TA not found",
+        {
+            "course_not_found": "Course not found",
+            "ta_not_found": "TA not found",
+        },
+    ),
+    422: _UNKNOWN_TA_PERMISSION_422,
+}
+
+COURSE_TA_REVOKE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: _COURSE_TEACHER_403,
+    404: json_detail_examples(
+        "Course or TA not found",
+        {
+            "course_not_found": "Course not found",
+            "ta_not_found": "TA not found",
+        },
+    ),
+}
