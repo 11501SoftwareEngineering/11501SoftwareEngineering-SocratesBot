@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -13,6 +14,8 @@ from app.core.enums import UserRole
 from app.crud import course as course_crud
 from app.crud import session as session_crud
 from app.crud import topic as topic_crud
+from app.schemas.topic import TopicUpdateRequest
+from app.services import topics as topics_service
 from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
 
 
@@ -231,6 +234,31 @@ def test_create_topic_errors(
     )
     assert response.status_code == expected
     create_mock.assert_not_awaited()
+
+
+def test_teacher_update_topic_still_works(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Route is gone; the service stays until the topic create rework (#171)."""
+    teacher = seed_user(store, account_id="teach", role=UserRole.TEACHER)
+    course = _course()
+    topic = _topic(course.id)
+    _patch_role(monkeypatch, "TEACHER", course)
+    monkeypatch.setattr(topic_crud, "get_topic_by_id", AsyncMock(return_value=topic))
+    updated = _topic(course.id, id=topic.id, title="New", description=None)
+    monkeypatch.setattr(topic_crud, "update_topic", AsyncMock(return_value=updated))
+
+    response = asyncio.run(
+        topics_service.update_topic(
+            course_route_db, teacher, topic.id, TopicUpdateRequest(title="New")
+        )
+    )
+
+    assert response.message == "Topic updated"
+    course_route_db.commit.assert_awaited_once()
 
 
 def test_update_topic_endpoint_is_removed(

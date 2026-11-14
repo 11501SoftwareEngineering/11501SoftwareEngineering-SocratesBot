@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, call
@@ -13,6 +14,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.enums import UserRole
 from app.crud import course as course_crud
+from app.schemas.course import CourseStudentAddRequest
+from app.services import courses as courses_service
 from app.services.course_invites import INVITE_COLLISION_RETRIES
 from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
 
@@ -647,6 +650,41 @@ def test_list_members_errors(
         headers={"Authorization": bearer},
     )
     assert response.status_code == expected
+
+
+def test_teacher_add_student_still_works(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Route is gone; the service stays until the member-list rework (#169)."""
+    teacher = seed_user(store, account_id="teach", role=UserRole.TEACHER)
+    course = _course()
+    student = seed_user(store, account_id="alice", name="Alice")
+    monkeypatch.setattr(course_crud, "get_course_by_id", AsyncMock(return_value=course))
+    monkeypatch.setattr(
+        course_crud, "is_course_instructor", AsyncMock(return_value=True)
+    )
+    monkeypatch.setattr(
+        course_crud, "get_student_membership", AsyncMock(return_value=None)
+    )
+    add_mock = AsyncMock()
+    monkeypatch.setattr(course_crud, "add_student_membership", add_mock)
+
+    response = asyncio.run(
+        courses_service.add_course_student(
+            course_route_db,
+            teacher,
+            course.id,
+            CourseStudentAddRequest(account_id="alice"),
+        )
+    )
+
+    assert response.message == "Student added"
+    add_mock.assert_awaited_once_with(
+        course_route_db, course_id=course.id, user_id=student.id
+    )
 
 
 def test_old_add_student_endpoint_is_removed(
