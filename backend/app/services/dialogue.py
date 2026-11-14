@@ -29,6 +29,8 @@ REPLY_INSTRUCTIONS = (
 
 
 class ReplyRejected(Exception):
+    """A reply or end action this dialogue will not accept."""
+
     def __init__(
         self, detail: str, status_code: int = status.HTTP_400_BAD_REQUEST
     ) -> None:
@@ -44,6 +46,11 @@ def guard_reply(
     completed_turns: int,
     max_turns: int | None,
 ) -> None:
+    """Reject a reply when the dialogue is closed or the turn cap is spent.
+
+    Raises:
+        ReplyRejected: the dialogue is not accepting replies, or the turn cap is reached.
+    """
     if stage != "conversation" or outcome != DialogueOutcome.OPEN.value:
         raise ReplyRejected("Dialogue is not accepting replies")
     if max_turns is not None and completed_turns >= max_turns:
@@ -91,6 +98,7 @@ def apply_end(
 
 
 def reply_material(topic: Topic, messages: list[DialogueMessage]) -> str:
+    """Build the model prompt from the saved inquiry and the messages so far."""
     lines = [
         f"topic: {topic.inquiry_topic or ''}",
         f"core_question: {topic.core_question or ''}",
@@ -148,6 +156,11 @@ async def read_history(
     user_id: UUID,
     session_id: UUID,
 ) -> DialogueHistoryResponse:
+    """Return one student's own dialogue.
+
+    Raises:
+        HTTPException: 404 if the session is missing or belongs to someone else.
+    """
     loaded = await message_crud.load_owned_dialogue(
         db,
         session_id=session_id,
@@ -170,6 +183,13 @@ async def send_reply(
     content: str,
     request_id: UUID,
 ) -> StreamDone:
+    """Store one student turn and return the model reply.
+
+    Raises:
+        HTTPException: 404 if the session is missing; 400 if replies are closed
+            or the turn cap is spent; 409 if another reply is in progress;
+            502 or 503 if the model call fails.
+    """
     loaded = await message_crud.load_owned_dialogue(
         db,
         session_id=session_id,
@@ -248,6 +268,12 @@ async def end_dialogue(
     session_id: UUID,
     action: str,
 ) -> EndDialogueResponse:
+    """Complete, continue, or abandon this student's dialogue.
+
+    Raises:
+        HTTPException: 404 if the session is missing; 400 if it has already
+            ended; 409 if complete is requested before the goal is met.
+    """
     loaded = await message_crud.load_owned_dialogue(
         db,
         session_id=session_id,

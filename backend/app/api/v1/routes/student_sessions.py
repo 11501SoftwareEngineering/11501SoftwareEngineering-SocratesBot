@@ -48,6 +48,7 @@ async def read_dialogue_messages(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> DialogueHistoryResponse:
+    """Return this student's messages for the dialogue."""
     return await dialogue_service.read_history(
         db,
         user_id=current_user.id,
@@ -62,6 +63,7 @@ async def stream_dialogue_reply(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> StreamingResponse:
+    """Send one student turn and stream the model reply."""
     done = await dialogue_service.send_reply(
         db,
         OpenAIChatClient(),
@@ -83,6 +85,7 @@ async def end_dialogue(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> EndDialogueResponse:
+    """Complete, continue, or abandon this dialogue."""
     return await dialogue_service.end_dialogue(
         db,
         user_id=current_user.id,
