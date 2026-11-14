@@ -1,21 +1,28 @@
-"""CRUD helpers for courses, instructors, and student memberships."""
+"""CRUD helpers for courses, instructors, memberships and TA permissions."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.enums import SessionStatus
-from app.models.course import Course, CourseInstructor, CourseMembership
+from app.models.course import (
+    Course,
+    CourseInstructor,
+    CourseMembership,
+    CourseTaPermission,
+)
 from app.models.session import Session
 from app.models.topic import Topic
 from app.models.user import User
 
 MEMBERSHIP_STUDENT = "STUDENT"
+MEMBERSHIP_TA = "TA"
 
 # (course, student_count, topic_count) — topic_count is total topics in the course
 InstructorCourseRow = tuple[Course, int, int]
@@ -252,3 +259,84 @@ async def soft_delete_student_membership_by_ids(
     )
     result = await db.execute(statement)
     return (result.rowcount or 0) > 0
+
+
+async def get_active_membership(
+    db: AsyncSession, *, course_id: UUID, user_id: UUID
+) -> CourseMembership | None:
+    """Return the active (not soft-left) STUDENT or TA membership, if any."""
+    statement = select(CourseMembership).where(
+        CourseMembership.course_id == course_id,
+        CourseMembership.user_id == user_id,
+        CourseMembership.left_at.is_(None),
+    )
+    return await db.scalar(statement)
+
+
+async def get_ta_permissions(
+    db: AsyncSession, *, course_id: UUID, user_id: UUID
+) -> list[str]:
+    """Return the permissions granted to a TA (unordered; empty if none)."""
+    statement = select(CourseTaPermission.permission).where(
+        CourseTaPermission.course_id == course_id,
+        CourseTaPermission.user_id == user_id,
+    )
+    return list((await db.scalars(statement)).all())
+
+
+async def _insert_ta_permissions(
+    db: AsyncSession,
+    *,
+    course_id: UUID,
+    user_id: UUID,
+    permissions: Iterable[str],
+) -> None:
+    db.add_all(
+        CourseTaPermission(course_id=course_id, user_id=user_id, permission=p)
+        for p in permissions
+    )
+    await db.flush()
+
+
+async def _delete_ta_permissions(
+    db: AsyncSession, *, course_id: UUID, user_id: UUID
+) -> None:
+    await db.execute(
+        delete(CourseTaPermission).where(
+            CourseTaPermission.course_id == course_id,
+            CourseTaPermission.user_id == user_id,
+        )
+    )
+
+
+async def promote_to_ta(
+    db: AsyncSession, membership: CourseMembership, permissions: Iterable[str]
+) -> None:
+    """Turn a student membership into a TA one (same row keeps its history)."""
+    membership.role = MEMBERSHIP_TA
+    await db.flush()
+    await _insert_ta_permissions(
+        db,
+        course_id=membership.course_id,
+        user_id=membership.user_id,
+        permissions=permissions,
+    )
+
+
+async def set_ta_permissions(
+    db: AsyncSession, *, course_id: UUID, user_id: UUID, permissions: Iterable[str]
+) -> None:
+    """Replace a TA's permissions with ``permissions``."""
+    await _delete_ta_permissions(db, course_id=course_id, user_id=user_id)
+    await _insert_ta_permissions(
+        db, course_id=course_id, user_id=user_id, permissions=permissions
+    )
+
+
+async def demote_to_student(db: AsyncSession, membership: CourseMembership) -> None:
+    """Drop a TA's permissions and turn the membership back into a student."""
+    await _delete_ta_permissions(
+        db, course_id=membership.course_id, user_id=membership.user_id
+    )
+    membership.role = MEMBERSHIP_STUDENT
+    await db.flush()

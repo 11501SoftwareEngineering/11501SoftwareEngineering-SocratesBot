@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import CourseRole, UserRole
+from app.core.enums import CourseRole, TaPermission, UserRole
 from app.crud import course as course_crud
 from app.crud import user as user_crud
 from app.models.course import Course
@@ -110,6 +111,38 @@ async def require_course_teacher(
             detail="Course teacher required",
         )
     return course
+
+
+_PERMISSION_ORDER = {permission: index for index, permission in enumerate(TaPermission)}
+
+
+def sort_permissions(permissions: Iterable[str]) -> list[str]:
+    """Deduplicate TA permissions and order them as declared in ``TaPermission``."""
+    return sorted(set(permissions), key=lambda p: _PERMISSION_ORDER[TaPermission(p)])
+
+
+async def require_course_teacher_or_ta(
+    db: AsyncSession, user: User, course_id: UUID, permission: TaPermission
+) -> tuple[Course, CourseRole]:
+    """Allow the course teacher, or a TA holding ``permission``.
+
+    Permissions are read on every call, so a change applies to the next request.
+
+    Raises:
+        HTTPException: 404 if the course is missing; 403 otherwise.
+    """
+    course = await _require_course(db, course_id)
+    role = await get_my_course_role(db, user, course_id)
+    if role is CourseRole.TEACHER:
+        return course, role
+    if role is CourseRole.TA and permission in await course_crud.get_ta_permissions(
+        db, course_id=course_id, user_id=user.id
+    ):
+        return course, role
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Course teacher or TA with {permission} permission required",
+    )
 
 
 async def create_course(
