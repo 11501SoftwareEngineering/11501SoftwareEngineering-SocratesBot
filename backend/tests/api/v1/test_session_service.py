@@ -8,6 +8,7 @@ import pytest
 from app.services.session import (
     CourseAccessDeniedError,
     TopicNotFoundError,
+    TopicNotOpenError,
     create_or_enter_session,
 )
 
@@ -33,12 +34,18 @@ class FakeSessionStore:
         self.topic_id = uuid4()
         self.course_id = uuid4()
         self.topics = {self.topic_id: self.course_id}
+        self.stages = {self.topic_id: "conversation"}
         self.members = {(self.user_id, self.course_id)}
         self.sessions: dict[tuple[UUID, UUID], FakeSession] = {}
         self.create_calls = 0
 
     async def get_topic_course_id(self, topic_id: UUID) -> UUID | None:
         return self.topics.get(topic_id)
+
+    async def get_topic_stage(self, topic_id: UUID) -> str | None:
+        if topic_id not in self.topics:
+            return None
+        return self.stages.get(topic_id, "conversation")
 
     async def is_course_member(self, user_id: UUID, course_id: UUID) -> bool:
         return (user_id, course_id) in self.members
@@ -111,6 +118,7 @@ async def test_different_users_get_separate_sessions(store: FakeSessionStore) ->
 async def test_different_topics_get_separate_sessions(store: FakeSessionStore) -> None:
     other_topic_id = uuid4()
     store.topics[other_topic_id] = store.course_id
+    store.stages[other_topic_id] = "conversation"
 
     first = await create_or_enter_session(
         user_id=store.user_id, topic_id=store.topic_id, store=store
@@ -149,3 +157,29 @@ async def test_non_member_is_rejected(
 
     assert len(store.sessions) == int(has_session)
     assert store.create_calls == 0
+
+
+async def test_setup_without_session_inserts_nothing(store: FakeSessionStore) -> None:
+    store.stages[store.topic_id] = "setup"
+
+    with pytest.raises(TopicNotOpenError):
+        await create_or_enter_session(
+            user_id=store.user_id, topic_id=store.topic_id, store=store
+        )
+
+    assert store.sessions == {}
+    assert store.create_calls == 0
+
+
+async def test_existing_session_on_setup_is_returned(store: FakeSessionStore) -> None:
+    store.stages[store.topic_id] = "setup"
+    existing = FakeSession(id=uuid4())
+    store.sessions[(store.user_id, store.topic_id)] = existing
+
+    result = await create_or_enter_session(
+        user_id=store.user_id, topic_id=store.topic_id, store=store
+    )
+
+    assert result.session_id == existing.id
+    assert store.create_calls == 0
+    assert len(store.sessions) == 1

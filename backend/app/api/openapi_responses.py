@@ -405,3 +405,54 @@ SESSION_ENTRY_RESPONSES: dict[int | str, dict[str, Any]] = {
         "Topic not found",
     ),
 }
+
+_INQUIRY_DENIED = json_detail_examples(
+    "Inquiry access denied",
+    {
+        "not_teacher": "Teacher privileges required",
+        "not_instructor": "Course instructor required",
+    },
+)
+_INQUIRY_MISSING = json_detail_example("Topic not found", "Topic not found")
+_INQUIRY_UNAUTHORIZED = json_detail_example(
+    AUTH_UNAUTHORIZED_DETAIL,
+    AUTH_UNAUTHORIZED_DETAIL,
+)
+
+INQUIRY_SETUP_READ_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: _INQUIRY_UNAUTHORIZED,
+    403: _INQUIRY_DENIED,
+    404: _INQUIRY_MISSING,
+}
+
+INQUIRY_SETUP_WRITE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_examples(
+        "Inquiry was not saved",
+        {
+            "not_in_setup": "Topic is not in setup",
+        },
+    ),
+    401: _INQUIRY_UNAUTHORIZED,
+    403: _INQUIRY_DENIED,
+    404: _INQUIRY_MISSING,
+    422: json_detail_example(
+        "Request validation failed",
+        "Request validation failed",
+    ),
+}
+
+INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_example(
+        "Topic is not in setup",
+        "Topic is not in setup",
+    ),
+    401: _INQUIRY_UNAUTHORIZED,
+    403: _INQUIRY_DENIED,
+    404: _INQUIRY_MISSING,
+    409: json_detail_examples(
+        "Inquiry was not published",
+        {
+            "incomplete": "Incomplete setup: topic",
+        },
+    ),
+}

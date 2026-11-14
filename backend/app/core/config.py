@@ -67,9 +67,11 @@ class Settings(BaseSettings):
     # Cookie flags: SameSite=None for cross-origin SPA; Secure off in development.
     COOKIE_SAMESITE: NonEmptyStr = "none"
 
-    # LLM API
+    # LLM API via OpenRouter. The model id stays in server config; clients never send or read it.
     OPENAI_API_KEY: SecretStr
     ANTHROPIC_API_KEY: SecretStr
+    OPENAI_MODEL: NonEmptyStr = "openai/gpt-4o-mini"
+    OPENAI_BASE_URL: NonEmptyStr = "https://openrouter.ai/api/v1"
 
     @model_validator(mode="after")
     def _default_language_must_be_supported(self) -> Self:
