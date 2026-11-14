@@ -44,7 +44,10 @@ class CourseListItem(BaseModel):
     teacher_name: str = Field(examples=["Teacher One"])
     topic_count: int = Field(examples=[2], description="Total topics in the course")
     my_role: CourseRole = Field(examples=[CourseRole.TEACHER])
-    my_permissions: list[str] = Field(default_factory=list)
+    my_permissions: list[TaPermission] = Field(
+        default_factory=list,
+        description="The caller's TA permissions; empty unless my_role is ta",
+    )
     invite_code: str = Field(examples=[_EXAMPLE_INVITE])
     # Only set for teachers (and TAs with ``view_members``); omitted otherwise.
     student_count: int | None = Field(

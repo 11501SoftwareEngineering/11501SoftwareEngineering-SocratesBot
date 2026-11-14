@@ -311,6 +311,21 @@ async def get_ta_permissions(
     return list((await db.scalars(statement)).all())
 
 
+async def list_my_ta_permissions(
+    db: AsyncSession, *, user_id: UUID
+) -> dict[UUID, list[str]]:
+    """Map course id -> permissions ``user_id`` holds as a TA (unordered)."""
+    rows = await db.execute(
+        select(CourseTaPermission.course_id, CourseTaPermission.permission).where(
+            CourseTaPermission.user_id == user_id
+        )
+    )
+    permissions: dict[UUID, list[str]] = {}
+    for course_id, permission in rows.tuples().all():
+        permissions.setdefault(course_id, []).append(permission)
+    return permissions
+
+
 def _add_ta_permission(
     db: AsyncSession, *, membership_id: UUID, permission: str
 ) -> None:

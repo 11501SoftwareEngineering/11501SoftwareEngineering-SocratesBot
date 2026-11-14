@@ -423,6 +423,55 @@ def test_list_courses_student_has_no_student_count(
     assert "student_count" not in body[0]
 
 
+@pytest.mark.parametrize(
+    ("granted", "expected_permissions", "expected_count"),
+    [
+        (["view_members", "edit_topics"], ["edit_topics", "view_members"], 9),
+        (["edit_topics"], ["edit_topics"], None),
+        ([], [], None),
+    ],
+)
+def test_list_courses_ta_permissions_and_student_count(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+    granted: list[str],
+    expected_permissions: list[str],
+    expected_count: int | None,
+) -> None:
+    bearer, _ = _login(auth_client, store, "assist")
+    assisted = _course(name="Assisted")
+    studied = _course(name="Studied")
+    monkeypatch.setattr(
+        course_crud, "list_instructed_courses", AsyncMock(return_value=[])
+    )
+    monkeypatch.setattr(
+        course_crud,
+        "list_member_courses",
+        AsyncMock(
+            return_value=[
+                ((assisted, "T", 1, 9), "TA"),
+                ((studied, "T", 1, 7), "STUDENT"),
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        course_crud,
+        "list_my_ta_permissions",
+        AsyncMock(return_value={assisted.id: granted} if granted else {}),
+    )
+
+    body = auth_client.get("/api/v1/courses", headers={"Authorization": bearer}).json()
+
+    ta_row, student_row = body
+    assert ta_row["my_role"] == "ta"
+    assert ta_row["my_permissions"] == expected_permissions
+    assert ta_row.get("student_count") == expected_count
+    assert student_row["my_permissions"] == []
+    assert "student_count" not in student_row
+
+
 def test_old_role_prefixed_paths_are_gone(
     auth_client: TestClient, store: FakeStore
 ) -> None:
