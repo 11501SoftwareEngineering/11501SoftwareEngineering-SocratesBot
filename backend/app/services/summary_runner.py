@@ -6,15 +6,18 @@ import asyncio
 import json
 import logging
 import threading
+from contextlib import suppress
 from uuid import UUID
 
 from app.core.database import AsyncSessionLocal
 from app.crud import summary as summary_crud
+from app.services.attempt_lease import refresh
 from app.services.model_client import ModelCallError, OpenAIChatClient
 from app.services.summary_text import validate_summary
 
 logger = logging.getLogger("app.model")
 client = OpenAIChatClient()
+_live: set[UUID] = set()
 
 INSTRUCTIONS = (
     "Write a de-identified class summary from the name-free reports. "
@@ -50,6 +53,10 @@ _SCHEMA: dict = {
 }
 
 
+def live_attempts() -> set[UUID]:
+    return set(_live)
+
+
 def schedule(attempt_id: UUID) -> None:
     """Start summary preparation on a daemon thread."""
     thread = threading.Thread(
@@ -62,10 +69,15 @@ def schedule(attempt_id: UUID) -> None:
 
 async def run_summary(attempt_id: UUID) -> None:
     """Prepare one summary attempt and store it as ready or failed."""
+    _live.add(attempt_id)
+    refresher: asyncio.Task[None] | None = None
     try:
         request = await _begin(attempt_id)
         if request is None:
             return
+        refresher = asyncio.create_task(
+            refresh(summary_crud.extend_lease, attempt_id, _live)
+        )
         try:
             parsed = await client.complete_object(
                 name="class_summary",
@@ -81,6 +93,12 @@ async def run_summary(attempt_id: UUID) -> None:
     except Exception:
         logger.info("summary attempt ended")
         await _fail(attempt_id)
+    finally:
+        if refresher is not None:
+            refresher.cancel()
+            with suppress(asyncio.CancelledError):
+                await refresher
+        _live.discard(attempt_id)
 
 
 async def _begin(attempt_id: UUID) -> dict | None:
