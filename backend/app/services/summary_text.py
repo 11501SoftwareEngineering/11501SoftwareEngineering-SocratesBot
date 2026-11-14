@@ -11,54 +11,63 @@ def ready_effects(stage: str, outcomes: list[str]) -> tuple[str, list[int]]:
     return stage, closed
 
 
+def _invalid() -> ValueError:
+    return ValueError("invalid summary")
+
+
+def _text(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise _invalid()
+    return value.strip()
+
+
+def _integer(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise _invalid()
+    return value
+
+
+def _number(value: object) -> int | float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise _invalid()
+    return value
+
+
+def _group(group: object, labels: dict[str, str]) -> dict:
+    if not isinstance(group, dict):
+        raise _invalid()
+    name = group.get("name")
+    conditions = group.get("conditions")
+    members = group.get("members")
+    if not isinstance(name, str) or not isinstance(conditions, str):
+        raise _invalid()
+    if not isinstance(members, list):
+        raise _invalid()
+    return {
+        "name": name,
+        "conditions": conditions,
+        "count": _integer(group.get("count")),
+        "percentage": _number(group.get("percentage")),
+        "report_ids": [_label(item, labels) for item in members],
+    }
+
+
 def validate_summary(payload: dict, labels: dict[str, str]) -> dict:
     """Return the stored summary body, or raise ValueError."""
     if not isinstance(payload, dict):
-        raise ValueError("invalid summary")
-    overview = payload.get("overview")
-    viewpoint = payload.get("viewpoint_summary")
-    denominator = payload.get("denominator")
+        raise _invalid()
+    overview = _text(payload.get("overview"))
+    viewpoint = _text(payload.get("viewpoint_summary"))
+    denominator = _integer(payload.get("denominator"))
     groups = payload.get("groups")
     ungrouped = payload.get("ungrouped")
-    if not isinstance(overview, str) or not overview.strip():
-        raise ValueError("invalid summary")
-    if not isinstance(viewpoint, str) or not viewpoint.strip():
-        raise ValueError("invalid summary")
-    if not isinstance(denominator, int) or isinstance(denominator, bool):
-        raise ValueError("invalid summary")
     if not isinstance(groups, list) or not isinstance(ungrouped, list):
-        raise ValueError("invalid summary")
-    mapped_groups = []
-    for group in groups:
-        if not isinstance(group, dict):
-            raise ValueError("invalid summary")
-        name = group.get("name")
-        conditions = group.get("conditions")
-        count = group.get("count")
-        percentage = group.get("percentage")
-        members = group.get("members")
-        if not isinstance(name, str) or not isinstance(conditions, str):
-            raise ValueError("invalid summary")
-        if not isinstance(count, int) or isinstance(count, bool):
-            raise ValueError("invalid summary")
-        if not isinstance(percentage, int | float) or isinstance(percentage, bool):
-            raise ValueError("invalid summary")
-        if not isinstance(members, list):
-            raise ValueError("invalid summary")
-        mapped_groups.append(
-            {
-                "name": name,
-                "conditions": conditions,
-                "count": count,
-                "percentage": percentage,
-                "report_ids": [_label(item, labels) for item in members],
-            }
-        )
+        raise _invalid()
     return {
-        "overview": overview.strip(),
-        "viewpoint_summary": viewpoint.strip(),
+        "overview": overview,
+        "viewpoint_summary": viewpoint,
         "denominator": denominator,
-        "groups": mapped_groups,
+        "groups": [_group(group, labels) for group in groups],
         "ungrouped_report_ids": [_label(item, labels) for item in ungrouped],
     }
 

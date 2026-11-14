@@ -91,6 +91,44 @@ async def next_version(db: AsyncSession, topic_id: UUID) -> int:
     return int(current or 0) + 1
 
 
+def _draft_row(topic_id: UUID, version: int, draft: dict) -> ClassSummary:
+    return ClassSummary(
+        topic_id=topic_id,
+        version=version,
+        status="draft",
+        overview=draft["overview"],
+        viewpoint_summary=draft["viewpoint_summary"],
+        denominator=draft["denominator"],
+        groups=draft["groups"],
+        ungrouped_report_ids=draft["ungrouped_report_ids"],
+    )
+
+
+async def _close_open_dialogues(db: AsyncSession, topic: Topic) -> None:
+    if topic.stage != "conversation":
+        return
+    topic.stage = "summary"
+    await db.execute(
+        update(Session)
+        .where(
+            Session.topic_id == topic.id,
+            Session.outcome == DialogueOutcome.OPEN.value,
+        )
+        .values(outcome=DialogueOutcome.CLOSED_BY_SUMMARY.value)
+    )
+
+
+async def _mark_ready(db: AsyncSession, attempt_id: UUID, draft: dict) -> None:
+    await db.execute(
+        update(SummaryAttempt)
+        .where(
+            SummaryAttempt.id == attempt_id,
+            SummaryAttempt.status == GenerationStatus.PROCESSING.value,
+        )
+        .values(status=GenerationStatus.READY.value, result_json=draft)
+    )
+
+
 async def store_ready_summary(
     db: AsyncSession,
     *,
@@ -101,37 +139,9 @@ async def store_ready_summary(
     topic = await db.get(Topic, topic_id)
     if topic is None:
         return
-    version = await next_version(db, topic_id)
-    db.add(
-        ClassSummary(
-            topic_id=topic_id,
-            version=version,
-            status="draft",
-            overview=draft["overview"],
-            viewpoint_summary=draft["viewpoint_summary"],
-            denominator=draft["denominator"],
-            groups=draft["groups"],
-            ungrouped_report_ids=draft["ungrouped_report_ids"],
-        )
-    )
-    if topic.stage == "conversation":
-        topic.stage = "summary"
-        await db.execute(
-            update(Session)
-            .where(
-                Session.topic_id == topic_id,
-                Session.outcome == DialogueOutcome.OPEN.value,
-            )
-            .values(outcome=DialogueOutcome.CLOSED_BY_SUMMARY.value)
-        )
-    await db.execute(
-        update(SummaryAttempt)
-        .where(
-            SummaryAttempt.id == attempt_id,
-            SummaryAttempt.status == GenerationStatus.PROCESSING.value,
-        )
-        .values(status=GenerationStatus.READY.value, result_json=draft)
-    )
+    db.add(_draft_row(topic_id, await next_version(db, topic_id), draft))
+    await _close_open_dialogues(db, topic)
+    await _mark_ready(db, attempt_id, draft)
 
 
 async def latest_summary(db: AsyncSession, topic_id: UUID) -> ClassSummary | None:
