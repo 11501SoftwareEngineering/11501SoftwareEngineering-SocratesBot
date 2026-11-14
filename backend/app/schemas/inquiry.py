@@ -200,6 +200,7 @@ def first_incomplete_field(
     topic: str | None,
     core_question: str | None,
 ) -> str | None:
+    """Return the first required setup field that is missing or illegal."""
     if age_band not in {band.value for band in AgeBand}:
         return "age_band"
     if max_turns not in _TURN_CAPS:
