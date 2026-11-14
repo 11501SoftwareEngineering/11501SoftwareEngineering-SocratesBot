@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -10,6 +10,7 @@ from app.models.message import DialogueMessage
 from app.models.report_attempt import ReportAttempt
 from app.models.session import Session
 from app.models.user import User
+from app.services.attempt_lease import LEASE
 
 
 async def list_for_session(db: AsyncSession, session_id: UUID) -> list[ReportAttempt]:
@@ -56,9 +57,27 @@ async def mark_processing(db: AsyncSession, attempt_id: UUID) -> None:
         )
         .values(
             status=GenerationStatus.PROCESSING.value,
-            lease_expires_at=datetime.now(UTC) + timedelta(seconds=30),
+            lease_expires_at=datetime.now(UTC) + LEASE,
         )
     )
+
+
+async def extend_lease(db: AsyncSession, attempt_id: UUID) -> None:
+    await db.execute(
+        update(ReportAttempt)
+        .where(
+            ReportAttempt.id == attempt_id,
+            ReportAttempt.status == GenerationStatus.PROCESSING.value,
+        )
+        .values(lease_expires_at=datetime.now(UTC) + LEASE)
+    )
+
+
+async def list_processing(db: AsyncSession) -> list[ReportAttempt]:
+    statement = select(ReportAttempt).where(
+        ReportAttempt.status == GenerationStatus.PROCESSING.value
+    )
+    return list(await db.scalars(statement))
 
 
 async def mark_ready(db: AsyncSession, attempt_id: UUID, body: dict) -> None:
