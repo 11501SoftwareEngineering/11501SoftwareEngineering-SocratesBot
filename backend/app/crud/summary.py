@@ -1,11 +1,11 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import Integer, cast, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import DialogueOutcome, GenerationStatus
-from app.models.class_summary import ClassSummary, PublishedSummary, SummaryAttempt
+from app.models.class_summary import ClassSummary, SummaryAttempt
 from app.models.report_attempt import ReportAttempt
 from app.models.session import Session
 from app.models.topic import Topic
@@ -102,25 +102,18 @@ async def mark_failed(db: AsyncSession, attempt_id: UUID) -> None:
     )
 
 
-async def next_version(db: AsyncSession, topic_id: UUID) -> int:
-    statement = select(func.max(ClassSummary.version)).where(
-        ClassSummary.topic_id == topic_id
-    )
-    current = await db.scalar(statement)
-    return int(current or 0) + 1
-
-
-def _draft_row(topic_id: UUID, version: int, draft: dict) -> ClassSummary:
-    return ClassSummary(
-        topic_id=topic_id,
-        version=version,
-        status="draft",
-        overview=draft["overview"],
-        viewpoint_summary=draft["viewpoint_summary"],
-        denominator=draft["denominator"],
-        groups=draft["groups"],
-        ungrouped_report_ids=draft["ungrouped_report_ids"],
-    )
+def _document(draft: dict, previous: dict | None) -> dict:
+    kept = previous or {}
+    return {
+        "status": "draft",
+        "overview": draft["overview"],
+        "viewpoint_summary": draft["viewpoint_summary"],
+        "denominator": draft["denominator"],
+        "groups": draft["groups"],
+        "ungrouped_report_ids": draft["ungrouped_report_ids"],
+        "published": kept.get("published"),
+        "published_version": kept.get("published_version"),
+    }
 
 
 async def _close_open_dialogues(db: AsyncSession, topic: Topic) -> None:
@@ -158,39 +151,32 @@ async def store_ready_summary(
     topic = await db.get(Topic, topic_id)
     if topic is None:
         return
-    db.add(_draft_row(topic_id, await next_version(db, topic_id), draft))
+    row = await latest_summary(db, topic_id)
+    version = 1 if row is None else row.version + 1
+    body = _document(draft, None if row is None else row.body)
+    if row is None:
+        db.add(ClassSummary(topic_id=topic_id, version=version, body=body))
+    else:
+        row.version = version
+        row.body = body
     await _close_open_dialogues(db, topic)
     await _mark_ready(db, attempt_id, draft)
 
 
 async def latest_summary(db: AsyncSession, topic_id: UUID) -> ClassSummary | None:
-    statement = (
-        select(ClassSummary)
-        .where(ClassSummary.topic_id == topic_id)
-        .order_by(ClassSummary.version.desc())
-        .limit(1)
+    statement = select(ClassSummary).where(ClassSummary.topic_id == topic_id)
+    return await db.scalar(statement)
+
+
+async def published_document(db: AsyncSession, topic_id: UUID) -> dict | None:
+    statement = select(ClassSummary.body["published"]).where(
+        ClassSummary.topic_id == topic_id
     )
     return await db.scalar(statement)
 
 
-async def published(db: AsyncSession, topic_id: UUID) -> PublishedSummary | None:
-    return await db.get(PublishedSummary, topic_id)
-
-
-async def save_published(
-    db: AsyncSession, *, topic_id: UUID, version: int, body: dict
-) -> None:
-    row = await db.get(PublishedSummary, topic_id)
-    if row is None:
-        db.add(PublishedSummary(topic_id=topic_id, version=version, body=body))
-        return
-    row.version = version
-    row.body = body
-
-
-async def clear_published(db: AsyncSession, topic_id: UUID) -> bool:
-    row = await db.get(PublishedSummary, topic_id)
-    if row is None:
-        return False
-    await db.delete(row)
-    return True
+async def published_version(db: AsyncSession, topic_id: UUID) -> int | None:
+    statement = select(
+        cast(ClassSummary.body["published_version"].astext, Integer)
+    ).where(ClassSummary.topic_id == topic_id)
+    return await db.scalar(statement)

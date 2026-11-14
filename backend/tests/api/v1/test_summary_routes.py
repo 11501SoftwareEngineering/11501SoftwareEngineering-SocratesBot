@@ -51,7 +51,6 @@ class _Memory:
         self.attempts: list[SimpleNamespace] = []
         self.summary_attempts: list[SimpleNamespace] = []
         self.draft: SimpleNamespace | None = None
-        self.published: SimpleNamespace | None = None
         self.summaries_scheduled: list = []
         self.instructor_id = None
         self.member_ids: set = set()
@@ -110,21 +109,15 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
             return None
         return memory.draft
 
-    async def published(_db, topic_id):
-        if memory.published is None or memory.published.topic_id != topic_id:
+    async def published_document(_db, topic_id):
+        if memory.draft is None or memory.draft.topic_id != topic_id:
             return None
-        return memory.published
+        return memory.draft.body.get("published")
 
-    async def save_published(_db, *, topic_id, version, body):
-        memory.published = SimpleNamespace(
-            topic_id=topic_id, version=version, body=body
-        )
-
-    async def clear_published(_db, topic_id):
-        if memory.published is None or memory.published.topic_id != topic_id:
-            return False
-        memory.published = None
-        return True
+    async def published_version(_db, topic_id):
+        if memory.draft is None or memory.draft.topic_id != topic_id:
+            return None
+        return memory.draft.body.get("published_version")
 
     async def topic_dialogues(_db, topic_id):
         assert topic_id == memory.topic.id
@@ -137,9 +130,8 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
     monkeypatch.setattr(summary_crud, "latest_attempt", latest_attempt)
     monkeypatch.setattr(summary_crud, "insert_attempt", insert_attempt)
     monkeypatch.setattr(summary_crud, "latest_summary", latest_summary)
-    monkeypatch.setattr(summary_crud, "published", published)
-    monkeypatch.setattr(summary_crud, "save_published", save_published)
-    monkeypatch.setattr(summary_crud, "clear_published", clear_published)
+    monkeypatch.setattr(summary_crud, "published_document", published_document)
+    monkeypatch.setattr(summary_crud, "published_version", published_version)
     monkeypatch.setattr(
         summary_runner,
         "schedule",
@@ -167,20 +159,24 @@ def test_summary_publish_stays_stable_until_withdraw(
         id=uuid4(),
         topic_id=memory.topic.id,
         version=1,
-        status="reviewed",
-        overview="The class compared two accounts.",
-        viewpoint_summary="Most revised the first claim.",
-        denominator=2,
-        groups=[
-            {
-                "name": "revised",
-                "conditions": "changed the claim",
-                "count": 1,
-                "percentage": 50,
-                "report_ids": ["report-1"],
-            }
-        ],
-        ungrouped_report_ids=["report-2"],
+        body={
+            "status": "reviewed",
+            "overview": "The class compared two accounts.",
+            "viewpoint_summary": "Most revised the first claim.",
+            "denominator": 2,
+            "groups": [
+                {
+                    "name": "revised",
+                    "conditions": "changed the claim",
+                    "count": 1,
+                    "percentage": 50,
+                    "report_ids": ["report-1"],
+                }
+            ],
+            "ungrouped_report_ids": ["report-2"],
+            "published": None,
+            "published_version": None,
+        },
     )
     _install(monkeypatch, course_route_db, memory)
 
@@ -188,13 +184,13 @@ def test_summary_publish_stays_stable_until_withdraw(
         f"/api/v1/topics/{memory.topic.id}/summary",
         headers={"Authorization": teacher_bearer},
     )
-    memory.draft.overview = "Ada changed her claim."
+    memory.draft.body["overview"] = "Ada changed her claim."
     named = auth_client.post(
         f"/api/v1/topics/{memory.topic.id}/summary/publish",
         headers={"Authorization": teacher_bearer},
         json={"version": 1},
     )
-    memory.draft.overview = "The class compared two accounts."
+    memory.draft.body["overview"] = "The class compared two accounts."
     published = auth_client.post(
         f"/api/v1/topics/{memory.topic.id}/summary/publish",
         headers={"Authorization": teacher_bearer},
