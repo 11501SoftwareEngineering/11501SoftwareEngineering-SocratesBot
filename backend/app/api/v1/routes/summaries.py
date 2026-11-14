@@ -1,3 +1,5 @@
+"""Class summary draft, review, and published read."""
+
 from typing import Annotated
 from uuid import UUID
 
@@ -27,6 +29,7 @@ async def start_summary(
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    """Start a class-summary draft from the ready reports."""
     return await summary_service.start_summary(db, teacher=teacher, topic_id=topicId)
 
 
@@ -36,6 +39,7 @@ async def read_summary(
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    """Return the instructor's summary draft and publish state."""
     return await summary_service.read_teacher_summary(
         db, teacher=teacher, topic_id=topicId
     )
@@ -48,6 +52,7 @@ async def edit_summary(
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    """Replace the overview and viewpoint text, and set the status back to draft."""
     return await summary_service.edit_summary(
         db,
         teacher=teacher,
@@ -65,6 +70,7 @@ async def review_summary(
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    """Mark a draft summary as reviewed."""
     return await summary_service.review_summary(
         db, teacher=teacher, topic_id=topicId, version=payload.version
     )
@@ -77,6 +83,7 @@ async def publish_summary(
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    """Publish a reviewed summary after it contains no student identity."""
     return await summary_service.publish_summary(
         db, teacher=teacher, topic_id=topicId, version=payload.version
     )
@@ -88,6 +95,7 @@ async def withdraw_summary(
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    """Withdraw the published class summary."""
     return await summary_service.withdraw_summary(db, teacher=teacher, topic_id=topicId)
 
 
@@ -97,4 +105,5 @@ async def read_published_summary(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    """Return the published summary for a member of the course."""
     return await summary_service.read_published(db, user=current_user, topic_id=topicId)

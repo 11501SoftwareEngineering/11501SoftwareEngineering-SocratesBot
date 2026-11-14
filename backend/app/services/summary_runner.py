@@ -51,6 +51,7 @@ _SCHEMA: dict = {
 
 
 def schedule(attempt_id: UUID) -> None:
+    """Start summary preparation on a daemon thread."""
     thread = threading.Thread(
         target=lambda: asyncio.run(run_summary(attempt_id)),
         name=f"summary-{attempt_id}",
@@ -60,6 +61,7 @@ def schedule(attempt_id: UUID) -> None:
 
 
 async def run_summary(attempt_id: UUID) -> None:
+    """Prepare one summary attempt and store it as ready or failed."""
     try:
         request = await _begin(attempt_id)
         if request is None:
