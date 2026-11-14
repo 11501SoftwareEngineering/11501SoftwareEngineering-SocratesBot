@@ -19,6 +19,7 @@ import refreshUrl from '@/assets/icons/refresh.svg'
 import searchUrl from '@/assets/icons/search.svg'
 import sendUrl from '@/assets/icons/send.svg'
 import signOutUrl from '@/assets/icons/sign-out.svg'
+import soundMaxUrl from '@/assets/icons/sound-max.svg'
 import trashUrl from '@/assets/icons/trash.svg'
 
 function figmaIcon(name: string, src: string, size: number) {
@@ -51,3 +52,4 @@ export const TrashIcon = figmaIcon('TrashIcon', trashUrl, 24)
 export const RefreshIcon = figmaIcon('RefreshIcon', refreshUrl, 24)
 export const SignOutIcon = figmaIcon('SignOutIcon', signOutUrl, 24)
 export const MenuIcon = figmaIcon('MenuIcon', menuUrl, 24)
+export const SoundIcon = figmaIcon('SoundIcon', soundMaxUrl, 24)
