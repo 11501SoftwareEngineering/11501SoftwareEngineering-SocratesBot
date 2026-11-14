@@ -7,6 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.core.enums import TaPermission
 from app.services.course_invites import INVITE_ALPHABET, INVITE_LENGTH
 
 _EXAMPLE_COURSE_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -84,3 +85,38 @@ class CourseStudentListItem(BaseModel):
 
 class CourseStudentAddRequest(BaseModel):
     account_id: str = Field(min_length=1, max_length=64, examples=["alice"])
+
+
+_EXAMPLE_TA_PERMISSIONS = [TaPermission.EDIT_TOPICS, TaPermission.VIEW_MEMBERS]
+
+
+class TaAssignRequest(BaseModel):
+    account_id: str = Field(min_length=1, max_length=64, examples=["alice"])
+    permissions: list[TaPermission] = Field(
+        default_factory=list,
+        examples=[_EXAMPLE_TA_PERMISSIONS],
+        description="Granted TA permissions; duplicates are ignored",
+    )
+
+
+class TaAssignResponse(BaseModel):
+    user_id: UUID = Field(examples=[_EXAMPLE_STUDENT_ID])
+    account_id: str = Field(examples=["alice"])
+    name: str = Field(examples=["Alice"])
+    permissions: list[TaPermission] = Field(examples=[_EXAMPLE_TA_PERMISSIONS])
+    message: str = Field(default="TA assigned", examples=["TA assigned"])
+
+
+class TaPermissionsUpdateRequest(BaseModel):
+    permissions: list[TaPermission] = Field(
+        examples=[_EXAMPLE_TA_PERMISSIONS],
+        description="Replaces all current permissions; duplicates are ignored",
+    )
+
+
+class TaPermissionsUpdateResponse(BaseModel):
+    user_id: UUID = Field(examples=[_EXAMPLE_STUDENT_ID])
+    permissions: list[TaPermission] = Field(examples=[_EXAMPLE_TA_PERMISSIONS])
+    message: str = Field(
+        default="TA permissions updated", examples=["TA permissions updated"]
+    )

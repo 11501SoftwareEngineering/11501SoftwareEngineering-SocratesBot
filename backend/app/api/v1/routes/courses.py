@@ -15,6 +15,9 @@ from app.api.openapi_responses import (
     COURSE_LIST_RESPONSES,
     COURSE_STUDENT_LIST_RESPONSES,
     COURSE_STUDENT_REMOVE_RESPONSES,
+    COURSE_TA_ASSIGN_RESPONSES,
+    COURSE_TA_REVOKE_RESPONSES,
+    COURSE_TA_UPDATE_RESPONSES,
 )
 from app.schemas.course import (
     CourseCreateRequest,
@@ -23,6 +26,10 @@ from app.schemas.course import (
     StudentCourseListItem,
     StudentJoinRequest,
     StudentJoinResponse,
+    TaAssignRequest,
+    TaAssignResponse,
+    TaPermissionsUpdateRequest,
+    TaPermissionsUpdateResponse,
     TeacherCourseListItem,
 )
 from app.services import courses as courses_service
@@ -126,3 +133,51 @@ async def remove_student(
 ) -> None:
     """Remove a student from the course (204). Idempotent if already removed."""
     await courses_service.remove_course_student(db, current_user, courseId, userId)
+
+
+@router.post(
+    "/{courseId}/tas",
+    response_model=TaAssignResponse,
+    responses=COURSE_TA_ASSIGN_RESPONSES,
+)
+async def assign_ta(
+    courseId: UUID,
+    payload: TaAssignRequest,
+    current_user: ActiveUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TaAssignResponse:
+    """Promote a student of the course to TA (course teacher only)."""
+    return await courses_service.assign_course_ta(db, current_user, courseId, payload)
+
+
+@router.put(
+    "/{courseId}/tas/{userId}",
+    response_model=TaPermissionsUpdateResponse,
+    responses=COURSE_TA_UPDATE_RESPONSES,
+)
+async def update_ta_permissions(
+    courseId: UUID,
+    userId: UUID,
+    payload: TaPermissionsUpdateRequest,
+    current_user: ActiveUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TaPermissionsUpdateResponse:
+    """Replace a TA's permissions (course teacher only)."""
+    return await courses_service.update_course_ta_permissions(
+        db, current_user, courseId, userId, payload
+    )
+
+
+@router.delete(
+    "/{courseId}/tas/{userId}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses=COURSE_TA_REVOKE_RESPONSES,
+)
+async def revoke_ta(
+    courseId: UUID,
+    userId: UUID,
+    current_user: ActiveUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Revoke a TA; they become a student of the course again (204)."""
+    await courses_service.revoke_course_ta(db, current_user, courseId, userId)
