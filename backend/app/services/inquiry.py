@@ -163,6 +163,11 @@ def _apply(topic: Topic, generated: GeneratedInquiry) -> None:
 async def get_inquiry_setup(
     db: AsyncSession, teacher: User, topic_id: UUID
 ) -> InquirySetupResponse:
+    """Return the saved inquiry for an instructor of the course.
+
+    Raises:
+        HTTPException: 404 if the topic is missing; 403 if not an instructor.
+    """
     topic = await get_instructed_topic(db, teacher, topic_id)
     return _response(topic)
 
@@ -173,6 +178,12 @@ async def create_inquiry_topic(
     course_id: UUID,
     payload: CreateInquiryTopicRequest,
 ) -> InquirySetupResponse:
+    """Create a setup topic and fill the eight fields from the model.
+
+    Raises:
+        HTTPException: 404 if the course is missing; 403 if not its teacher;
+            502 or 503 if the model call fails.
+    """
     course = await courses_service.require_course_teacher(db, user, course_id)
     generated = await _complete(
         payload.model_id,
@@ -207,6 +218,12 @@ async def create_inquiry_topic(
 async def save_inquiry_setup(
     db: AsyncSession, teacher: User, topic_id: UUID, payload: SaveInquiryRequest
 ) -> InquirySetupWriteResponse:
+    """Save the eight fields while the topic is still in setup.
+
+    Raises:
+        HTTPException: 404 if the topic is missing; 403 if not an instructor;
+            400 if the topic is not in setup.
+    """
     topic = await get_instructed_topic(db, teacher, topic_id)
     try:
         topic = await _locked_setup(db, topic.id)
@@ -236,6 +253,12 @@ async def save_inquiry_setup(
 async def publish_inquiry(
     db: AsyncSession, teacher: User, topic_id: UUID
 ) -> InquirySetupWriteResponse:
+    """Move a complete setup to conversation.
+
+    Raises:
+        HTTPException: 404 if the topic is missing; 403 if not an instructor;
+            400 if the topic is not in setup; 409 if setup is incomplete.
+    """
     topic = await get_instructed_topic(db, teacher, topic_id)
     try:
         topic = await _locked_setup(db, topic.id)
@@ -261,6 +284,12 @@ async def publish_inquiry(
 async def refine_inquiry(
     db: AsyncSession, teacher: User, topic_id: UUID, payload: RefineInquiryRequest
 ) -> InquirySetupResponse:
+    """Regenerate the eight fields from feedback and store the change.
+
+    Raises:
+        HTTPException: 404 if the topic is missing; 403 if not an instructor;
+            400 if the topic is not in setup; 502 or 503 if the model call fails.
+    """
     topic = await get_instructed_topic(db, teacher, topic_id)
     await _require_setup(topic)
     generated = await _complete(
@@ -295,6 +324,12 @@ async def refine_inquiry(
 async def opening_message(
     db: AsyncSession, teacher: User, topic_id: UUID, payload: OpeningMessageRequest
 ) -> OpeningMessageResponse:
+    """Draft an opening line from the supplied setup. This does not save it.
+
+    Raises:
+        HTTPException: 404 if the topic is missing; 403 if not an instructor;
+            400 if the topic is not in setup; 502 or 503 if the model call fails.
+    """
     topic = await get_instructed_topic(db, teacher, topic_id)
     await _require_setup(topic)
     draft = payload.setup
