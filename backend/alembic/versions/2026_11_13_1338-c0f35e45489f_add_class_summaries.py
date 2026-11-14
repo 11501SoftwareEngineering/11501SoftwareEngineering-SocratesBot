@@ -28,26 +28,7 @@ def upgrade() -> None:
         sa.Column("id", sa.UUID(), nullable=False),
         sa.Column("topic_id", sa.UUID(), nullable=False),
         sa.Column("version", sa.Integer(), nullable=False),
-        sa.Column("status", sa.String(length=16), nullable=False),
-        sa.Column("overview", sa.Text(), nullable=False),
-        sa.Column("viewpoint_summary", sa.Text(), nullable=False),
-        sa.Column("denominator", sa.Integer(), nullable=False),
-        sa.Column("groups", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.Column(
-            "ungrouped_report_ids",
-            postgresql.JSONB(astext_type=sa.Text()),
-            nullable=False,
-        ),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            server_default=sa.text("now()"),
-            nullable=False,
-        ),
-        sa.CheckConstraint(
-            "status IN ('draft', 'reviewed', 'published', 'withdrawn')",
-            name=op.f("ck_class_summaries_status"),
-        ),
+        sa.Column("body", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.ForeignKeyConstraint(
             ["topic_id"],
             ["topics.id"],
@@ -55,28 +36,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_class_summaries")),
-        sa.UniqueConstraint(
-            "topic_id", "version", name="uq_class_summaries_topic_id_version"
-        ),
-    )
-    op.create_index(
-        op.f("ix_class_summaries_topic_id"),
-        "class_summaries",
-        ["topic_id"],
-        unique=False,
-    )
-    op.create_table(
-        "published_summaries",
-        sa.Column("topic_id", sa.UUID(), nullable=False),
-        sa.Column("version", sa.Integer(), nullable=False),
-        sa.Column("body", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["topic_id"],
-            ["topics.id"],
-            name=op.f("fk_published_summaries_topic_id_topics"),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("topic_id", name=op.f("pk_published_summaries")),
+        sa.UniqueConstraint("topic_id", name="uq_class_summaries_topic_id"),
     )
     op.create_table(
         "summary_attempts",
@@ -139,7 +99,5 @@ def downgrade() -> None:
     op.alter_column("sessions", "is_anonymous", server_default=None)
     op.drop_index(op.f("ix_summary_attempts_topic_id"), table_name="summary_attempts")
     op.drop_table("summary_attempts")
-    op.drop_table("published_summaries")
-    op.drop_index(op.f("ix_class_summaries_topic_id"), table_name="class_summaries")
     op.drop_table("class_summaries")
     # ### end Alembic commands ###

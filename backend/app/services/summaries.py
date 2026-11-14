@@ -50,10 +50,10 @@ async def _enqueue(
     summary_runner.schedule(created.id)
 
 
-def _started(topic: Topic, published) -> dict:
+def _started(topic: Topic, published_version: int | None) -> dict:
     return {
         "topic_status": topic.stage,
-        "published_version": None if published is None else published.version,
+        "published_version": published_version,
         "summary": None,
         "preparation_status": GenerationStatus.PENDING.value,
     }
@@ -78,7 +78,7 @@ async def start_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -> d
             status_code=status.HTTP_400_BAD_REQUEST, detail="No ready reports"
         )
     await _enqueue(db, topic.id, bodies)
-    return _started(topic, await summary_crud.published(db, topic.id))
+    return _started(topic, await summary_crud.published_version(db, topic.id))
 
 
 async def read_teacher_summary(
@@ -111,9 +111,12 @@ async def edit_summary(
     """
     topic = await _instructor_topic(db, teacher, topic_id)
     row = await _version(db, topic.id, version)
-    row.overview = overview
-    row.viewpoint_summary = viewpoint_summary
-    row.status = "draft"
+    row.body = {
+        **row.body,
+        "overview": overview,
+        "viewpoint_summary": viewpoint_summary,
+        "status": "draft",
+    }
     await db.commit()
     return {"summary": _draft(row)}
 
@@ -130,15 +133,15 @@ async def review_summary(
     """
     topic = await _instructor_topic(db, teacher, topic_id)
     row = await _version(db, topic.id, version)
-    if row.status != "draft":
+    if row.body.get("status") != "draft":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Version mismatch"
         )
-    row.status = "reviewed"
+    row.body = {**row.body, "status": "reviewed"}
     await db.commit()
     return {
         "version": row.version,
-        "summary_status": row.status,
+        "summary_status": "reviewed",
         "message": "Summary reviewed",
     }
 
@@ -155,22 +158,24 @@ async def publish_summary(
     """
     topic = await _instructor_topic(db, teacher, topic_id)
     row = await _version(db, topic.id, version)
-    if row.status != "reviewed":
+    draft = _draft_dict(row)
+    if draft.get("status") != "reviewed":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Version mismatch or not reviewed",
         )
-    draft = _draft_dict(row)
     names, identifiers = _identity_values(draft, await report_crud_names(db, topic.id))
     if leaked_identifier(draft, names=names, identifiers=identifiers):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Summary contains a name or identifier",
         )
-    await summary_crud.save_published(
-        db, topic_id=topic.id, version=row.version, body=public_summary(draft)
-    )
-    row.status = "published"
+    row.body = {
+        **draft,
+        "published": public_summary(draft),
+        "published_version": row.version,
+        "status": "published",
+    }
     await db.commit()
     return {
         "version": row.version,
@@ -187,13 +192,17 @@ async def withdraw_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -
             403 if the caller does not instruct the course.
     """
     topic = await _instructor_topic(db, teacher, topic_id)
-    if not await summary_crud.clear_published(db, topic.id):
+    row = await summary_crud.latest_summary(db, topic.id)
+    if row is None or not row.body.get("published"):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No published summary"
         )
-    row = await summary_crud.latest_summary(db, topic.id)
-    if row is not None:
-        row.status = "withdrawn"
+    row.body = {
+        **row.body,
+        "published": None,
+        "published_version": None,
+        "status": "withdrawn",
+    }
     await db.commit()
     return {"summary_status": "withdrawn", "message": "Summary withdrawn"}
 
@@ -206,8 +215,7 @@ async def read_published(db: AsyncSession, *, user: User, topic_id: UUID) -> dic
             member of the course.
     """
     topic = await _visible_topic(db, user, topic_id)
-    row = await summary_crud.published(db, topic.id)
-    return {"summary": None if row is None else row.body}
+    return {"summary": await summary_crud.published_document(db, topic.id)}
 
 
 async def report_crud_names(db: AsyncSession, topic_id: UUID):
@@ -218,7 +226,6 @@ async def report_crud_names(db: AsyncSession, topic_id: UUID):
 
 
 async def _teacher_body(db: AsyncSession, topic: Topic) -> dict:
-    published = await summary_crud.published(db, topic.id)
     latest = await summary_crud.latest_summary(db, topic.id)
     attempt = await summary_crud.latest_attempt(db, topic.id)
     summary = (
@@ -228,18 +235,23 @@ async def _teacher_body(db: AsyncSession, topic: Topic) -> dict:
     )
     return {
         "topic_status": topic.stage,
-        "published_version": None if published is None else published.version,
+        "published_version": await summary_crud.published_version(db, topic.id),
         "summary": summary,
         "preparation_status": None if attempt is None else attempt.status,
     }
 
 
 def _draft(row: ClassSummary) -> dict:
+    body = _draft_dict(row)
     return {
         "summary_id": str(row.id),
         "version": row.version,
-        "summary_status": row.status,
-        **_draft_dict(row),
+        "summary_status": body["status"],
+        "overview": body["overview"],
+        "viewpoint_summary": body["viewpoint_summary"],
+        "denominator": body["denominator"],
+        "groups": body["groups"],
+        "ungrouped_report_ids": body["ungrouped_report_ids"],
     }
 
 
@@ -273,12 +285,14 @@ async def _visible_topic(db: AsyncSession, user: User, topic_id: UUID) -> Topic:
 
 
 def _draft_dict(row: ClassSummary) -> dict:
+    body = row.body
     return {
-        "overview": row.overview,
-        "viewpoint_summary": row.viewpoint_summary,
-        "denominator": row.denominator,
-        "groups": row.groups,
-        "ungrouped_report_ids": row.ungrouped_report_ids,
+        "status": body.get("status"),
+        "overview": body.get("overview"),
+        "viewpoint_summary": body.get("viewpoint_summary"),
+        "denominator": body.get("denominator"),
+        "groups": body.get("groups") or [],
+        "ungrouped_report_ids": body.get("ungrouped_report_ids") or [],
     }
 
 
