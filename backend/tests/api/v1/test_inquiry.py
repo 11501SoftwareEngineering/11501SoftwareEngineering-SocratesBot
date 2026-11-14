@@ -74,6 +74,7 @@ def _ready(monkeypatch: pytest.MonkeyPatch, topic, *, instructor_id=None) -> Asy
         return teacher_id == instructor_id
 
     monkeypatch.setattr(course_crud, "is_course_instructor", is_instructor)
+    monkeypatch.setattr(topic_crud, "lock_topic", AsyncMock(return_value=topic))
     monkeypatch.setattr(settings, "OPENAI_API_KEY", type(settings.OPENAI_API_KEY)(KEY))
     return recorded
 
@@ -238,7 +239,7 @@ def test_opening_message_is_not_stored(
     async def complete(
         self, *, instructions: str, material: str, model: str | None = None
     ):
-        return GENERATED
+        return {**GENERATED, "topic": "  ", "core_question": ""}
 
     monkeypatch.setattr(OpenAIChatClient, "complete_json", complete)
 
@@ -250,5 +251,40 @@ def test_opening_message_is_not_stored(
     assert response.status_code == 200
     assert response.json() == {"opening_message": "Where should we start?"}
     assert topic.opening_message is None
+    recorded.assert_not_awaited()
+    course_route_db.commit.assert_not_awaited()
+
+
+def test_refine_stops_when_publish_lands_first(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store)
+    topic = _topic(inquiry_topic="saved topic", core_question="saved question")
+    recorded = _ready(monkeypatch, topic)
+
+    async def published(_db, topic_id):
+        topic.stage = "conversation"
+        return topic
+
+    monkeypatch.setattr(topic_crud, "lock_topic", published)
+
+    async def complete(
+        self, *, instructions: str, material: str, model: str | None = None
+    ):
+        return GENERATED
+
+    monkeypatch.setattr(OpenAIChatClient, "complete_json", complete)
+
+    response = auth_client.post(
+        f"/api/v1/topics/{topic.id}/setup/refine",
+        headers={"Authorization": bearer},
+        json={"feedback": "shorter"},
+    )
+
+    assert response.status_code == 400
+    assert topic.inquiry_topic == "saved topic"
     recorded.assert_not_awaited()
     course_route_db.commit.assert_not_awaited()

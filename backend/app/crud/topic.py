@@ -41,6 +41,17 @@ async def get_topic_by_id(db: AsyncSession, topic_id: UUID) -> Topic | None:
     return await db.get(Topic, topic_id)
 
 
+async def lock_topic(db: AsyncSession, topic_id: UUID) -> Topic | None:
+    """Lock the topic row and reload it. Callers re-check stage after this returns."""
+    statement = (
+        select(Topic)
+        .where(Topic.id == topic_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return (await db.execute(statement)).scalar_one_or_none()
+
+
 async def update_topic(
     db: AsyncSession,
     topic: Topic,
