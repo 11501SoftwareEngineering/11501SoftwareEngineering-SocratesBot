@@ -36,6 +36,16 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     from app.main import app
 
     monkeypatch.setattr(settings, "APP_ENV", "test")
+
+    async def skip_reclaim(*, startup: bool) -> None:
+        return None
+
+    async def skip_watch() -> None:
+        return None
+
+    # This client has no migrated schema. A real start still scans.
+    monkeypatch.setattr("app.main.reclaim_open_attempts", skip_reclaim)
+    monkeypatch.setattr("app.main.watch_leases", skip_watch)
     previous_overrides = app.dependency_overrides.copy()
 
     try:
