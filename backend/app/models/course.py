@@ -1,7 +1,15 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -87,3 +95,33 @@ class CourseInstructor(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
     )
+
+
+class CourseTaPermission(Base):
+    """One granted permission of a course TA (one row per permission)."""
+
+    __tablename__ = "course_ta_permissions"
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["course_id", "user_id"],
+            ["course_memberships.course_id", "course_memberships.user_id"],
+            name="fk_course_ta_permissions_course_id_course_memberships",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            "permission IN "
+            "('edit_topics', 'view_reports', 'edit_summary', 'view_members')",
+            name="permission",
+        ),
+    )
+
+    course_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+    )
+    permission: Mapped[str] = mapped_column(String(32), primary_key=True)
