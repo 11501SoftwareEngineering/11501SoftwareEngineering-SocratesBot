@@ -12,6 +12,7 @@ def ready_effects(stage: str, outcomes: list[str]) -> tuple[str, list[int]]:
 
 
 def validate_summary(payload: dict, labels: dict[str, str]) -> dict:
+    """Return the stored summary body, or raise ValueError."""
     if not isinstance(payload, dict):
         raise ValueError("invalid summary")
     overview = payload.get("overview")
@@ -63,6 +64,7 @@ def validate_summary(payload: dict, labels: dict[str, str]) -> dict:
 
 
 def public_summary(draft: dict) -> dict:
+    """Return the published shape, without report ids inside groups."""
     groups = draft["groups"]
     ungrouped = draft["ungrouped_report_ids"]
     denominator = draft["denominator"] or 0
@@ -93,6 +95,7 @@ def leaked_identifier(
     names: list[str],
     identifiers: list[str],
 ) -> str | None:
+    """Return the first student name or identifier found in the summary text."""
     blob = f"{draft['overview']}\n{draft['viewpoint_summary']}"
     for name in names:
         if name and name in blob:

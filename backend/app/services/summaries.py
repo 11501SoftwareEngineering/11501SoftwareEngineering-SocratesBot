@@ -19,6 +19,13 @@ from app.services.summary_text import leaked_identifier, public_summary
 
 
 async def start_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -> dict:
+    """Start a class summary from ready reports, unless one is already running.
+
+    Raises:
+        HTTPException: 404 if the topic is missing; 403 if the caller does
+            not instruct the course; 400 if the topic is still in setup or
+            there are no ready reports.
+    """
     topic = await _instructor_topic(db, teacher, topic_id)
     if topic.stage == TopicStage.SETUP.value:
         raise HTTPException(
@@ -61,6 +68,12 @@ async def start_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -> d
 async def read_teacher_summary(
     db: AsyncSession, *, teacher: User, topic_id: UUID
 ) -> dict:
+    """Return the instructor view of the latest summary.
+
+    Raises:
+        HTTPException: 404 if the topic is missing; 403 if the caller does
+            not instruct the course.
+    """
     topic = await _instructor_topic(db, teacher, topic_id)
     return await _teacher_body(db, topic)
 
@@ -74,6 +87,12 @@ async def edit_summary(
     overview: str,
     viewpoint_summary: str,
 ) -> dict:
+    """Replace the overview and viewpoint, and set the status back to draft.
+
+    Raises:
+        HTTPException: 404 if the topic or version is missing; 403 if the
+            caller does not instruct the course.
+    """
     topic = await _instructor_topic(db, teacher, topic_id)
     row = await _version(db, topic.id, version)
     row.overview = overview
@@ -86,6 +105,13 @@ async def edit_summary(
 async def review_summary(
     db: AsyncSession, *, teacher: User, topic_id: UUID, version: int
 ) -> dict:
+    """Mark one draft version as reviewed.
+
+    Raises:
+        HTTPException: 404 if the topic or version is missing; 403 if the
+            caller does not instruct the course; 400 if the version is not
+            a draft.
+    """
     topic = await _instructor_topic(db, teacher, topic_id)
     row = await _version(db, topic.id, version)
     if row.status != "draft":
@@ -104,6 +130,13 @@ async def review_summary(
 async def publish_summary(
     db: AsyncSession, *, teacher: User, topic_id: UUID, version: int
 ) -> dict:
+    """Publish a reviewed summary that contains no student identity.
+
+    Raises:
+        HTTPException: 404 if the topic or version is missing; 403 if the
+            caller does not instruct the course; 400 if it is not reviewed
+            or the text contains a name or identifier.
+    """
     topic = await _instructor_topic(db, teacher, topic_id)
     row = await _version(db, topic.id, version)
     if row.status != "reviewed":
@@ -137,6 +170,12 @@ async def publish_summary(
 
 
 async def withdraw_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -> dict:
+    """Withdraw the published summary for this topic.
+
+    Raises:
+        HTTPException: 404 if the topic is missing or nothing is published;
+            403 if the caller does not instruct the course.
+    """
     topic = await _instructor_topic(db, teacher, topic_id)
     if not await summary_crud.clear_published(db, topic.id):
         raise HTTPException(
@@ -150,6 +189,12 @@ async def withdraw_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -
 
 
 async def read_published(db: AsyncSession, *, user: User, topic_id: UUID) -> dict:
+    """Return the published summary for a course member.
+
+    Raises:
+        HTTPException: 404 if the topic is missing or the caller is not a
+            member of the course.
+    """
     topic = await db.get(Topic, topic_id)
     if topic is None:
         raise HTTPException(
@@ -170,6 +215,7 @@ async def read_published(db: AsyncSession, *, user: User, topic_id: UUID) -> dic
 
 
 async def report_crud_names(db: AsyncSession, topic_id: UUID):
+    """Return this topic's dialogues with each student's display name."""
     from app.crud import report as report_crud
 
     return await report_crud.topic_dialogues(db, topic_id)
