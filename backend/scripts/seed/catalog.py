@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from uuid import UUID
 
-from app.core.enums import UserRole
+from app.core.enums import TaPermission, UserRole
 
 SHARED_PASSWORD = "password1"
 
@@ -33,6 +33,11 @@ ACCOUNT_TEACHER = SeedAccount(
     name="Dev Teacher",
     role=UserRole.TEACHER,
 )
+ACCOUNT_TA = SeedAccount(
+    account_id="dev-ta",
+    name="Dev TA",
+    role=UserRole.USER,
+)
 ACCOUNT_ADMIN = SeedAccount(
     account_id="dev-admin",
     name="Dev Admin",
@@ -42,7 +47,15 @@ ACCOUNT_ADMIN = SeedAccount(
 CORE_ACCOUNTS: tuple[SeedAccount, ...] = (
     ACCOUNT_STUDENT,
     ACCOUNT_TEACHER,
+    ACCOUNT_TA,
     ACCOUNT_ADMIN,
+)
+
+# Leave view_reports / edit_summary off so both allowed and denied paths can be
+# tried with the same account.
+TA_PERMISSIONS: tuple[TaPermission, ...] = (
+    TaPermission.EDIT_TOPICS,
+    TaPermission.VIEW_MEMBERS,
 )
 
 DEFAULT_PACKS: tuple[str, ...] = ("auth", "course_graph")
@@ -56,6 +69,7 @@ def credential_summary_lines() -> list[str]:
         f"password (all): {SHARED_PASSWORD}",
         f"student: {ACCOUNT_STUDENT.account_id}",
         f"teacher: {ACCOUNT_TEACHER.account_id}",
+        f"ta:      {ACCOUNT_TA.account_id}  ({', '.join(TA_PERMISSIONS)})",
         f"admin:   {ACCOUNT_ADMIN.account_id}  (add to SUPER_ADMIN_ACCOUNTS)",
         f"invitation_code: {INVITATION_CODE}",
         f"course_id: {COURSE_ID}",

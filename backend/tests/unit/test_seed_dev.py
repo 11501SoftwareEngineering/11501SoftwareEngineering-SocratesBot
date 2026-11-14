@@ -10,6 +10,7 @@ import pytest
 from app.core.enums import UserRole
 from scripts.seed.catalog import (
     ACCOUNT_ADMIN,
+    ACCOUNT_TA,
     CORE_ACCOUNTS,
     SHARED_PASSWORD,
     TOPIC_ID,
@@ -85,6 +86,8 @@ def test_catalog_shared_password_and_topic_id() -> None:
     assert ACCOUNT_ADMIN.account_id in summary
     assert SHARED_PASSWORD in summary
     assert str(TOPIC_ID) in summary
+    assert ACCOUNT_TA.role is UserRole.USER
+    assert ACCOUNT_TA.account_id in summary
 
 
 def test_course_graph_rejects_invitation_collision(
