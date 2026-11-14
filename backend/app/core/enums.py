@@ -19,3 +19,12 @@ class CourseRole(StrEnum):
     TEACHER = "teacher"
     TA = "ta"
     STUDENT = "student"
+
+
+class TaPermission(StrEnum):
+    """Per-course TA permissions (declaration order = response order)."""
+
+    EDIT_TOPICS = "edit_topics"
+    VIEW_REPORTS = "view_reports"
+    EDIT_SUMMARY = "edit_summary"
+    VIEW_MEMBERS = "view_members"
