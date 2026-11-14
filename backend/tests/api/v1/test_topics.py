@@ -203,6 +203,34 @@ def test_teacher_topic_list_has_counts(
     ]
 
 
+def test_ta_topic_list_has_counts(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "assist")
+    course = _course()
+    _patch_role(monkeypatch, "TA", course)
+    monkeypatch.setattr(
+        topic_crud,
+        "list_topics_with_completed_count",
+        AsyncMock(return_value=[(_topic(course.id), 1)]),
+    )
+    monkeypatch.setattr(course_crud, "count_active_students", AsyncMock(return_value=4))
+
+    response = auth_client.get(
+        f"/api/v1/courses/{course.id}/topics", headers={"Authorization": bearer}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["my_role"] == "ta"
+    assert "my_permissions" not in body
+    assert body["topics"][0]["answered_count"] == 1
+    assert body["topics"][0]["student_count"] == 4
+
+
 @pytest.mark.parametrize("exists", [True, False])
 def test_topic_list_non_member_or_missing_is_404(
     exists: bool,
