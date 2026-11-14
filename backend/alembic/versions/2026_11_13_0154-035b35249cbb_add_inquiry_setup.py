@@ -1,7 +1,7 @@
 """add inquiry setup
 
 Revision ID: 035b35249cbb
-Revises: 9dc720796bec
+Revises: 5675a5896ad2
 Create Date: 2026-11-13 01:54:34.353941+08:00
 
 """
@@ -15,7 +15,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "035b35249cbb"
-down_revision: str | Sequence[str] | None = "9dc720796bec"
+down_revision: str | Sequence[str] | None = "5675a5896ad2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
