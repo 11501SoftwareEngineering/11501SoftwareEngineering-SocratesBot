@@ -738,6 +738,92 @@ def test_list_members_errors(
     assert response.status_code == expected
 
 
+def test_list_members_teacher_sees_ta_permissions(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
+    course = _course()
+    monkeypatch.setattr(course_crud, "get_course_by_id", AsyncMock(return_value=course))
+    monkeypatch.setattr(
+        course_crud, "is_course_instructor", AsyncMock(return_value=True)
+    )
+    student_row = _member_row("alice")
+    ta_row = _member_row("bob", "TA")
+    monkeypatch.setattr(
+        course_crud,
+        "list_course_members",
+        AsyncMock(return_value=[student_row, ta_row]),
+    )
+    permissions_mock = AsyncMock(
+        return_value={ta_row[0].id: ["view_members", "edit_topics"]}
+    )
+    monkeypatch.setattr(course_crud, "list_ta_permissions", permissions_mock)
+
+    response = auth_client.get(
+        f"/api/v1/courses/{course.id}/members", headers={"Authorization": bearer}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [(row["role"], row["permissions"]) for row in body] == [
+        ("student", []),
+        ("ta", ["edit_topics", "view_members"]),
+    ]
+    permissions_mock.assert_awaited_once_with(
+        course_route_db, course_id=course.id, user_ids=[ta_row[0].id]
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "granted", "expected"),
+    [
+        ("?role=student", ["view_members"], 200),
+        ("?role=student", ["edit_topics"], 403),
+        ("?role=student", [], 403),
+        ("?role=ta", ["view_members"], 403),
+        ("", ["view_members"], 403),
+    ],
+)
+def test_list_members_as_ta(
+    query: str,
+    granted: list[str],
+    expected: int,
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "assist")
+    course = _course()
+    monkeypatch.setattr(course_crud, "get_course_by_id", AsyncMock(return_value=course))
+    monkeypatch.setattr(course_crud, "get_course_role", AsyncMock(return_value="TA"))
+    monkeypatch.setattr(
+        course_crud, "is_course_instructor", AsyncMock(return_value=False)
+    )
+    monkeypatch.setattr(
+        course_crud, "get_ta_permissions", AsyncMock(return_value=granted)
+    )
+    list_mock = AsyncMock(return_value=[_member_row("alice")])
+    monkeypatch.setattr(course_crud, "list_course_members", list_mock)
+
+    response = auth_client.get(
+        f"/api/v1/courses/{course.id}/members{query}",
+        headers={"Authorization": bearer},
+    )
+
+    assert response.status_code == expected
+    if expected == 200:
+        assert [row["account_id"] for row in response.json()] == ["alice"]
+        list_mock.assert_awaited_once_with(
+            course_route_db, course.id, roles=("STUDENT",)
+        )
+    else:
+        list_mock.assert_not_awaited()
+
+
 def test_old_add_student_endpoint_is_removed(
     auth_client: TestClient, store: FakeStore
 ) -> None:

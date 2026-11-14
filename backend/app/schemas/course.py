@@ -76,7 +76,7 @@ class CourseMemberListItem(BaseModel):
     name: str = Field(examples=["Alice"])
     role: CourseRole = Field(examples=[CourseRole.STUDENT])
     joined_at: datetime = Field(examples=[_EXAMPLE_JOINED_AT])
-    permissions: list[str] = Field(
+    permissions: list[TaPermission] = Field(
         default_factory=list,
         description="TA permissions; empty for students",
     )

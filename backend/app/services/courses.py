@@ -354,15 +354,36 @@ async def leave_course(db: AsyncSession, user: User, course_id: UUID) -> None:
 async def list_course_members(
     db: AsyncSession, user: User, course_id: UUID, role: CourseRole | None
 ) -> list[CourseMemberListItem]:
-    """List students and/or TAs. Teacher only for now (TA ``view_members`` later)."""
-    await require_course_teacher(db, user, course_id)
+    """List students and/or TAs.
+
+    ``role=student`` is open to the teacher and TAs with ``view_members``;
+    listing TAs (``role=ta`` or no filter) is teacher only.
+
+    Raises:
+        HTTPException: 404 if the course is missing; 403 if not allowed.
+    """
     if role is CourseRole.STUDENT:
-        db_roles = (course_crud.MEMBERSHIP_STUDENT,)
-    elif role is CourseRole.TA:
-        db_roles = (course_crud.MEMBERSHIP_TA,)
+        await require_course_teacher_or_ta(
+            db, user, course_id, TaPermission.VIEW_MEMBERS
+        )
+        db_roles: tuple[str, ...] = (course_crud.MEMBERSHIP_STUDENT,)
     else:
-        db_roles = (course_crud.MEMBERSHIP_STUDENT, course_crud.MEMBERSHIP_TA)
+        await require_course_teacher(db, user, course_id)
+        db_roles = (
+            (course_crud.MEMBERSHIP_TA,)
+            if role is CourseRole.TA
+            else (course_crud.MEMBERSHIP_STUDENT, course_crud.MEMBERSHIP_TA)
+        )
     rows = await course_crud.list_course_members(db, course_id, roles=db_roles)
+    ta_permissions = await course_crud.list_ta_permissions(
+        db,
+        course_id=course_id,
+        user_ids=[
+            member.id
+            for member, membership in rows
+            if membership.role == course_crud.MEMBERSHIP_TA
+        ],
+    )
     return [
         CourseMemberListItem(
             user_id=member.id,
@@ -370,7 +391,7 @@ async def list_course_members(
             name=member.name,
             role=_ROLE_BY_DB_VALUE[membership.role],
             joined_at=membership.joined_at,
-            permissions=[],
+            permissions=sort_permissions(ta_permissions.get(member.id, [])),
         )
         for member, membership in rows
     ]

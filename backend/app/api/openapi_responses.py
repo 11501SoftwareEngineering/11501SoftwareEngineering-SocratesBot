@@ -222,9 +222,15 @@ COURSE_MEMBER_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
-    403: json_detail_example(
-        "Course teacher required",
-        "Course teacher required",
+    403: json_detail_examples(
+        (
+            "role=student needs the course teacher or a TA with view_members; "
+            "role=ta or no filter needs the course teacher"
+        ),
+        {
+            "students": "Course teacher or TA with view_members permission required",
+            "tas": "Course teacher required",
+        },
     ),
     404: json_detail_example(
         "Course not found",
