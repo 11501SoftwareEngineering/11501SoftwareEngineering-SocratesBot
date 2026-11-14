@@ -26,6 +26,29 @@ def test_lifespan_seed_omits_credential_summary() -> None:
     assert "print_summary=False" in inspect.getsource(main.lifespan)
 
 
+def test_test_env_lifespan_does_not_scan_leases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """API tests use an unmigrated database, so startup must not query attempts."""
+    from app.core.config import settings
+    from app.main import app, lifespan
+
+    monkeypatch.setattr(settings, "APP_ENV", "test")
+
+    async def fail_if_called(*, startup: bool) -> None:
+        raise AssertionError(startup)
+
+    monkeypatch.setattr("app.main.reclaim_open_attempts", fail_if_called)
+    monkeypatch.setattr("app.main.close_redis", AsyncMock())
+    monkeypatch.setattr("app.main.engine", MagicMock(dispose=AsyncMock()))
+
+    async def run() -> None:
+        async with lifespan(app):
+            return None
+
+    asyncio.run(run())
+
+
 def test_run_seed_db_does_not_write_config(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
