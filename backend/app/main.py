@@ -1,6 +1,7 @@
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
@@ -18,6 +19,7 @@ from app.core.migration import run_migrations
 from app.core.redis import close_redis
 from app.core.validation_errors import sanitize_validation_errors
 from app.middleware import CsrfMiddleware, RequestLoggingMiddleware
+from app.services.attempt_lease import reclaim_open_attempts, watch_leases
 from scripts.seed.runner import run_seed_db
 
 logging.basicConfig(
@@ -35,9 +37,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if settings.SEED_DEV_DATA:
             # No credential dump on hot reload; use `make seed` for the summary.
             await run_seed_db(print_summary=False)
-    yield
-    await close_redis()
-    await engine.dispose()
+    await reclaim_open_attempts(startup=True)
+    watcher = asyncio.create_task(watch_leases())
+    try:
+        yield
+    finally:
+        watcher.cancel()
+        with suppress(asyncio.CancelledError):
+            await watcher
+        await close_redis()
+        await engine.dispose()
 
 
 app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)

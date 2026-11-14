@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from contextlib import suppress
 from uuid import UUID
 
 from app.core.database import AsyncSessionLocal
 from app.crud import message as message_crud
 from app.crud import report as report_crud
+from app.services.attempt_lease import refresh
 from app.services.dialogue import reply_material
 from app.services.model_client import ModelCallError, OpenAIChatClient
 from app.services.report_text import validate_report
@@ -98,6 +100,10 @@ _SCHEMA: dict = {
 }
 
 
+def live_attempts() -> set[UUID]:
+    return set(_live)
+
+
 def schedule(attempt_id: UUID) -> None:
     """Start report preparation on a daemon thread."""
     thread = threading.Thread(
@@ -111,10 +117,14 @@ def schedule(attempt_id: UUID) -> None:
 async def run_report(attempt_id: UUID) -> None:
     """Prepare one report attempt and store it as ready or failed."""
     _live.add(attempt_id)
+    refresher: asyncio.Task[None] | None = None
     try:
         session_id = await _begin(attempt_id)
         if session_id is None:
             return
+        refresher = asyncio.create_task(
+            refresh(report_crud.extend_lease, attempt_id, _live)
+        )
         try:
             material = await _material(session_id)
             parsed = await client.complete_object(
@@ -129,6 +139,10 @@ async def run_report(attempt_id: UUID) -> None:
             return
         await _ready(attempt_id, body)
     finally:
+        if refresher is not None:
+            refresher.cancel()
+            with suppress(asyncio.CancelledError):
+                await refresher
         _live.discard(attempt_id)
 
 
