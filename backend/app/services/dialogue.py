@@ -57,37 +57,32 @@ def guard_reply(
         raise ReplyRejected("Turn cap reached")
 
 
-def apply_end(
-    action: str,
-    *,
-    outcome: str,
-    status_value: str,
-    goal_reached: bool,
-) -> tuple[str, str, bool, bool, str]:
-    """Return outcome, status, goal_reached, awaiting_end_consent, message."""
-    if outcome != DialogueOutcome.OPEN.value:
-        raise ReplyRejected("Dialogue has already ended")
-    if action == "complete":
-        if not goal_reached:
-            raise ReplyRejected(
-                "Inquiry goal is not met",
-                status.HTTP_409_CONFLICT,
-            )
-        return (
-            DialogueOutcome.COMPLETED.value,
-            SessionStatus.COMPLETED.value,
-            True,
-            False,
-            "Dialogue completed",
-        )
-    if action == "continue":
-        return (
-            DialogueOutcome.OPEN.value,
-            status_value,
-            False,
-            False,
-            "Dialogue continues",
-        )
+_End = tuple[str, str, bool, bool, str]
+
+
+def _complete(goal_reached: bool) -> _End:
+    if not goal_reached:
+        raise ReplyRejected("Inquiry goal is not met", status.HTTP_409_CONFLICT)
+    return (
+        DialogueOutcome.COMPLETED.value,
+        SessionStatus.COMPLETED.value,
+        True,
+        False,
+        "Dialogue completed",
+    )
+
+
+def _continue(status_value: str) -> _End:
+    return (
+        DialogueOutcome.OPEN.value,
+        status_value,
+        False,
+        False,
+        "Dialogue continues",
+    )
+
+
+def _abandon() -> _End:
     return (
         DialogueOutcome.ABANDONED.value,
         SessionStatus.IN_PROGRESS.value,
@@ -95,6 +90,23 @@ def apply_end(
         False,
         "Dialogue abandoned",
     )
+
+
+def apply_end(
+    action: str,
+    *,
+    outcome: str,
+    status_value: str,
+    goal_reached: bool,
+) -> _End:
+    """Return outcome, status, goal_reached, awaiting_end_consent, message."""
+    if outcome != DialogueOutcome.OPEN.value:
+        raise ReplyRejected("Dialogue has already ended")
+    if action == "complete":
+        return _complete(goal_reached)
+    if action == "continue":
+        return _continue(status_value)
+    return _abandon()
 
 
 def reply_material(topic: Topic, messages: list[DialogueMessage]) -> str:
@@ -111,6 +123,10 @@ def reply_material(topic: Topic, messages: list[DialogueMessage]) -> str:
     for message in messages:
         lines.append(f"{message.sender}: {message.content}")
     return "\n".join(lines)
+
+
+def _turn_count(messages: list[DialogueMessage]) -> int:
+    return sum(message.sender == "student" for message in messages)
 
 
 def _history(
@@ -130,10 +146,62 @@ def _history(
         ],
         session_status=session.outcome,
         max_turns=topic.max_turns,
-        completed_turns=sum(message.sender == "student" for message in messages),
+        completed_turns=_turn_count(messages),
         goal_reached=session.goal_reached,
         awaiting_end_consent=session.awaiting_end_consent,
     )
+
+
+def _stream(
+    *,
+    message_id: UUID,
+    text: str,
+    completed_turns: int,
+    is_completed: bool,
+    awaiting_end_consent: bool,
+) -> StreamDone:
+    return StreamDone(
+        message_id=message_id,
+        text=text,
+        completed_turns=completed_turns,
+        is_completed=is_completed,
+        awaiting_end_consent=awaiting_end_consent,
+    )
+
+
+def _rejected(exc: ReplyRejected) -> HTTPException:
+    return HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+
+def _model_http(exc: ModelCallError) -> HTTPException:
+    code = (
+        status.HTTP_503_SERVICE_UNAVAILABLE
+        if exc.status_code in {429, 503}
+        else status.HTTP_502_BAD_GATEWAY
+    )
+    return HTTPException(status_code=code, detail="Model call failed")
+
+
+async def _owned(
+    db: AsyncSession, *, user_id: UUID, session_id: UUID
+) -> tuple[Session, Topic, list[DialogueMessage]]:
+    loaded = await message_crud.load_owned_dialogue(
+        db, session_id=session_id, user_id=user_id
+    )
+    if loaded is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
+    return loaded
+
+
+def _hold(session_id: UUID) -> None:
+    if session_id in _BUSY:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Another reply is in progress",
+        )
+    _BUSY.add(session_id)
 
 
 def _saved_reply(
@@ -150,6 +218,45 @@ def _saved_reply(
     return None
 
 
+async def _ask_and_store(
+    db: AsyncSession,
+    client: ModelClient,
+    *,
+    session_id: UUID,
+    topic: Topic,
+    messages: list[DialogueMessage],
+    content: str,
+    request_id: UUID,
+) -> StreamDone:
+    try:
+        text, goal_reached = await client.complete_reply(
+            instructions=REPLY_INSTRUCTIONS,
+            material=reply_material(topic, messages),
+        )
+        message_id = await message_crud.save_exchange(
+            db,
+            session_id=session_id,
+            content=content,
+            request_id=request_id,
+            reply=text,
+            goal_reached=goal_reached,
+        )
+        await db.commit()
+    except ModelCallError as exc:
+        await db.rollback()
+        raise _model_http(exc) from exc
+    except Exception:
+        await db.rollback()
+        raise
+    return _stream(
+        message_id=message_id,
+        text=text,
+        completed_turns=_turn_count(messages) + 1,
+        is_completed=False,
+        awaiting_end_consent=goal_reached,
+    )
+
+
 async def read_history(
     db: AsyncSession,
     *,
@@ -161,16 +268,7 @@ async def read_history(
     Raises:
         HTTPException: 404 if the session is missing or belongs to someone else.
     """
-    loaded = await message_crud.load_owned_dialogue(
-        db,
-        session_id=session_id,
-        user_id=user_id,
-    )
-    if loaded is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
-        )
-    session, topic, messages = loaded
+    session, topic, messages = await _owned(db, user_id=user_id, session_id=session_id)
     return _history(session, topic, messages)
 
 
@@ -190,22 +288,13 @@ async def send_reply(
             or the turn cap is spent; 409 if another reply is in progress;
             502 or 503 if the model call fails.
     """
-    loaded = await message_crud.load_owned_dialogue(
-        db,
-        session_id=session_id,
-        user_id=user_id,
-    )
-    if loaded is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
-        )
-    session, topic, messages = loaded
+    session, topic, messages = await _owned(db, user_id=user_id, session_id=session_id)
     saved = _saved_reply(messages, request_id)
     if saved is not None:
-        return StreamDone(
+        return _stream(
             message_id=saved.id,
             text=saved.content,
-            completed_turns=sum(message.sender == "student" for message in messages),
+            completed_turns=_turn_count(messages),
             is_completed=session.outcome == DialogueOutcome.COMPLETED.value,
             awaiting_end_consent=session.awaiting_end_consent,
         )
@@ -213,52 +302,24 @@ async def send_reply(
         guard_reply(
             stage=topic.stage,
             outcome=session.outcome,
-            completed_turns=sum(message.sender == "student" for message in messages),
+            completed_turns=_turn_count(messages),
             max_turns=topic.max_turns,
         )
     except ReplyRejected as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
-    if session_id in _BUSY:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Another reply is in progress",
-        )
-    _BUSY.add(session_id)
+        raise _rejected(exc) from exc
+    _hold(session_id)
     try:
-        text, goal_reached = await client.complete_reply(
-            instructions=REPLY_INSTRUCTIONS,
-            material=reply_material(topic, messages),
-        )
-        message_id = await message_crud.save_exchange(
+        return await _ask_and_store(
             db,
+            client,
             session_id=session_id,
+            topic=topic,
+            messages=messages,
             content=content,
             request_id=request_id,
-            reply=text,
-            goal_reached=goal_reached,
         )
-        await db.commit()
-    except ModelCallError as exc:
-        await db.rollback()
-        code = (
-            status.HTTP_503_SERVICE_UNAVAILABLE
-            if exc.status_code in {429, 503}
-            else status.HTTP_502_BAD_GATEWAY
-        )
-        raise HTTPException(status_code=code, detail="Model call failed") from exc
-    except Exception:
-        await db.rollback()
-        raise
     finally:
         _BUSY.discard(session_id)
-    completed_turns = sum(message.sender == "student" for message in messages) + 1
-    return StreamDone(
-        message_id=message_id,
-        text=text,
-        completed_turns=completed_turns,
-        is_completed=False,
-        awaiting_end_consent=goal_reached,
-    )
 
 
 async def end_dialogue(
@@ -274,16 +335,9 @@ async def end_dialogue(
         HTTPException: 404 if the session is missing; 400 if it has already
             ended; 409 if complete is requested before the goal is met.
     """
-    loaded = await message_crud.load_owned_dialogue(
-        db,
-        session_id=session_id,
-        user_id=user_id,
+    session, _topic, _messages = await _owned(
+        db, user_id=user_id, session_id=session_id
     )
-    if loaded is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
-        )
-    session, _topic, _messages = loaded
     try:
         outcome, status_value, goal_reached, awaiting, message = apply_end(
             action,
@@ -292,7 +346,7 @@ async def end_dialogue(
             goal_reached=session.goal_reached,
         )
     except ReplyRejected as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        raise _rejected(exc) from exc
     await message_crud.save_end(
         db,
         session_id=session_id,
