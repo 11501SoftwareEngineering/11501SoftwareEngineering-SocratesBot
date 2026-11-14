@@ -36,6 +36,7 @@ def visible_report(
 
 
 def validate_report(payload: dict) -> dict:
+    """Return the stored report body, or raise ValueError."""
     if not isinstance(payload, dict):
         raise ValueError("invalid report")
     summary = payload.get("viewpoint_summary")
@@ -77,6 +78,7 @@ def student_report(
     topic_id: str,
     completed_turns: int,
 ) -> dict:
+    """Shape one report attempt for the student read."""
     report = None
     if body is not None and report_id is not None:
         report = {

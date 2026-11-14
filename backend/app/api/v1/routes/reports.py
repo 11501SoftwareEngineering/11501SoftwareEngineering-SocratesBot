@@ -1,3 +1,5 @@
+"""Personal report and teaching-report routes."""
+
 from typing import Annotated
 from uuid import UUID
 
@@ -16,6 +18,7 @@ async def read_student_report(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    """Return this student's own report."""
     return await report_service.read_student_report(
         db, user_id=current_user.id, session_id=sessionId
     )
@@ -27,6 +30,7 @@ async def start_student_report(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    """Start this student's report, or return the one already running."""
     return await report_service.start_student_report(
         db, user_id=current_user.id, session_id=sessionId
     )
@@ -38,6 +42,7 @@ async def read_teaching_reports(
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    """Return this topic's per-student reports for an instructor."""
     return await report_service.read_teaching_reports(
         db, teacher=teacher, topic_id=topicId
     )
@@ -50,6 +55,7 @@ async def retry_teaching_report(
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict:
+    """Start another report attempt for one student's completed dialogue."""
     return await report_service.start_teacher_retry(
         db, teacher=teacher, topic_id=topicId, session_id=sessionId
     )

@@ -99,6 +99,7 @@ _SCHEMA: dict = {
 
 
 def schedule(attempt_id: UUID) -> None:
+    """Start report preparation on a daemon thread."""
     thread = threading.Thread(
         target=lambda: asyncio.run(run_report(attempt_id)),
         name=f"report-{attempt_id}",
@@ -108,6 +109,7 @@ def schedule(attempt_id: UUID) -> None:
 
 
 async def run_report(attempt_id: UUID) -> None:
+    """Prepare one report attempt and store it as ready or failed."""
     _live.add(attempt_id)
     try:
         session_id = await _begin(attempt_id)
