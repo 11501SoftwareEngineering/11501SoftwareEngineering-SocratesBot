@@ -284,18 +284,13 @@ async def get_ta_permissions(
     return list((await db.scalars(statement)).all())
 
 
-async def _insert_ta_permissions(
-    db: AsyncSession,
-    *,
-    course_id: UUID,
-    user_id: UUID,
-    permissions: Iterable[str],
+def _add_ta_permission(
+    db: AsyncSession, *, course_id: UUID, user_id: UUID, permission: str
 ) -> None:
-    db.add_all(
-        CourseTaPermission(course_id=course_id, user_id=user_id, permission=p)
-        for p in permissions
+    """Stage one TA permission row; the caller flushes."""
+    db.add(
+        CourseTaPermission(course_id=course_id, user_id=user_id, permission=permission)
     )
-    await db.flush()
 
 
 async def _delete_ta_permissions(
@@ -314,13 +309,14 @@ async def promote_to_ta(
 ) -> None:
     """Turn a student membership into a TA one (same row keeps its history)."""
     membership.role = MEMBERSHIP_TA
+    for permission in permissions:
+        _add_ta_permission(
+            db,
+            course_id=membership.course_id,
+            user_id=membership.user_id,
+            permission=permission,
+        )
     await db.flush()
-    await _insert_ta_permissions(
-        db,
-        course_id=membership.course_id,
-        user_id=membership.user_id,
-        permissions=permissions,
-    )
 
 
 async def set_ta_permissions(
@@ -328,9 +324,11 @@ async def set_ta_permissions(
 ) -> None:
     """Replace a TA's permissions with ``permissions``."""
     await _delete_ta_permissions(db, course_id=course_id, user_id=user_id)
-    await _insert_ta_permissions(
-        db, course_id=course_id, user_id=user_id, permissions=permissions
-    )
+    for permission in permissions:
+        _add_ta_permission(
+            db, course_id=course_id, user_id=user_id, permission=permission
+        )
+    await db.flush()
 
 
 async def demote_to_student(db: AsyncSession, membership: CourseMembership) -> None:
