@@ -70,7 +70,7 @@ def test_soft_leave_blocks_invite_rejoin_but_crud_can_reenroll() -> None:
             assert membership is not None
             assert membership.left_at is not None
             assert (
-                await session_crud.is_course_student(
+                await session_crud.is_course_member(
                     db, user_id=student.id, course_id=course.id
                 )
                 is False
