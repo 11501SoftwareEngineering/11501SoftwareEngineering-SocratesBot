@@ -23,6 +23,12 @@ _NOT_COMPLETED = "Dialogue is not completed"
 async def read_student_report(
     db: AsyncSession, *, user_id: UUID, session_id: UUID
 ) -> dict:
+    """Return the caller's report after the dialogue is completed.
+
+    Raises:
+        HTTPException: 404 if the session or report is missing; 409 if the
+            dialogue is not completed.
+    """
     session = await report_crud.owned_session(
         db, session_id=session_id, user_id=user_id
     )
@@ -43,6 +49,12 @@ async def read_student_report(
 async def start_student_report(
     db: AsyncSession, *, user_id: UUID, session_id: UUID
 ) -> dict:
+    """Start the caller's report, or return the attempt already stored.
+
+    Raises:
+        HTTPException: 404 if the session is missing; 409 if the dialogue
+            is not completed.
+    """
     session = await report_crud.owned_session(
         db, session_id=session_id, user_id=user_id
     )
@@ -56,6 +68,13 @@ async def start_student_report(
 async def start_teacher_retry(
     db: AsyncSession, *, teacher: User, topic_id: UUID, session_id: UUID
 ) -> dict:
+    """Start another report for one completed dialogue on this topic.
+
+    Raises:
+        HTTPException: 404 if the topic or session is missing; 403 if the
+            caller does not instruct the course; 409 if the dialogue is
+            not completed.
+    """
     topic = await _instructor_topic(db, teacher, topic_id)
     session = await db.get(Session, session_id)
     if session is None or session.topic_id != topic.id:
@@ -68,6 +87,12 @@ async def start_teacher_retry(
 async def read_teaching_reports(
     db: AsyncSession, *, teacher: User, topic_id: UUID
 ) -> dict:
+    """Return ready reports for this topic, with the student's name.
+
+    Raises:
+        HTTPException: 404 if the topic is missing; 403 if the caller does
+            not instruct the course.
+    """
     topic = await _instructor_topic(db, teacher, topic_id)
     dialogues = await report_crud.topic_dialogues(db, topic.id)
     attempts = await report_crud.list_for_sessions(
