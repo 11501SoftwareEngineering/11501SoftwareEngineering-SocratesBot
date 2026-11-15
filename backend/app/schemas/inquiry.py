@@ -8,7 +8,6 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.enums import AgeBand
-from app.core.locales import SUPPORTED_LOCALES
 
 AgeBandValue = Literal["13-15", "16-18", "university_plus"]
 TurnCap = Literal[5, 10, 15]
@@ -59,13 +58,6 @@ class InquiryFields(BaseModel):
         return cleaned or "unspecified"
 
 
-def _supported_language(value: str) -> str:
-    cleaned = value.strip()
-    if cleaned not in SUPPORTED_LOCALES:
-        raise ValueError("invalid language")
-    return cleaned
-
-
 def _legal_limits(setup: InquiryFields) -> None:
     band = setup.age_band
     turns = setup.max_turns
@@ -79,7 +71,6 @@ class InquirySetupResponse(BaseModel):
     topic_id: UUID
     course_id: UUID
     topic_status: str
-    opening_message: str | None = None
     model_id: str | None = None
     setup: InquiryFields
 
@@ -100,16 +91,9 @@ class SaveInquiryRequest(BaseModel):
 class CreateInquiryTopicRequest(BaseModel):
     age_band: AgeBandValue
     max_turns: TurnCap
-    content_language: str
-    model_id: str = Field(min_length=1, max_length=128)
     course_description: str = Field(min_length=1, max_length=6000)
 
-    @field_validator("content_language")
-    @classmethod
-    def language_must_be_supported(cls, value: str) -> str:
-        return _supported_language(value)
-
-    @field_validator("model_id", "course_description")
+    @field_validator("course_description")
     @classmethod
     def required_text(cls, value: str) -> str:
         cleaned = value.strip()
@@ -119,6 +103,7 @@ class CreateInquiryTopicRequest(BaseModel):
 
 
 class RefineInquiryRequest(BaseModel):
+    setup: InquiryFields
     feedback: str = Field(min_length=1, max_length=_TEXT)
 
     @field_validator("feedback")
@@ -128,6 +113,11 @@ class RefineInquiryRequest(BaseModel):
         if not cleaned:
             raise ValueError("feedback is blank")
         return cleaned
+
+    @model_validator(mode="after")
+    def limits_are_legal(self) -> Self:
+        _legal_limits(self.setup)
+        return self
 
 
 class OpeningMessageRequest(BaseModel):

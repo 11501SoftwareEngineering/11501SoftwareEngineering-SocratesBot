@@ -78,57 +78,84 @@ def _ready(monkeypatch: pytest.MonkeyPatch, topic, *, instructor_id=None) -> Asy
     return recorded
 
 
-def test_publish_rejects_blank_topic_and_bad_age(
+def test_publish_stores_the_screen_and_rejects_an_incomplete_one(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bearer, _ = _login(auth_client, store)
-    topic = _topic(
-        inquiry_topic="   ",
-        core_question="Why?",
-        age_band="13-15",
-        max_turns=10,
-    )
-    _ready(monkeypatch, topic)
+    topic = _topic(inquiry_topic="old topic", core_question="old question")
+    recorded = _ready(monkeypatch, topic)
 
     missing_topic = auth_client.post(
         f"/api/v1/topics/{topic.id}/publish",
         headers={"Authorization": bearer},
+        json={
+            "setup": {
+                "age_band": "13-15",
+                "max_turns": 10,
+                "core_question": "Why?",
+            }
+        },
     )
-    assert missing_topic.status_code == 409
+    assert missing_topic.status_code == 422
     assert missing_topic.json()["detail"] == "Incomplete setup: topic"
     assert topic.stage == "setup"
 
-    topic.inquiry_topic = "Cities"
-    topic.age_band = None
-    bad_age = auth_client.post(
+    missing_age = auth_client.post(
         f"/api/v1/topics/{topic.id}/publish",
         headers={"Authorization": bearer},
+        json={
+            "setup": {
+                "max_turns": 10,
+                "topic": "Cities",
+                "core_question": "Why?",
+            }
+        },
     )
-    assert bad_age.status_code == 409
-    assert bad_age.json()["detail"] == "Incomplete setup: age_band"
-    rejected = auth_client.put(
-        f"/api/v1/topics/{topic.id}/setup",
-        headers={"Authorization": bearer},
-        json={"setup": {"age_band": "18+", "topic": "Cities", "core_question": "Why?"}},
-    )
-    assert rejected.status_code == 422
-    assert topic.stage == "setup"
+    assert missing_age.status_code == 422
+    assert missing_age.json()["detail"] == "Incomplete setup: age_band"
 
-    topic.age_band = "18+"
-    topic.inquiry_topic = "Cities"
-    topic.core_question = "Why?"
-    topic.max_turns = 10
     illegal_age = auth_client.post(
         f"/api/v1/topics/{topic.id}/publish",
         headers={"Authorization": bearer},
+        json={
+            "setup": {
+                "age_band": "18+",
+                "max_turns": 10,
+                "topic": "Cities",
+                "core_question": "Why?",
+            }
+        },
     )
-    assert illegal_age.status_code == 409
-    assert illegal_age.json()["detail"] == "Incomplete setup: age_band"
+    assert illegal_age.status_code == 422
     assert topic.stage == "setup"
     course_route_db.commit.assert_not_awaited()
+
+    published = auth_client.post(
+        f"/api/v1/topics/{topic.id}/publish",
+        headers={"Authorization": bearer},
+        json={
+            "setup": {
+                "age_band": "university_plus",
+                "max_turns": 5,
+                "topic": "Cities",
+                "core_question": "Who maintains them?",
+                "inquiry_focus": "the public cost",
+            }
+        },
+    )
+    assert published.status_code == 200
+    body = published.json()
+    assert "opening_message" not in body
+    assert body["setup"]["topic"] == "Cities"
+    assert topic.stage == "conversation"
+    assert topic.inquiry_topic == "Cities"
+    assert topic.title == "Cities"
+    assert topic.age_band == "university_plus"
+    recorded.assert_awaited()
+    course_route_db.commit.assert_awaited()
 
 
 def test_save_stores_fields_without_returning_a_version(
@@ -177,7 +204,11 @@ def test_get_setup_is_instructor_only(
 ) -> None:
     bearer, teacher = _login(auth_client, store)
     outsider_bearer, _ = _login(auth_client, store, account="outsider")
-    topic = _topic(inquiry_topic="saved topic", core_question="saved question")
+    topic = _topic(
+        inquiry_topic="saved topic",
+        core_question="saved question",
+        opening_message="Hello",
+    )
     _ready(monkeypatch, topic, instructor_id=teacher.id)
 
     ready = auth_client.get(
@@ -185,13 +216,60 @@ def test_get_setup_is_instructor_only(
         headers={"Authorization": bearer},
     )
     assert ready.status_code == 200
-    assert ready.json()["setup"]["topic"] == "saved topic"
-    assert "version" not in ready.json()
+    body = ready.json()
+    assert body["setup"]["topic"] == "saved topic"
+    assert body["setup"]["opening_message"] == "Hello"
+    assert "opening_message" not in body
+    assert "version" not in body
     denied = auth_client.get(
         f"/api/v1/topics/{topic.id}/setup",
         headers={"Authorization": outsider_bearer},
     )
     assert denied.status_code == 403
+
+
+def test_refine_uses_the_screen_setup(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store)
+    topic = _topic(inquiry_topic="saved topic", core_question="saved question")
+    _ready(monkeypatch, topic)
+    seen: dict[str, str] = {}
+
+    async def complete(
+        self, *, instructions: str, material: str, model: str | None = None
+    ):
+        seen["material"] = material
+        return GENERATED
+
+    monkeypatch.setattr(OpenAIChatClient, "complete_json", complete)
+
+    response = auth_client.post(
+        f"/api/v1/topics/{topic.id}/setup/refine",
+        headers={"Authorization": bearer},
+        json={
+            "feedback": "shorter",
+            "setup": {
+                "topic": "edited on screen",
+                "core_question": "Why now?",
+                "age_band": "16-18",
+                "max_turns": 10,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert "edited on screen" in seen["material"]
+    assert "saved topic" not in seen["material"]
+    assert "shorter" in seen["material"]
+    body = response.json()
+    assert "opening_message" not in body
+    assert body["setup"]["opening_message"] == "Where should we start?"
+    assert topic.inquiry_topic == "generated topic"
+    course_route_db.commit.assert_awaited()
 
 
 def test_failed_regeneration_keeps_the_saved_inquiry(
@@ -214,7 +292,10 @@ def test_failed_regeneration_keeps_the_saved_inquiry(
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/refine",
         headers={"Authorization": bearer},
-        json={"feedback": DIALOGUE},
+        json={
+            "feedback": DIALOGUE,
+            "setup": {"topic": "unsaved edit", "core_question": "saved question"},
+        },
     )
     assert response.status_code == 503
     assert topic.inquiry_topic == "saved topic"
@@ -281,7 +362,7 @@ def test_refine_stops_when_publish_lands_first(
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/refine",
         headers={"Authorization": bearer},
-        json={"feedback": "shorter"},
+        json={"feedback": "shorter", "setup": {"topic": "edited on screen"}},
     )
 
     assert response.status_code == 400

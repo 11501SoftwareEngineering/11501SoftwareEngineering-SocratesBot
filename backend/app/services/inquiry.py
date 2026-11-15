@@ -63,7 +63,6 @@ def _response(topic: Topic) -> InquirySetupResponse:
         topic_id=topic.id,
         course_id=topic.course_id,
         topic_status=topic.stage,
-        opening_message=topic.opening_message,
         model_id=topic.model_id,
         setup=_fields_of(topic),
     )
@@ -130,10 +129,11 @@ async def _complete(
     return _validated(raw, GeneratedInquiry)
 
 
-def _material(topic: Topic, *, feedback: str | None = None) -> str:
-    fields = _fields_of(topic)
+def _material(
+    fields: InquiryFields, *, content_language: str, feedback: str | None = None
+) -> str:
     lines = [
-        f"content_language: {topic.content_language}",
+        f"content_language: {content_language}",
         f"age_band: {fields.age_band}",
         f"max_turns: {fields.max_turns}",
         f"topic: {fields.topic}",
@@ -185,11 +185,13 @@ async def create_inquiry_topic(
             502 or 503 if the model call fails.
     """
     course = await courses_service.require_course_teacher(db, user, course_id)
+    language = settings.DEFAULT_LANGUAGE_CODE
+    model_id = settings.OPENAI_MODEL
     generated = await _complete(
-        payload.model_id,
+        model_id,
         _INSTRUCTIONS,
         (
-            f"content_language: {payload.content_language}\n"
+            f"content_language: {language}\n"
             f"age_band: {payload.age_band}\n"
             f"max_turns: {payload.max_turns}\n"
             f"course_description:\n{payload.course_description}"
@@ -203,8 +205,8 @@ async def create_inquiry_topic(
             title=generated.topic,
             description=payload.course_description,
         )
-        topic.content_language = payload.content_language
-        topic.model_id = payload.model_id
+        topic.content_language = language
+        topic.model_id = model_id
         topic.stage = TopicStage.SETUP.value
         _apply(topic, generated)
         await topic_crud.record_inquiry_change(db, topic)
@@ -213,6 +215,26 @@ async def create_inquiry_topic(
         await db.rollback()
         raise
     return _response(topic)
+
+
+async def _store_setup(db: AsyncSession, topic: Topic, setup: InquiryFields) -> Topic:
+    """Write the eight fields on screen. The caller commits."""
+    topic = await topic_crud.save_inquiry(
+        db,
+        topic,
+        content_language=topic.content_language,
+        age_band=setup.age_band,
+        max_turns=setup.max_turns,
+        inquiry_topic=setup.topic,
+        core_question=setup.core_question,
+        inquiry_focus=setup.inquiry_focus,
+        background_info=setup.background_info,
+        exclusions=setup.exclusions or "unspecified",
+        opening_message=setup.opening_message,
+    )
+    if setup.topic:
+        topic.title = setup.topic
+    return topic
 
 
 async def save_inquiry_setup(
@@ -227,21 +249,7 @@ async def save_inquiry_setup(
     topic = await get_instructed_topic(db, teacher, topic_id)
     try:
         topic = await _locked_setup(db, topic.id)
-        topic = await topic_crud.save_inquiry(
-            db,
-            topic,
-            content_language=topic.content_language,
-            age_band=payload.setup.age_band,
-            max_turns=payload.setup.max_turns,
-            inquiry_topic=payload.setup.topic,
-            core_question=payload.setup.core_question,
-            inquiry_focus=payload.setup.inquiry_focus,
-            background_info=payload.setup.background_info,
-            exclusions=payload.setup.exclusions or "unspecified",
-            opening_message=payload.setup.opening_message,
-        )
-        if payload.setup.topic:
-            topic.title = payload.setup.topic
+        topic = await _store_setup(db, topic, payload.setup)
         await topic_crud.record_inquiry_change(db, topic)
         await db.commit()
     except Exception:
@@ -251,17 +259,18 @@ async def save_inquiry_setup(
 
 
 async def publish_inquiry(
-    db: AsyncSession, teacher: User, topic_id: UUID
+    db: AsyncSession, teacher: User, topic_id: UUID, payload: SaveInquiryRequest
 ) -> InquirySetupWriteResponse:
-    """Move a complete setup to conversation.
+    """Store the setup on screen, then move a complete topic to conversation.
 
     Raises:
         HTTPException: 404 if the topic is missing; 403 if not an instructor;
-            400 if the topic is not in setup; 409 if setup is incomplete.
+            400 if the topic is not in setup; 422 if setup is incomplete.
     """
     topic = await get_instructed_topic(db, teacher, topic_id)
     try:
         topic = await _locked_setup(db, topic.id)
+        topic = await _store_setup(db, topic, payload.setup)
         missing = first_incomplete_field(
             age_band=topic.age_band,
             max_turns=topic.max_turns,
@@ -270,10 +279,11 @@ async def publish_inquiry(
         )
         if missing is not None:
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Incomplete setup: {missing}",
             )
         topic = await topic_crud.publish_topic(db, topic)
+        await topic_crud.record_inquiry_change(db, topic)
         await db.commit()
     except Exception:
         await db.rollback()
@@ -284,7 +294,7 @@ async def publish_inquiry(
 async def refine_inquiry(
     db: AsyncSession, teacher: User, topic_id: UUID, payload: RefineInquiryRequest
 ) -> InquirySetupResponse:
-    """Regenerate the eight fields from feedback and store the change.
+    """Regenerate the eight fields from the setup on screen and store the change.
 
     Raises:
         HTTPException: 404 if the topic is missing; 403 if not an instructor;
@@ -295,24 +305,16 @@ async def refine_inquiry(
     generated = await _complete(
         topic.model_id or settings.OPENAI_MODEL,
         _INSTRUCTIONS,
-        _material(topic, feedback=payload.feedback),
+        _material(
+            payload.setup,
+            content_language=topic.content_language or settings.DEFAULT_LANGUAGE_CODE,
+            feedback=payload.feedback,
+        ),
     )
     try:
         topic = await _locked_setup(db, topic.id)
         _apply(topic, generated)
-        await topic_crud.save_inquiry(
-            db,
-            topic,
-            content_language=topic.content_language,
-            age_band=topic.age_band,
-            max_turns=topic.max_turns,
-            inquiry_topic=topic.inquiry_topic,
-            core_question=topic.core_question,
-            inquiry_focus=topic.inquiry_focus,
-            background_info=topic.background_info,
-            exclusions=topic.exclusions,
-            opening_message=topic.opening_message,
-        )
+        await _store_setup(db, topic, _fields_of(topic))
         await topic_crud.record_inquiry_change(db, topic)
         await db.commit()
     except Exception:

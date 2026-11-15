@@ -511,10 +511,11 @@ INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: _INQUIRY_UNAUTHORIZED,
     403: _INQUIRY_DENIED,
     404: _INQUIRY_MISSING,
-    409: json_detail_examples(
+    422: json_detail_examples(
         "Inquiry was not published",
         {
             "incomplete": "Incomplete setup: topic",
+            "invalid": "Request validation failed",
         },
     ),
 }

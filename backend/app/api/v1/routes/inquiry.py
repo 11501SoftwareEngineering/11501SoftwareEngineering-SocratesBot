@@ -68,7 +68,7 @@ async def refine_inquiry(
     current_user: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InquirySetupResponse:
-    """Regenerate the eight fields from feedback and store them when they change."""
+    """Regenerate the eight fields from the setup on screen and the feedback."""
     return await inquiry_service.refine_inquiry(db, current_user, topicId, payload)
 
 
@@ -95,8 +95,9 @@ async def opening_message(
 )
 async def publish_inquiry(
     topicId: UUID,
+    payload: SaveInquiryRequest,
     current_user: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InquirySetupWriteResponse:
-    """Move a complete setup to conversation and freeze the inquiry fields."""
-    return await inquiry_service.publish_inquiry(db, current_user, topicId)
+    """Store the setup on screen, then move a complete topic to conversation."""
+    return await inquiry_service.publish_inquiry(db, current_user, topicId, payload)
