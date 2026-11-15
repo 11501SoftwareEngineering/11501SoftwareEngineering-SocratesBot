@@ -336,12 +336,13 @@ version: 0.2
 - 功能說明: 先把畫面上的八欄存下來，設定完整才在同一筆交易把題目從 `setup` 轉為 `conversation`，固定八欄、內容語言與模型，開放學生對話；發布前前端須顯示確認。不完整的內容不會留下
 - 呼叫方式: POST /topics/{topicId}/publish
 - 授權: 老師
-- 輸入資料: `setup`
+- 輸入資料: `setup`（八欄，與儲存題目設定的 `setup` 相同）
 - 成功回應:「取得題目設定」的回應, `message`
 - 錯誤:
-    - 欄位不符規則，或設定未完整 (422)
+    - 欄位不符規則 (422)
     - 非該課程老師 (403)
     - 查無此題目 (404)
+    - 設定未完整 (409)
     - 題目已不在設定階段 (400)
 
 ---
@@ -443,20 +444,22 @@ version: 0.2
     - 查無此題目 (404)
 
 ### 取得教學端摘要
-- 功能說明: 讀取最新版本的摘要（含學生是否已看到哪個版本）
+- 功能說明: 讀取摘要。沒帶 `version` 時回最新一版；帶了就回那一版。`published_version` 仍是學生目前看到的版本
 - 呼叫方式: GET /topics/{topicId}/summary
 - 授權: 老師、助教需 `edit_summary` 或 `view_reports`
-- 輸入資料: 無
-- 成功回應: `topic_status`, `published_version`（學生目前看到的版本號，沒有則 null）, `summary`（最新版本，題目尚未進入 `summary` 時為 null），結構為
-    - `summary_id`, `version`, `summary_status`（`draft` / `reviewed` / `published` / `withdrawn`）, `overview`, `viewpoint_summary`, `denominator`, `created_at`, `updated_at`（最後一次產生或修訂時間）
+- 輸入資料: query `version`（可省略；有帶時須為大於等於 1 的整數）
+- 成功回應: `topic_status`, `published_version`（學生目前看到的版本號，沒有則 null）, `summary`（沒帶 `version` 時為最新一版，題目尚未進入 `summary` 時為 null；有帶時為該版），結構為
+    - `summary_id`, `version`, `summary_status`（`draft` / `reviewed` / `published` / `withdrawn`）, `overview`, `viewpoint_summary`, `denominator`
     - `groups`[`group_id`, `name`, `conditions`, `count`, `percentage`, `report_ids`]
     - `ungrouped_report_ids`
 - 錯誤:
+    - 版本無效 (422)
     - 無權限 (403)
     - 查無此題目 (404)
+    - 指定的版本不存在 (404)
 
 ### 產生摘要草稿
-- 功能說明: 以 `ready` 報告動態分群產生新摘要草稿，不自動發布，不影響學生已看到的版本。題目在 `conversation` 時第一次呼叫，會把 `topic_status` 轉為 `summary` 並結束學生對話（不可退回）
+- 功能說明: 以 `ready` 報告動態分群產生新摘要草稿，成功時存成新的一版，不自動發布，不影響學生已看到的版本。題目在 `conversation` 時第一次呼叫，會把 `topic_status` 轉為 `summary` 並結束學生對話（不可退回）
 - 呼叫方式: POST /topics/{topicId}/summary
 - 授權:
     - 題目在 `conversation`（會結束學生對話）: 僅老師
@@ -470,30 +473,29 @@ version: 0.2
     - AI 服務失敗 (502／503)
 
 ### 修訂摘要草稿
-- 功能說明: 修訂草稿文字；修訂後撤銷審閱狀態，回到 `draft`
+- 功能說明: 以畫面上的文字修訂最新一版。文字有變才存成下一版；文字沒變則版本號不變。狀態回到 `draft`，已發布給學生的快照不變
 - 呼叫方式: PATCH /topics/{topicId}/summary
 - 授權: 老師、助教需 `edit_summary`
-- 輸入資料: `version`, `overview`, `viewpoint_summary`
+- 輸入資料: `overview`, `viewpoint_summary`（不可空白）
 - 成功回應: `summary`（結構同上，`summary_status` 為 `draft`）
 - 錯誤:
     - 欄位不符規則 (422)
     - 無權限 (403)
     - 查無此摘要 (404)
-    - 版本不符 (400)
 
 ### 標記摘要審閱完成
-- 功能說明: 老師確認統計範圍與表述後標記 `reviewed`
+- 功能說明: 以畫面上的文字標記審閱完成。與最新一版不同時，先存成下一版再標 `reviewed`；沒有變動就只改狀態，版本號不變
 - 呼叫方式: POST /topics/{topicId}/summary/review
 - 授權: 老師
-- 輸入資料: `version`
-- 成功回應: `version`, `summary_status`（`reviewed`）, `message`
+- 輸入資料: `overview`, `viewpoint_summary`（不可空白）
+- 成功回應: `version`（寫入後的版本號）, `summary_status`（`reviewed`）, `message`
 - 錯誤:
+    - 欄位不符規則 (422)
     - 非該課程老師 (403)
     - 查無此摘要 (404)
-    - 版本不符 (400)
 
 ### 發布摘要
-- 功能說明: 老師將同一個 `reviewed` 版本發布給學生，成為不可變的發布快照
+- 功能說明: 老師將指定的 `reviewed` 版本發布給學生，成為不可變的發布快照。不接收畫面上的文字，且該版本必須是最新一版
 - 呼叫方式: POST /topics/{topicId}/summary/publish
 - 授權: 老師
 - 輸入資料: `version`
