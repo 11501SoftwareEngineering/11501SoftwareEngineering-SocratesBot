@@ -1,11 +1,11 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Integer, cast, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import DialogueOutcome, GenerationStatus
-from app.models.class_summary import ClassSummary, SummaryAttempt
+from app.models.class_summary import ClassSummaryVersion, SummaryAttempt
 from app.models.report_attempt import ReportAttempt
 from app.models.session import Session
 from app.models.topic import Topic
@@ -161,28 +161,56 @@ async def store_ready_summary(
     row = await latest_summary(db, topic_id)
     version = 1 if row is None else row.version + 1
     body = _document(draft, None if row is None else row.body)
-    if row is None:
-        db.add(ClassSummary(topic_id=topic_id, version=version, body=body))
-    else:
-        row.version = version
-        row.body = body
+    await upsert_summary_version(db, topic_id=topic_id, version=version, body=body)
     await _close_open_dialogues(db, topic)
 
 
-async def latest_summary(db: AsyncSession, topic_id: UUID) -> ClassSummary | None:
-    statement = select(ClassSummary).where(ClassSummary.topic_id == topic_id)
-    return await db.scalar(statement)
+async def upsert_summary_version(
+    db: AsyncSession, *, topic_id: UUID, version: int, body: dict
+) -> ClassSummaryVersion:
+    """Insert this version, or replace its body when that version already exists."""
+    existing = await summary_version(db, topic_id, version)
+    if existing is None:
+        existing = ClassSummaryVersion(topic_id=topic_id, version=version, body=body)
+        db.add(existing)
+    else:
+        existing.body = body
+    await db.flush()
+    return existing
 
 
-async def published_document(db: AsyncSession, topic_id: UUID) -> dict | None:
-    statement = select(ClassSummary.body["published"]).where(
-        ClassSummary.topic_id == topic_id
+async def latest_summary(
+    db: AsyncSession, topic_id: UUID
+) -> ClassSummaryVersion | None:
+    statement = (
+        select(ClassSummaryVersion)
+        .where(ClassSummaryVersion.topic_id == topic_id)
+        .order_by(ClassSummaryVersion.version.desc())
+        .limit(1)
     )
     return await db.scalar(statement)
 
 
-async def published_version(db: AsyncSession, topic_id: UUID) -> int | None:
-    statement = select(
-        cast(ClassSummary.body["published_version"].astext, Integer)
-    ).where(ClassSummary.topic_id == topic_id)
+async def summary_version(
+    db: AsyncSession, topic_id: UUID, version: int
+) -> ClassSummaryVersion | None:
+    statement = select(ClassSummaryVersion).where(
+        ClassSummaryVersion.topic_id == topic_id,
+        ClassSummaryVersion.version == version,
+    )
     return await db.scalar(statement)
+
+
+async def published_document(db: AsyncSession, topic_id: UUID) -> dict | None:
+    row = await latest_summary(db, topic_id)
+    if row is None:
+        return None
+    return row.body.get("published")
+
+
+async def published_version(db: AsyncSession, topic_id: UUID) -> int | None:
+    row = await latest_summary(db, topic_id)
+    if row is None:
+        return None
+    value = row.body.get("published_version")
+    return None if value is None else int(value)

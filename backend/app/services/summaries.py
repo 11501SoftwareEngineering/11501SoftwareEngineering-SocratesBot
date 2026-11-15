@@ -13,7 +13,7 @@ from app.core.enums import GenerationStatus, TopicStage
 from app.crud import course as course_crud
 from app.crud import session as session_crud
 from app.crud import summary as summary_crud
-from app.models.class_summary import ClassSummary
+from app.models.class_summary import ClassSummaryVersion
 from app.models.topic import Topic
 from app.models.user import User
 from app.services import summary_runner
@@ -88,16 +88,29 @@ async def start_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -> d
 
 
 async def read_teacher_summary(
-    db: AsyncSession, *, teacher: User, topic_id: UUID
+    db: AsyncSession,
+    *,
+    teacher: User,
+    topic_id: UUID,
+    version: int | None = None,
 ) -> dict:
-    """Return the instructor view of the latest summary.
+    """Return the instructor view of the latest summary, or one stored version.
 
     Raises:
-        HTTPException: 404 if the topic is missing; 403 if the caller does
-            not instruct the course.
+        HTTPException: 404 if the topic or requested version is missing; 403
+            if the caller does not instruct the course.
     """
     topic = await _instructor_topic(db, teacher, topic_id)
-    return await _teacher_body(db, topic)
+    if version is None:
+        return await _teacher_body(db, topic)
+    stored = await summary_crud.summary_version(db, topic.id, version)
+    if stored is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Summary not found"
+        )
+    body = await _teacher_body(db, topic)
+    body["summary"] = _draft(stored)
+    return body
 
 
 async def edit_summary(
@@ -105,46 +118,51 @@ async def edit_summary(
     *,
     teacher: User,
     topic_id: UUID,
-    version: int,
     overview: str,
     viewpoint_summary: str,
 ) -> dict:
     """Replace the overview and viewpoint, and set the status back to draft.
 
     Raises:
-        HTTPException: 404 if the topic or version is missing; 403 if the
+        HTTPException: 404 if the topic or summary is missing; 403 if the
             caller does not instruct the course.
     """
     topic = await _instructor_topic(db, teacher, topic_id)
-    row = await _version(db, topic.id, version)
-    row.version += 1
-    row.body = {
-        **row.body,
-        "overview": overview,
-        "viewpoint_summary": viewpoint_summary,
-        "status": "draft",
-    }
+    current = await _current_summary(db, topic.id)
+    row = await _write_text(
+        db,
+        current,
+        overview=overview,
+        viewpoint_summary=viewpoint_summary,
+        summary_status="draft",
+    )
     await db.commit()
     return {"summary": _draft(row)}
 
 
 async def review_summary(
-    db: AsyncSession, *, teacher: User, topic_id: UUID, version: int
+    db: AsyncSession,
+    *,
+    teacher: User,
+    topic_id: UUID,
+    overview: str,
+    viewpoint_summary: str,
 ) -> dict:
-    """Mark one draft version as reviewed.
+    """Store the visible text when it changed, then mark the summary reviewed.
 
     Raises:
-        HTTPException: 404 if the topic or version is missing; 403 if the
-            caller does not instruct the course; 400 if the version is not
-            a draft.
+        HTTPException: 404 if the topic or summary is missing; 403 if the
+            caller does not instruct the course.
     """
     topic = await _instructor_topic(db, teacher, topic_id)
-    row = await _version(db, topic.id, version)
-    if row.body.get("status") != "draft":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Version mismatch"
-        )
-    row.body = {**row.body, "status": "reviewed"}
+    current = await _current_summary(db, topic.id)
+    row = await _write_text(
+        db,
+        current,
+        overview=overview,
+        viewpoint_summary=viewpoint_summary,
+        summary_status="reviewed",
+    )
     await db.commit()
     return {
         "version": row.version,
@@ -177,12 +195,17 @@ async def publish_summary(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Summary contains a name or identifier",
         )
-    row.body = {
-        **draft,
-        "published": public_summary(draft),
-        "published_version": row.version,
-        "status": "published",
-    }
+    await summary_crud.upsert_summary_version(
+        db,
+        topic_id=row.topic_id,
+        version=row.version,
+        body={
+            **draft,
+            "published": public_summary(draft),
+            "published_version": row.version,
+            "status": "published",
+        },
+    )
     await db.commit()
     return {
         "version": row.version,
@@ -204,12 +227,17 @@ async def withdraw_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No published summary"
         )
-    row.body = {
-        **row.body,
-        "published": None,
-        "published_version": None,
-        "status": "withdrawn",
-    }
+    await summary_crud.upsert_summary_version(
+        db,
+        topic_id=row.topic_id,
+        version=row.version,
+        body={
+            **row.body,
+            "published": None,
+            "published_version": None,
+            "status": "withdrawn",
+        },
+    )
     await db.commit()
     return {"summary_status": "withdrawn", "message": "Summary withdrawn"}
 
@@ -248,18 +276,53 @@ async def _teacher_body(db: AsyncSession, topic: Topic) -> dict:
     }
 
 
-def _draft(row: ClassSummary) -> dict:
-    body = _draft_dict(row)
+def _draft(row: ClassSummaryVersion) -> dict:
+    fields = _fields(row.body)
     return {
         "summary_id": str(row.id),
         "version": row.version,
-        "summary_status": body["status"],
-        "overview": body["overview"],
-        "viewpoint_summary": body["viewpoint_summary"],
-        "denominator": body["denominator"],
-        "groups": body["groups"],
-        "ungrouped_report_ids": body["ungrouped_report_ids"],
+        "summary_status": fields["status"],
+        "overview": fields["overview"],
+        "viewpoint_summary": fields["viewpoint_summary"],
+        "denominator": fields["denominator"],
+        "groups": fields["groups"],
+        "ungrouped_report_ids": fields["ungrouped_report_ids"],
     }
+
+
+async def _current_summary(db: AsyncSession, topic_id: UUID) -> ClassSummaryVersion:
+    row = await summary_crud.latest_summary(db, topic_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Summary not found"
+        )
+    return row
+
+
+async def _write_text(
+    db: AsyncSession,
+    row: ClassSummaryVersion,
+    *,
+    overview: str,
+    viewpoint_summary: str,
+    summary_status: str,
+) -> ClassSummaryVersion:
+    changed = (
+        row.body.get("overview") != overview
+        or row.body.get("viewpoint_summary") != viewpoint_summary
+    )
+    body = {
+        **row.body,
+        "overview": overview,
+        "viewpoint_summary": viewpoint_summary,
+        "status": summary_status,
+    }
+    return await summary_crud.upsert_summary_version(
+        db,
+        topic_id=row.topic_id,
+        version=row.version + (1 if changed else 0),
+        body=body,
+    )
 
 
 def _identity_values(draft: dict, pairs) -> tuple[list[str], list[str]]:
@@ -291,8 +354,11 @@ async def _visible_topic(db: AsyncSession, user: User, topic_id: UUID) -> Topic:
     return topic
 
 
-def _draft_dict(row: ClassSummary) -> dict:
-    body = row.body
+def _draft_dict(row: ClassSummaryVersion) -> dict:
+    return _fields(row.body)
+
+
+def _fields(body: dict) -> dict:
     return {
         "status": body.get("status"),
         "overview": body.get("overview"),
@@ -303,7 +369,9 @@ def _draft_dict(row: ClassSummary) -> dict:
     }
 
 
-async def _version(db: AsyncSession, topic_id: UUID, version: int) -> ClassSummary:
+async def _version(
+    db: AsyncSession, topic_id: UUID, version: int
+) -> ClassSummaryVersion:
     row = await summary_crud.latest_summary(db, topic_id)
     if row is None:
         raise HTTPException(

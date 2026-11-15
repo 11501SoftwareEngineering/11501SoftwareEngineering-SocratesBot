@@ -133,7 +133,30 @@ def test_publish_stores_the_screen_and_rejects_an_incomplete_one(
     )
     assert illegal_age.status_code == 422
     assert topic.stage == "setup"
-    course_route_db.commit.assert_not_awaited()
+
+    published = auth_client.post(
+        f"/api/v1/topics/{topic.id}/publish",
+        headers={"Authorization": bearer},
+        json={
+            "setup": {
+                "age_band": "university_plus",
+                "max_turns": 5,
+                "topic": "Cities",
+                "core_question": "Who maintains them?",
+                "inquiry_focus": "the public cost",
+            }
+        },
+    )
+    assert published.status_code == 200
+    assert published.json()["setup"]["topic"] == "Cities"
+    assert topic.stage == "conversation"
+    assert topic.inquiry_topic == "Cities"
+    assert topic.title == "Cities"
+    assert topic.age_band == "university_plus"
+    assert topic.max_turns == 5
+    assert topic.core_question == "Who maintains them?"
+    recorded.assert_awaited()
+    course_route_db.commit.assert_awaited()
 
     published = auth_client.post(
         f"/api/v1/topics/{topic.id}/publish",

@@ -56,11 +56,17 @@ class SummaryAttempt(Base):
     )
 
 
-class ClassSummary(Base):
-    """One class summary. Draft text and the published snapshot both live in ``body``."""
+class ClassSummaryVersion(Base):
+    """One stored version of a class summary. The same version is updated in place."""
 
-    __tablename__ = "class_summaries"
-    __table_args__ = (UniqueConstraint("topic_id", name="uq_class_summaries_topic_id"),)
+    __tablename__ = "class_summary_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "topic_id",
+            "version",
+            name="uq_class_summary_versions_topic_id_version",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4

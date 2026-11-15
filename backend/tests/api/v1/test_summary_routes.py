@@ -51,6 +51,7 @@ class _Memory:
         self.attempts: list[SimpleNamespace] = []
         self.summary_attempts: list[SimpleNamespace] = []
         self.draft: SimpleNamespace | None = None
+        self.versions: dict[int, SimpleNamespace] = {}
         self.summaries_scheduled: list = []
         self.instructor_id = None
         self.member_ids: set = set()
@@ -104,10 +105,31 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
         memory.summary_attempts.append(row)
         return row
 
+    if memory.draft is not None:
+        memory.versions[memory.draft.version] = memory.draft
+
     async def latest_summary(_db, topic_id):
         if memory.draft is None or memory.draft.topic_id != topic_id:
             return None
         return memory.draft
+
+    async def summary_version(_db, topic_id, version):
+        row = memory.versions.get(version)
+        if row is None or row.topic_id != topic_id:
+            return None
+        return row
+
+    async def upsert_summary_version(_db, *, topic_id, version, body):
+        row = memory.versions.get(version)
+        if row is None or row.topic_id != topic_id:
+            row = SimpleNamespace(
+                id=uuid4(), topic_id=topic_id, version=version, body=body
+            )
+        else:
+            row.body = body
+        memory.versions[version] = row
+        memory.draft = row
+        return row
 
     async def published_document(_db, topic_id):
         if memory.draft is None or memory.draft.topic_id != topic_id:
@@ -130,6 +152,8 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
     monkeypatch.setattr(summary_crud, "latest_attempt", latest_attempt)
     monkeypatch.setattr(summary_crud, "insert_attempt", insert_attempt)
     monkeypatch.setattr(summary_crud, "latest_summary", latest_summary)
+    monkeypatch.setattr(summary_crud, "summary_version", summary_version)
+    monkeypatch.setattr(summary_crud, "upsert_summary_version", upsert_summary_version)
     monkeypatch.setattr(summary_crud, "published_document", published_document)
     monkeypatch.setattr(summary_crud, "published_version", published_version)
     monkeypatch.setattr(
@@ -204,7 +228,6 @@ def test_summary_publish_stays_stable_until_withdraw(
         f"/api/v1/topics/{memory.topic.id}/summary",
         headers={"Authorization": teacher_bearer},
         json={
-            "version": 1,
             "overview": "A later draft.",
             "viewpoint_summary": "Still the published claim.",
         },
@@ -247,6 +270,88 @@ def test_summary_publish_stays_stable_until_withdraw(
     assert denied.status_code == 403
     assert withdrawn.status_code == 200
     assert after_withdraw.json()["summary"] is None
+
+
+def test_summary_keeps_an_older_version_without_sending_one(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    teacher_bearer, teacher = _login(auth_client, store, "teacher1", UserRole.TEACHER)
+    memory = _Memory()
+    memory.topic.stage = "summary"
+    memory.instructor_id = teacher.id
+    memory.draft = SimpleNamespace(
+        id=uuid4(),
+        topic_id=memory.topic.id,
+        version=1,
+        body={
+            "status": "draft",
+            "overview": "The first draft.",
+            "viewpoint_summary": "Most kept the claim.",
+            "denominator": 2,
+            "groups": [],
+            "ungrouped_report_ids": [],
+        },
+    )
+    _install(monkeypatch, course_route_db, memory)
+
+    edited = auth_client.patch(
+        f"/api/v1/topics/{memory.topic.id}/summary",
+        headers={"Authorization": teacher_bearer},
+        json={
+            "overview": "The second draft.",
+            "viewpoint_summary": "Most kept the claim.",
+        },
+    )
+    older = auth_client.get(
+        f"/api/v1/topics/{memory.topic.id}/summary",
+        headers={"Authorization": teacher_bearer},
+        params={"version": 1},
+    )
+    latest = auth_client.get(
+        f"/api/v1/topics/{memory.topic.id}/summary",
+        headers={"Authorization": teacher_bearer},
+    )
+    missing = auth_client.get(
+        f"/api/v1/topics/{memory.topic.id}/summary",
+        headers={"Authorization": teacher_bearer},
+        params={"version": 9},
+    )
+    reviewed = auth_client.post(
+        f"/api/v1/topics/{memory.topic.id}/summary/review",
+        headers={"Authorization": teacher_bearer},
+        json={
+            "overview": "The second draft.",
+            "viewpoint_summary": "Most kept the claim.",
+        },
+    )
+    changed = auth_client.post(
+        f"/api/v1/topics/{memory.topic.id}/summary/review",
+        headers={"Authorization": teacher_bearer},
+        json={
+            "overview": "The reviewed draft.",
+            "viewpoint_summary": "Most kept the claim.",
+        },
+    )
+
+    assert edited.status_code == 200
+    assert edited.json()["summary"]["version"] == 2
+    assert edited.json()["summary"]["summary_status"] == "draft"
+    assert older.status_code == 200
+    assert older.json()["summary"]["version"] == 1
+    assert older.json()["summary"]["overview"] == "The first draft."
+    assert latest.json()["summary"]["overview"] == "The second draft."
+    assert missing.status_code == 404
+    assert reviewed.status_code == 200
+    assert reviewed.json() == {
+        "version": 2,
+        "summary_status": "reviewed",
+        "message": "Summary reviewed",
+    }
+    assert changed.json()["version"] == 3
+    assert changed.json()["summary_status"] == "reviewed"
 
 
 def test_privacy_and_result_routes_are_gone(auth_client: TestClient) -> None:
