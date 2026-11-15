@@ -13,7 +13,7 @@ def test_sanitize_strips_password_input_keeps_loc() -> None:
         },
         {
             "type": "missing",
-            "loc": ["body", "account"],
+            "loc": ["body", "account_id"],
             "msg": "Field required",
             "input": None,
         },
@@ -21,7 +21,7 @@ def test_sanitize_strips_password_input_keeps_loc() -> None:
     out = sanitize_validation_errors(errors)
     assert out[0]["loc"] == ["body", "new_password"]
     assert "input" not in out[0]
-    assert out[1]["loc"] == ["body", "account"]
+    assert out[1]["loc"] == ["body", "account_id"]
     assert out[1]["input"] is None
 
 
@@ -32,11 +32,11 @@ def test_sanitize_redacts_password_in_sibling_field_input() -> None:
             "loc": ["body", "name"],
             "msg": "Field required",
             "input": {
-                "account": "alice",
+                "account_id": "alice",
                 "password": "password1",
             },
         }
     ]
     out = sanitize_validation_errors(errors)
     assert out[0]["loc"] == ["body", "name"]
-    assert out[0]["input"] == {"account": "alice"}
+    assert out[0]["input"] == {"account_id": "alice"}

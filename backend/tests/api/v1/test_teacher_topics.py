@@ -24,7 +24,7 @@ def _login(
     user = seed_user(store, account_id=account, name="Teacher One", role=role)
     login = client.post(
         "/api/v1/auth/login",
-        json={"account": account, "password": "password1"},
+        json={"account_id": account, "password": "password1"},
     )
     assert login.status_code == 200
     return bearer_from(login), user

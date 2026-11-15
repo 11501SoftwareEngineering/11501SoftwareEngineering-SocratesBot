@@ -39,7 +39,7 @@ def test_create_teacher_integrity_error_maps_to_400(
         asyncio.run(
             admin_teachers_service.create_teacher(
                 db,
-                TeacherCreateRequest(account="race", name="Race"),
+                TeacherCreateRequest(account_id="race", name="Race"),
             )
         )
     assert exc.value.status_code == 400

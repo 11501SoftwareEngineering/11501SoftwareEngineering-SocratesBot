@@ -56,12 +56,12 @@ async def register_user(db: AsyncSession, payload: RegisterRequest) -> RegisterR
         HTTPException: 400 if the account is reserved for config elevation, or
             an account with the same ``account`` already exists.
     """
-    if is_reserved_super_admin_account(payload.account):
+    if is_reserved_super_admin_account(payload.account_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Account name reserved",
         )
-    existing_user = await user.get_user_by_account(db, payload.account)
+    existing_user = await user.get_user_by_account(db, payload.account_id)
     if existing_user is not None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -71,7 +71,7 @@ async def register_user(db: AsyncSession, payload: RegisterRequest) -> RegisterR
     try:
         created_user = await user.create_user(
             db,
-            account_id=payload.account,
+            account_id=payload.account_id,
             name=payload.name,
             password=payload.password,
             role=UserRole.USER,
@@ -85,7 +85,7 @@ async def register_user(db: AsyncSession, payload: RegisterRequest) -> RegisterR
         ) from None
 
     return RegisterResponse(
-        account=created_user.account_id,
+        account_id=created_user.account_id,
         name=created_user.name,
         role=UserRole(created_user.role),
         message="Registration successful",
@@ -119,10 +119,10 @@ async def login_user(
     """
     await begin_login_attempt(
         redis,
-        account=payload.account,
+        account=payload.account_id,
     )
 
-    current_user = await user.get_user_by_account(db, payload.account)
+    current_user = await user.get_user_by_account(db, payload.account_id)
     stored_hash = (
         current_user.password.password_hash
         if current_user is not None and current_user.password is not None
@@ -139,7 +139,7 @@ async def login_user(
 
     await clear_login_failures(
         redis,
-        account=payload.account,
+        account=payload.account_id,
     )
 
     db_role = UserRole(current_user.role)
@@ -153,7 +153,7 @@ async def login_user(
     )
     set_access_header(response, access_token)
     return LoginResponse(
-        account=current_user.account_id,
+        account_id=current_user.account_id,
         name=current_user.name,
         role=api_role(current_user),
         preferred_language=user.preferred_language_code(current_user),
@@ -197,7 +197,7 @@ async def get_current_user_profile(current_user: User) -> CurrentUserResponse:
             detail=AUTH_UNAUTHORIZED_DETAIL,
         )
     return CurrentUserResponse(
-        account=current_user.account_id,
+        account_id=current_user.account_id,
         name=current_user.name,
         role=api_role(current_user),
         preferred_language=user.preferred_language_code(current_user),

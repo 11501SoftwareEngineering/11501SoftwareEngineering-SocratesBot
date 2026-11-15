@@ -7,12 +7,12 @@ from app.core.enums import UserRole
 
 
 class TeacherCreateRequest(BaseModel):
-    account: str = Field(min_length=1, max_length=64, examples=["teacher1"])
+    account_id: str = Field(min_length=1, max_length=64, examples=["teacher1"])
     name: str = Field(min_length=1, max_length=128, examples=["Teacher One"])
 
 
 class TeacherCreateResponse(BaseModel):
-    account: str = Field(examples=["teacher1"])
+    account_id: str = Field(examples=["teacher1"])
     name: str = Field(examples=["Teacher One"])
     role: UserRole = Field(default=UserRole.TEACHER, examples=[UserRole.TEACHER])
     # One-time plaintext initial password; only returned on create.
@@ -25,6 +25,6 @@ class TeacherCreateResponse(BaseModel):
 
 class TeacherListItem(BaseModel):
     id: UUID
-    account: str = Field(examples=["teacher1"])
+    account_id: str = Field(examples=["teacher1"])
     name: str = Field(examples=["Teacher One"])
     created_at: datetime

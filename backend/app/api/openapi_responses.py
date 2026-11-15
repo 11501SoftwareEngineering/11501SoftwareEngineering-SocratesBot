@@ -98,7 +98,7 @@ TEACHER_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
         [
             {
                 "type": "string_too_short",
-                "loc": ["body", "account"],
+                "loc": ["body", "account_id"],
                 "msg": "String should have at least 1 character",
             }
         ],

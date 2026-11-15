@@ -8,7 +8,7 @@ from tests.api.v1.conftest import bearer_from, seed_user
 def _login(auth_client, account: str, password: str = "password1") -> str:
     response = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": account, "password": password},
+        json={"account_id": account, "password": password},
     )
     assert response.status_code == 200
     return bearer_from(response)

@@ -49,7 +49,7 @@ def test_owner_updates_privacy_and_commits(
     student = seed_user(store, account_id="privacy-owner")
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
     privacy_route_db.reset_mock()
@@ -111,7 +111,7 @@ def test_privacy_errors_do_not_update_and_roll_back(
     student = seed_user(store, account_id="privacy-denied")
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
     privacy_route_db.reset_mock()
@@ -168,7 +168,7 @@ def test_invalid_privacy_setting_returns_422(
     student = seed_user(store, account_id="privacy-invalid")
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
     privacy_route_db.reset_mock()
