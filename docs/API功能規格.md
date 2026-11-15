@@ -262,7 +262,7 @@ version: 0.2
 - 功能說明: 「新增活動」頁送出後，後端以選定模型將課程描述交由 AI 產生八欄設定並建立題目，將 `topic_status` 設為 `setup`
 - 呼叫方式: POST /courses/{courseId}/topics
 - 授權: 老師、助教需 `edit_topics`
-- 輸入資料: `age_band`, `max_turns`, `content_language`, `model_id`（可用值見「取得可用模型清單」）, `course_description`（不可空白，最多 6000 字元）
+- 輸入資料: `age_band`, `max_turns`, `course_description`（不可空白，最多 6000 字元）
 - 成功回應: 同「取得題目設定」
 - 錯誤:
     - 欄位未填寫或不符規則、模型代號無效 (422)
@@ -289,7 +289,7 @@ version: 0.2
 - 呼叫方式: GET /topics/{topicId}/setup
 - 授權: 設定權限
 - 輸入資料: 無
-- 成功回應: `topic_id`, `course_id`, `topic_status`, `opening_message`, `model_id`, `setup`{八欄設定物件，欄位見上表}
+- 成功回應: `topic_id`, `course_id`, `topic_status`, `model_id`, `setup`{八欄設定物件，欄位見上表}
 - 錯誤:
     - 無權限 (403)
     - 查無此題目 (404)
@@ -298,7 +298,7 @@ version: 0.2
 - 功能說明: 「確認活動設定」頁的「重新產生」按鈕按下後呼叫，依老師回饋重新產生八欄設定
 - 呼叫方式: POST /topics/{topicId}/setup/refine
 - 授權: 設定權限
-- 輸入資料: `feedback`
+- 輸入資料: `setup`, `feedback`
 - 成功回應: 同「取得題目設定」
 - 錯誤:
     - 欄位不符規則 (422)
@@ -311,7 +311,7 @@ version: 0.2
 - 功能說明: 「確認活動設定」頁開場訊息欄的「重新產生」按鈕按下後呼叫，依目前設定（含手動修改）重新產生 `opening_message`
 - 呼叫方式: POST /topics/{topicId}/setup/opening-message
 - 授權: 設定權限
-- 輸入資料: `setup`（含手動修改）
+- 輸入資料: `setup`
 - 成功回應: `opening_message`
 - 錯誤:
     - 欄位不符規則 (422)
@@ -336,7 +336,7 @@ version: 0.2
 - 功能說明: 將 `topic_status` 從 `setup` 轉為 `conversation`，固定已儲存的八欄、開場訊息與模型，開放學生對話
 - 呼叫方式: POST /topics/{topicId}/publish
 - 授權: 老師
-- 輸入資料: 無
+- 輸入資料: `setup`
 - 成功回應:「取得題目設定」的回應, `message`
 - 錯誤:
     - 非該課程老師 (403)
