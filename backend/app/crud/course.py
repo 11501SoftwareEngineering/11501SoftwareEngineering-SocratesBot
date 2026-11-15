@@ -338,13 +338,18 @@ async def list_ta_permissions(
     if not user_ids:
         return {}
     rows = await db.execute(
-        select(CourseTaPermission.user_id, CourseTaPermission.permission).where(
-            CourseTaPermission.course_id == course_id,
-            CourseTaPermission.user_id.in_(user_ids),
+        select(CourseMembership.user_id, CourseTaPermission.permission)
+        .join(
+            CourseMembership,
+            CourseMembership.id == CourseTaPermission.course_membership_id,
+        )
+        .where(
+            CourseMembership.course_id == course_id,
+            CourseMembership.user_id.in_(user_ids),
         )
     )
     permissions: dict[UUID, list[str]] = {}
-    for user_id, permission in rows.tuples().all():
+    for user_id, permission in rows.all():
         permissions.setdefault(user_id, []).append(permission)
     return permissions
 
