@@ -40,7 +40,7 @@ from app.services.course_invites import (
 
 _INVITE_RE = re.compile(rf"^[{INVITE_ALPHABET}]{{{INVITE_LENGTH}}}$")
 _INVITE_UNIQUE_CONSTRAINT = "uq_courses_invitation_code"
-_MEMBERSHIP_PK = "pk_course_memberships"
+_MEMBERSHIP_UNIQUE = "uq_course_memberships_course_id"
 _TA_PERMISSION_PK = "pk_course_ta_permissions"
 
 
@@ -73,8 +73,8 @@ def _is_constraint_violation(exc: IntegrityError, name: str) -> bool:
 
 
 def _is_membership_duplicate_violation(exc: IntegrityError) -> bool:
-    """True only for course_memberships primary-key conflicts."""
-    return _is_constraint_violation(exc, _MEMBERSHIP_PK)
+    """True only for course_memberships ``(course_id, user_id)`` conflicts."""
+    return _is_constraint_violation(exc, _MEMBERSHIP_UNIQUE)
 
 
 _ROLE_BY_DB_VALUE = {
@@ -500,12 +500,10 @@ async def update_course_ta_permissions(
 ) -> TaPermissionsUpdateResponse:
     """Replace a TA's permissions; a TA editing their own gets 403."""
     await require_course_teacher(db, teacher, course_id)
-    await _require_active_ta(db, course_id=course_id, user_id=user_id)
+    membership = await _require_active_ta(db, course_id=course_id, user_id=user_id)
     permissions = sort_permissions(payload.permissions)
     try:
-        await course_crud.set_ta_permissions(
-            db, course_id=course_id, user_id=user_id, permissions=permissions
-        )
+        await course_crud.set_ta_permissions(db, membership, permissions)
         await db.commit()
     except Exception:
         await db.rollback()

@@ -1007,7 +1007,8 @@ def test_update_ta_permissions_replaces_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
-    mocks = _patch_ta_course(monkeypatch, membership=_membership("TA"))
+    membership = _membership("TA")
+    mocks = _patch_ta_course(monkeypatch, membership=membership)
     ta_id = uuid4()
 
     response = auth_client.put(
@@ -1023,10 +1024,7 @@ def test_update_ta_permissions_replaces_set(
         "message": "TA permissions updated",
     }
     mocks.set_permissions.assert_awaited_once_with(
-        course_route_db,
-        course_id=mocks.course.id,
-        user_id=ta_id,
-        permissions=["view_reports", "view_members"],
+        course_route_db, membership, ["view_reports", "view_members"]
     )
     course_route_db.commit.assert_awaited_once()
 

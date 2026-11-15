@@ -61,9 +61,13 @@ async def _permission_rows(
     return await db.scalar(
         select(func.count())
         .select_from(CourseTaPermission)
+        .join(
+            CourseMembership,
+            CourseMembership.id == CourseTaPermission.course_membership_id,
+        )
         .where(
-            CourseTaPermission.course_id == course_id,
-            CourseTaPermission.user_id == user_id,
+            CourseMembership.course_id == course_id,
+            CourseMembership.user_id == user_id,
         )
     )
 
@@ -141,8 +145,13 @@ def test_student_promoted_to_ta_then_revoked_keeps_sessions() -> None:
             assert exc_info.value.status_code == 400
 
             await courses_service.revoke_course_ta(db, teacher, course_id, student_id)
-            membership = await db.get(
-                CourseMembership, (course_id, student_id), populate_existing=True
+            membership = await db.scalar(
+                select(CourseMembership)
+                .where(
+                    CourseMembership.course_id == course_id,
+                    CourseMembership.user_id == student_id,
+                )
+                .execution_options(populate_existing=True)
             )
             assert membership is not None
             assert membership.role == "STUDENT"

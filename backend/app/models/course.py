@@ -5,9 +5,9 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
-    ForeignKeyConstraint,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -57,17 +57,23 @@ class CourseMembership(Base):
             "role IN ('STUDENT', 'TA')",
             name="role",
         ),
+        UniqueConstraint("course_id", "user_id"),
     )
 
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
     course_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("courses.id", ondelete="CASCADE"),
-        primary_key=True,
+        nullable=False,
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
-        primary_key=True,
+        nullable=False,
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     joined_at: Mapped[datetime] = mapped_column(
@@ -103,12 +109,6 @@ class CourseTaPermission(Base):
     __tablename__ = "course_ta_permissions"
 
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["course_id", "user_id"],
-            ["course_memberships.course_id", "course_memberships.user_id"],
-            name="fk_course_ta_permissions_course_id_course_memberships",
-            ondelete="CASCADE",
-        ),
         CheckConstraint(
             "permission IN "
             "('edit_topics', 'view_reports', 'edit_summary', 'view_members')",
@@ -116,12 +116,14 @@ class CourseTaPermission(Base):
         ),
     )
 
-    course_id: Mapped[uuid.UUID] = mapped_column(
+    course_membership_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        primary_key=True,
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        # Named explicitly: the naming-convention name exceeds 63 characters.
+        ForeignKey(
+            "course_memberships.id",
+            name="fk_course_ta_permissions_course_membership_id",
+            ondelete="CASCADE",
+        ),
         primary_key=True,
     )
     permission: Mapped[str] = mapped_column(String(32), primary_key=True)

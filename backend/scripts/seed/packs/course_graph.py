@@ -77,10 +77,11 @@ async def seed_course_graph(db: AsyncSession) -> None:
     await _ensure_membership(
         db, course_id=course.id, user_id=student_id, role="STUDENT"
     )
-    await _ensure_membership(db, course_id=course.id, user_id=ta_id, role="TA")
-    await db.flush()
+    ta_membership = await _ensure_membership(
+        db, course_id=course.id, user_id=ta_id, role="TA"
+    )
     for permission in TA_PERMISSIONS:
-        key = {"course_id": course.id, "user_id": ta_id, "permission": permission}
+        key = {"course_membership_id": ta_membership.id, "permission": permission}
         if await db.get(CourseTaPermission, key) is None:
             db.add(CourseTaPermission(**key))
 
@@ -89,10 +90,15 @@ async def seed_course_graph(db: AsyncSession) -> None:
 
 async def _ensure_membership(
     db: AsyncSession, *, course_id: UUID, user_id: UUID, role: str
-) -> None:
-    membership = await db.get(
-        CourseMembership,
-        {"course_id": course_id, "user_id": user_id},
+) -> CourseMembership:
+    membership = await db.scalar(
+        select(CourseMembership).where(
+            CourseMembership.course_id == course_id,
+            CourseMembership.user_id == user_id,
+        )
     )
     if membership is None:
-        db.add(CourseMembership(course_id=course_id, user_id=user_id, role=role))
+        membership = CourseMembership(course_id=course_id, user_id=user_id, role=role)
+        db.add(membership)
+        await db.flush()
+    return membership
