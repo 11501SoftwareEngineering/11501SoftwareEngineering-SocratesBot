@@ -8,6 +8,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ActiveUser, TeacherUser, get_db
+from app.schemas.summary import (
+    PublishedSummaryResponse,
+    SummaryDraftResponse,
+    SummaryStatusResponse,
+    TeacherSummaryResponse,
+)
 from app.services import summaries as summary_service
 
 router = APIRouter(tags=["summaries"])
@@ -28,7 +34,7 @@ async def start_summary(
     topicId: UUID,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> TeacherSummaryResponse:
     """Start a class-summary draft from the ready reports."""
     return await summary_service.start_summary(db, teacher=teacher, topic_id=topicId)
 
@@ -38,7 +44,7 @@ async def read_summary(
     topicId: UUID,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> TeacherSummaryResponse:
     """Return the instructor's summary draft and publish state."""
     return await summary_service.read_teacher_summary(
         db, teacher=teacher, topic_id=topicId
@@ -51,7 +57,7 @@ async def edit_summary(
     payload: SummaryEditRequest,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> SummaryDraftResponse:
     """Replace the overview and viewpoint text, and set the status back to draft."""
     return await summary_service.edit_summary(
         db,
@@ -63,38 +69,47 @@ async def edit_summary(
     )
 
 
-@router.post("/topics/{topicId}/summary/review")
+@router.post(
+    "/topics/{topicId}/summary/review",
+    response_model_exclude_unset=True,
+)
 async def review_summary(
     topicId: UUID,
     payload: SummaryVersionRequest,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> SummaryStatusResponse:
     """Mark a draft summary as reviewed."""
     return await summary_service.review_summary(
         db, teacher=teacher, topic_id=topicId, version=payload.version
     )
 
 
-@router.post("/topics/{topicId}/summary/publish")
+@router.post(
+    "/topics/{topicId}/summary/publish",
+    response_model_exclude_unset=True,
+)
 async def publish_summary(
     topicId: UUID,
     payload: SummaryVersionRequest,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> SummaryStatusResponse:
     """Publish a reviewed summary after it contains no student identity."""
     return await summary_service.publish_summary(
         db, teacher=teacher, topic_id=topicId, version=payload.version
     )
 
 
-@router.post("/topics/{topicId}/summary/withdraw")
+@router.post(
+    "/topics/{topicId}/summary/withdraw",
+    response_model_exclude_unset=True,
+)
 async def withdraw_summary(
     topicId: UUID,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> SummaryStatusResponse:
     """Withdraw the published class summary."""
     return await summary_service.withdraw_summary(db, teacher=teacher, topic_id=topicId)
 
@@ -104,6 +119,6 @@ async def read_published_summary(
     topicId: UUID,
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict:
+) -> PublishedSummaryResponse:
     """Return the published summary for a member of the course."""
     return await summary_service.read_published(db, user=current_user, topic_id=topicId)
