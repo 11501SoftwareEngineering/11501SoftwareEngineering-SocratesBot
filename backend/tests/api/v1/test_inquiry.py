@@ -225,7 +225,7 @@ def test_failed_regeneration_keeps_the_saved_inquiry(
     assert DIALOGUE not in response.text
 
 
-def test_opening_message_is_not_stored(
+def test_opening_message_is_stored(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -249,9 +249,10 @@ def test_opening_message_is_not_stored(
     )
     assert response.status_code == 200
     assert response.json() == {"opening_message": "Where should we start?"}
-    assert topic.opening_message is None
-    recorded.assert_not_awaited()
-    course_route_db.commit.assert_not_awaited()
+    assert topic.opening_message == "Where should we start?"
+    assert topic.inquiry_topic is None
+    recorded.assert_awaited_once()
+    course_route_db.commit.assert_awaited()
 
 
 def test_refine_stops_when_publish_lands_first(

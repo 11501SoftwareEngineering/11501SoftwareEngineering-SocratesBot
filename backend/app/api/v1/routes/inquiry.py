@@ -83,7 +83,7 @@ async def opening_message(
     current_user: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> OpeningMessageResponse:
-    """Draft an opening line from the supplied setup. This does not save it."""
+    """Draft an opening line from the supplied setup and store it."""
     return await inquiry_service.opening_message(db, current_user, topicId, payload)
 
 

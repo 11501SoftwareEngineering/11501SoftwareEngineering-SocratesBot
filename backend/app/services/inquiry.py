@@ -324,7 +324,7 @@ async def refine_inquiry(
 async def opening_message(
     db: AsyncSession, teacher: User, topic_id: UUID, payload: OpeningMessageRequest
 ) -> OpeningMessageResponse:
-    """Draft an opening line from the supplied setup. This does not save it.
+    """Draft an opening line from the supplied setup and store it.
 
     Raises:
         HTTPException: 404 if the topic is missing; 403 if not an instructor;
@@ -348,4 +348,12 @@ async def opening_message(
         ),
     )
     generated = _validated(raw, OpeningMessageDraft)
+    try:
+        topic = await _locked_setup(db, topic.id)
+        topic.opening_message = generated.opening_message or None
+        await topic_crud.record_inquiry_change(db, topic)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
     return OpeningMessageResponse(opening_message=generated.opening_message)
