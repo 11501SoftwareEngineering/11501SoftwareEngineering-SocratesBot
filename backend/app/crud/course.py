@@ -316,9 +316,12 @@ async def list_my_ta_permissions(
 ) -> dict[UUID, list[str]]:
     """Map course id -> permissions ``user_id`` holds as a TA (unordered)."""
     rows = await db.execute(
-        select(CourseTaPermission.course_id, CourseTaPermission.permission).where(
-            CourseTaPermission.user_id == user_id
+        select(CourseMembership.course_id, CourseTaPermission.permission)
+        .join(
+            CourseMembership,
+            CourseMembership.id == CourseTaPermission.course_membership_id,
         )
+        .where(CourseMembership.user_id == user_id)
     )
     permissions: dict[UUID, list[str]] = {}
     for course_id, permission in rows.tuples().all():

@@ -109,6 +109,13 @@ def test_student_promoted_to_ta_then_revoked_leaves_course_without_sessions() ->
                 ),
             )
             assert assigned.permissions == ["edit_topics", "view_members"]
+            my_permissions = await course_crud.list_my_ta_permissions(
+                db, user_id=student_id
+            )
+            assert sorted(my_permissions[course_id]) == [
+                "edit_topics",
+                "view_members",
+            ]
             assert (
                 await course_crud.get_course_role(
                     db, course_id=course_id, user_id=student.id
