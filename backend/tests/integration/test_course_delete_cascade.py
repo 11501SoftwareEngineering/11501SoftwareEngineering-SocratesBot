@@ -67,7 +67,6 @@ def test_creator_delete_cascades_memberships_topics_sessions_instructors() -> No
                 topic_id=topic_id,
                 user_id=student_id,
                 status=SessionStatus.IN_PROGRESS.value,
-                is_anonymous=False,
             )
             db.add(session)
             await db.flush()

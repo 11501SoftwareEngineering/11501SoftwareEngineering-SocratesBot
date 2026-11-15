@@ -71,7 +71,6 @@ def test_create_session_returns_ids_and_commits(
         session_route_db,
         user_id=student.id,
         topic_id=topic_id,
-        is_anonymous=False,
     )
     session_route_db.commit.assert_awaited_once()
     session_route_db.rollback.assert_not_awaited()

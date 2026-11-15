@@ -2,7 +2,6 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -52,7 +51,6 @@ class Session(Base):
         nullable=False,
         default=SessionStatus.IN_PROGRESS.value,
     )
-    is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

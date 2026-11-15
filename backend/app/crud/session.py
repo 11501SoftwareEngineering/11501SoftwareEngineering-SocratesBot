@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,7 +8,6 @@ from app.core.enums import SessionStatus
 from app.models.course import CourseMembership
 from app.models.session import Session
 from app.models.topic import Topic
-from app.schemas.session import SessionData
 
 
 async def get_topic_course_id(
@@ -51,7 +50,6 @@ async def get_or_create_session_id(
     *,
     user_id: UUID,
     topic_id: UUID,
-    is_anonymous: bool,
 ) -> UUID:
     statement = (
         insert(Session)
@@ -59,7 +57,6 @@ async def get_or_create_session_id(
             user_id=user_id,
             topic_id=topic_id,
             status=SessionStatus.IN_PROGRESS.value,
-            is_anonymous=is_anonymous,
         )
         .on_conflict_do_nothing(
             constraint="uq_sessions_user_id_topic_id",
@@ -82,67 +79,9 @@ async def get_or_create_session_id(
     return existing_session_id
 
 
-async def get_session(
-    db: AsyncSession,
-    session_id: UUID,
-) -> SessionData | None:
-    session = await db.get(Session, session_id)
-
-    if session is None:
-        return None
-
-    return SessionData(
-        id=session.id,
-        topic_id=session.topic_id,
-        user_id=session.user_id,
-        status=SessionStatus(session.status),
-        is_anonymous=session.is_anonymous,
-    )
-
-
-async def set_is_anonymous(
-    db: AsyncSession,
-    *,
-    session_id: UUID,
-    is_anonymous: bool,
-) -> SessionData | None:
-    statement = (
-        update(Session)
-        .where(Session.id == session_id)
-        .values(is_anonymous=is_anonymous)
-        .returning(
-            Session.id,
-            Session.topic_id,
-            Session.user_id,
-            Session.status,
-            Session.is_anonymous,
-        )
-    )
-
-    result = await db.execute(statement)
-    row = result.mappings().one_or_none()
-
-    if row is None:
-        return None
-
-    return SessionData(
-        id=row["id"],
-        topic_id=row["topic_id"],
-        user_id=row["user_id"],
-        status=SessionStatus(row["status"]),
-        is_anonymous=row["is_anonymous"],
-    )
-
-
 class SQLAlchemySessionStore:
-    def __init__(
-        self,
-        db: AsyncSession,
-        *,
-        initial_is_anonymous: bool = False,
-    ) -> None:
+    def __init__(self, db: AsyncSession) -> None:
         self._db = db
-        self._initial_is_anonymous = initial_is_anonymous
 
     async def get_topic_course_id(self, topic_id: UUID) -> UUID | None:
         return await get_topic_course_id(self._db, topic_id)
@@ -178,22 +117,4 @@ class SQLAlchemySessionStore:
             self._db,
             user_id=user_id,
             topic_id=topic_id,
-            is_anonymous=self._initial_is_anonymous,
-        )
-
-    async def get_session(
-        self,
-        session_id: UUID,
-    ) -> SessionData | None:
-        return await get_session(self._db, session_id)
-
-    async def set_is_anonymous(
-        self,
-        session_id: UUID,
-        is_anonymous: bool,
-    ) -> SessionData | None:
-        return await set_is_anonymous(
-            self._db,
-            session_id=session_id,
-            is_anonymous=is_anonymous,
         )
