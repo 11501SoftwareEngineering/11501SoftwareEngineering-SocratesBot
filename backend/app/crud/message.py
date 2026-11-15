@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import DialogueOutcome, SessionStatus
+from app.core.enums import DialogueOutcome, MessageSender, SessionStatus
 from app.models.message import DialogueMessage
 from app.models.session import Session
 from app.models.topic import Topic
@@ -39,7 +39,7 @@ async def count_student_turns(db: AsyncSession, session_id: UUID) -> int:
         .select_from(DialogueMessage)
         .where(
             DialogueMessage.session_id == session_id,
-            DialogueMessage.sender == "student",
+            DialogueMessage.sender == MessageSender.STUDENT,
         )
     )
     return int(await db.scalar(statement) or 0)
@@ -58,7 +58,7 @@ async def save_exchange(
     db.add(
         DialogueMessage(
             session_id=session_id,
-            sender="student",
+            sender=MessageSender.STUDENT,
             content=content,
             request_id=request_id,
             created_at=now,
@@ -66,7 +66,7 @@ async def save_exchange(
     )
     ai_message = DialogueMessage(
         session_id=session_id,
-        sender="ai",
+        sender=MessageSender.AI,
         content=reply,
         created_at=now,
     )

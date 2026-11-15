@@ -2,7 +2,9 @@
 
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.core.enums import DialogueOutcome
 
 
 class CreateSessionResponse(BaseModel):
@@ -10,4 +12,6 @@ class CreateSessionResponse(BaseModel):
 
     session_id: UUID
     topic_id: UUID
-    session_status: str
+    session_status: DialogueOutcome = Field(
+        description="open | completed | abandoned | closed_by_summary"
+    )

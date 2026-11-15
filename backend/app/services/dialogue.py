@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import DialogueOutcome, SessionStatus
+from app.core.enums import DialogueAction, DialogueOutcome, MessageSender, SessionStatus
 from app.crud import message as message_crud
 from app.models.message import DialogueMessage
 from app.models.session import Session
@@ -102,9 +102,9 @@ def apply_end(
     """Return outcome, status, goal_reached, awaiting_end_consent, message."""
     if outcome != DialogueOutcome.OPEN.value:
         raise ReplyRejected("Dialogue has already ended")
-    if action == "complete":
+    if action == DialogueAction.COMPLETE:
         return _complete(goal_reached)
-    if action == "continue":
+    if action == DialogueAction.CONTINUE:
         return _continue(status_value)
     return _abandon()
 
@@ -126,7 +126,7 @@ def reply_material(topic: Topic, messages: list[DialogueMessage]) -> str:
 
 
 def _turn_count(messages: list[DialogueMessage]) -> int:
-    return sum(message.sender == "student" for message in messages)
+    return sum(message.sender == MessageSender.STUDENT for message in messages)
 
 
 def _history(
@@ -213,7 +213,7 @@ def _saved_reply(
         if message.request_id == request_id:
             seen = True
             continue
-        if seen and message.sender == "ai":
+        if seen and message.sender == MessageSender.AI:
             return message
     return None
 

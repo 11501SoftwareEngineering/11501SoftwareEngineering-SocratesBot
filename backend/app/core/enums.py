@@ -30,7 +30,24 @@ class TaPermission(StrEnum):
     VIEW_MEMBERS = "view_members"
 
 
+class MessageSender(StrEnum):
+    """ai | student"""
+
+    AI = "ai"
+    STUDENT = "student"
+
+
+class DialogueAction(StrEnum):
+    """complete | continue | abandon"""
+
+    COMPLETE = "complete"
+    CONTINUE = "continue"
+    ABANDON = "abandon"
+
+
 class DialogueOutcome(StrEnum):
+    """open | completed | abandoned | closed_by_summary"""
+
     OPEN = "open"
     COMPLETED = "completed"
     ABANDONED = "abandoned"

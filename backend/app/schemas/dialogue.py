@@ -5,17 +5,23 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.core.enums import DialogueAction, DialogueOutcome, MessageSender
+
+_SENDER = "ai | student"
+_OUTCOME = "open | completed | abandoned | closed_by_summary"
+_ACTION = "complete | continue | abandon"
+
 
 class DialogueMessageItem(BaseModel):
     message_id: UUID
-    sender: str
+    sender: MessageSender = Field(description=_SENDER)
     content: str
     created_at: datetime
 
 
 class DialogueHistoryResponse(BaseModel):
     messages: list[DialogueMessageItem]
-    session_status: str
+    session_status: DialogueOutcome = Field(description=_OUTCOME)
     max_turns: int | None
     completed_turns: int
     goal_reached: bool
@@ -44,17 +50,10 @@ class StreamDone(BaseModel):
 
 
 class EndDialogueRequest(BaseModel):
-    action: str
-
-    @field_validator("action")
-    @classmethod
-    def action_is_known(cls, value: str) -> str:
-        if value not in {"complete", "continue", "abandon"}:
-            raise ValueError("invalid action")
-        return value
+    action: DialogueAction = Field(description=_ACTION)
 
 
 class EndDialogueResponse(BaseModel):
     session_id: UUID
-    session_status: str
+    session_status: DialogueOutcome = Field(description=_OUTCOME)
     message: str
