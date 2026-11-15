@@ -545,6 +545,7 @@ INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
     422: json_detail_examples(
         "Inquiry was not published",
         {
+            "invalid": "Request validation failed",
             "incomplete": "Incomplete setup: topic",
             "invalid": "Request validation failed",
         },
