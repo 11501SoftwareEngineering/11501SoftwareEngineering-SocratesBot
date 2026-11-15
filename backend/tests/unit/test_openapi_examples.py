@@ -18,12 +18,19 @@ def test_report_and_summary_examples_are_concrete() -> None:
         ("TeachingReportsResponse", "class_size"),
         ("TeacherSummaryResponse", "topic_status"),
         ("SummaryDraftResponse", "summary"),
-        ("SummaryStatusResponse", "summary_status"),
+        ("ReviewSummaryResponse", "summary_status"),
+        ("PublishSummaryResponse", "summary_status"),
+        ("WithdrawSummaryResponse", "summary_status"),
         ("PublishedSummaryResponse", "summary"),
     ):
         example = schemas[name]["example"]
         assert field in example
         assert "additionalProp1" not in example
+    assert schemas["PublishSummaryResponse"]["example"]["summary_status"] == "published"
+    assert schemas["WithdrawSummaryResponse"]["example"] == {
+        "summary_status": "withdrawn",
+        "message": "Summary withdrawn",
+    }
 
 
 def test_partial_report_omits_fields_that_were_not_stored() -> None:

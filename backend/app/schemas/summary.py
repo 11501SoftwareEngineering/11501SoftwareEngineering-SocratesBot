@@ -100,6 +100,12 @@ class SummaryDraftResponse(BaseModel):
 
 
 class SummaryStatusResponse(BaseModel):
+    version: int | None = None
+    summary_status: str = Field(description=_SUMMARY_STATUS)
+    message: str
+
+
+class ReviewSummaryResponse(SummaryStatusResponse):
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -110,9 +116,28 @@ class SummaryStatusResponse(BaseModel):
         }
     )
 
-    version: int | None = None
-    summary_status: str = Field(description=_SUMMARY_STATUS)
-    message: str
+
+class PublishSummaryResponse(SummaryStatusResponse):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "version": 1,
+                "summary_status": "published",
+                "message": "Summary published",
+            }
+        }
+    )
+
+
+class WithdrawSummaryResponse(SummaryStatusResponse):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                "summary_status": "withdrawn",
+                "message": "Summary withdrawn",
+            }
+        }
+    )
 
 
 class PublishedSummaryResponse(BaseModel):

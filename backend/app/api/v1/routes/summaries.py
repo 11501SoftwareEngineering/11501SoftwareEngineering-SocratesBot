@@ -10,9 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import ActiveUser, TeacherUser, get_db
 from app.schemas.summary import (
     PublishedSummaryResponse,
+    PublishSummaryResponse,
+    ReviewSummaryResponse,
     SummaryDraftResponse,
-    SummaryStatusResponse,
     TeacherSummaryResponse,
+    WithdrawSummaryResponse,
 )
 from app.services import summaries as summary_service
 
@@ -78,7 +80,7 @@ async def review_summary(
     payload: SummaryVersionRequest,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> SummaryStatusResponse:
+) -> ReviewSummaryResponse:
     """Mark a draft summary as reviewed."""
     return await summary_service.review_summary(
         db, teacher=teacher, topic_id=topicId, version=payload.version
@@ -94,7 +96,7 @@ async def publish_summary(
     payload: SummaryVersionRequest,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> SummaryStatusResponse:
+) -> PublishSummaryResponse:
     """Publish a reviewed summary after it contains no student identity."""
     return await summary_service.publish_summary(
         db, teacher=teacher, topic_id=topicId, version=payload.version
@@ -109,7 +111,7 @@ async def withdraw_summary(
     topicId: UUID,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> SummaryStatusResponse:
+) -> WithdrawSummaryResponse:
     """Withdraw the published class summary."""
     return await summary_service.withdraw_summary(db, teacher=teacher, topic_id=topicId)
 
