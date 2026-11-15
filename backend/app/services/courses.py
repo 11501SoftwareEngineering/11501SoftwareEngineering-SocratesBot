@@ -375,26 +375,29 @@ async def list_course_members(
             else (course_crud.MEMBERSHIP_STUDENT, course_crud.MEMBERSHIP_TA)
         )
     rows = await course_crud.list_course_members(db, course_id, roles=db_roles)
+
+    ta_ids: list[UUID] = []
+    for member, membership in rows:
+        if membership.role == course_crud.MEMBERSHIP_TA:
+            ta_ids.append(member.id)
     ta_permissions = await course_crud.list_ta_permissions(
-        db,
-        course_id=course_id,
-        user_ids=[
-            member.id
-            for member, membership in rows
-            if membership.role == course_crud.MEMBERSHIP_TA
-        ],
+        db, course_id=course_id, user_ids=ta_ids
     )
-    return [
-        CourseMemberListItem(
-            user_id=member.id,
-            account_id=member.account_id,
-            name=member.name,
-            role=_ROLE_BY_DB_VALUE[membership.role],
-            joined_at=membership.joined_at,
-            permissions=sort_permissions(ta_permissions.get(member.id, [])),
+
+    items: list[CourseMemberListItem] = []
+    for member, membership in rows:
+        permissions = ta_permissions.get(member.id, [])
+        items.append(
+            CourseMemberListItem(
+                user_id=member.id,
+                account_id=member.account_id,
+                name=member.name,
+                role=_ROLE_BY_DB_VALUE[membership.role],
+                joined_at=membership.joined_at,
+                permissions=sort_permissions(permissions),
+            )
         )
-        for member, membership in rows
-    ]
+    return items
 
 
 async def remove_course_student(
