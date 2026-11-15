@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import GenerationStatus
+from app.core.enums import GenerationStatus, MessageSender
 from app.models.course import CourseMembership
 from app.models.message import DialogueMessage
 from app.models.report_attempt import ReportAttempt
@@ -139,6 +139,6 @@ async def class_size(db: AsyncSession, course_id: UUID) -> int:
 async def student_turn_count(db: AsyncSession, session_id: UUID) -> int:
     statement = select(DialogueMessage).where(
         DialogueMessage.session_id == session_id,
-        DialogueMessage.sender == "student",
+        DialogueMessage.sender == MessageSender.STUDENT,
     )
     return len(list(await db.scalars(statement)))
