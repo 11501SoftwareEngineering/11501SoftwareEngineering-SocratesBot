@@ -534,6 +534,20 @@ INQUIRY_GENERATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     503: _INQUIRY_GENERATION_FAILED,
 }
 
+SUMMARY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_examples(
+        "Summary was not published",
+        {
+            "not_reviewed": {
+                "version": 3,
+                "summary_status": "draft",
+                "message": "Summary is not reviewed",
+            },
+            "identifier": "Summary contains a name or identifier",
+        },
+    ),
+}
+
 INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: json_detail_example(
         "Topic is not in setup",

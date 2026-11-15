@@ -108,10 +108,18 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
     if memory.draft is not None:
         memory.versions[memory.draft.version] = memory.draft
 
+    def _for_topic(topic_id):
+        return [row for row in memory.versions.values() if row.topic_id == topic_id]
+
+    def _latest(topic_id):
+        rows = _for_topic(topic_id)
+        return max(rows, key=lambda row: row.version) if rows else None
+
     async def latest_summary(_db, topic_id):
-        if memory.draft is None or memory.draft.topic_id != topic_id:
-            return None
-        return memory.draft
+        return _latest(topic_id)
+
+    async def summary_versions(_db, topic_id):
+        return sorted(_for_topic(topic_id), key=lambda row: row.version)
 
     async def summary_version(_db, topic_id, version):
         row = memory.versions.get(version)
@@ -128,18 +136,16 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
         else:
             row.body = body
         memory.versions[version] = row
-        memory.draft = row
+        memory.draft = _latest(topic_id)
         return row
 
     async def published_document(_db, topic_id):
-        if memory.draft is None or memory.draft.topic_id != topic_id:
-            return None
-        return memory.draft.body.get("published")
+        row = _latest(topic_id)
+        return None if row is None else row.body.get("published")
 
     async def published_version(_db, topic_id):
-        if memory.draft is None or memory.draft.topic_id != topic_id:
-            return None
-        return memory.draft.body.get("published_version")
+        row = _latest(topic_id)
+        return None if row is None else row.body.get("published_version")
 
     async def topic_dialogues(_db, topic_id):
         assert topic_id == memory.topic.id
@@ -152,6 +158,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
     monkeypatch.setattr(summary_crud, "latest_attempt", latest_attempt)
     monkeypatch.setattr(summary_crud, "insert_attempt", insert_attempt)
     monkeypatch.setattr(summary_crud, "latest_summary", latest_summary)
+    monkeypatch.setattr(summary_crud, "summary_versions", summary_versions)
     monkeypatch.setattr(summary_crud, "summary_version", summary_version)
     monkeypatch.setattr(summary_crud, "upsert_summary_version", upsert_summary_version)
     monkeypatch.setattr(summary_crud, "published_document", published_document)
@@ -212,13 +219,11 @@ def test_summary_publish_stays_stable_until_withdraw(
     named = auth_client.post(
         f"/api/v1/topics/{memory.topic.id}/summary/publish",
         headers={"Authorization": teacher_bearer},
-        json={"version": 1},
     )
     memory.draft.body["overview"] = "The class compared two accounts."
     published = auth_client.post(
         f"/api/v1/topics/{memory.topic.id}/summary/publish",
         headers={"Authorization": teacher_bearer},
-        json={"version": 1},
     )
     student_read = auth_client.get(
         f"/api/v1/topics/{memory.topic.id}/summary/published",
@@ -327,6 +332,18 @@ def test_summary_keeps_an_older_version_without_sending_one(
             "viewpoint_summary": "Most kept the claim.",
         },
     )
+    newer = auth_client.patch(
+        f"/api/v1/topics/{memory.topic.id}/summary",
+        headers={"Authorization": teacher_bearer},
+        json={
+            "overview": "Not reviewed yet.",
+            "viewpoint_summary": "Most kept the claim.",
+        },
+    )
+    blocked = auth_client.post(
+        f"/api/v1/topics/{memory.topic.id}/summary/publish",
+        headers={"Authorization": teacher_bearer},
+    )
     changed = auth_client.post(
         f"/api/v1/topics/{memory.topic.id}/summary/review",
         headers={"Authorization": teacher_bearer},
@@ -350,8 +367,32 @@ def test_summary_keeps_an_older_version_without_sending_one(
         "summary_status": "reviewed",
         "message": "Summary reviewed",
     }
-    assert changed.json()["version"] == 3
+    assert newer.status_code == 200
+    assert newer.json()["summary"]["version"] == 3
+    assert blocked.status_code == 400
+    assert blocked.json()["detail"] == {
+        "version": 3,
+        "summary_status": "draft",
+        "message": "Summary is not reviewed",
+    }
+    superseded = auth_client.get(
+        f"/api/v1/topics/{memory.topic.id}/summary",
+        headers={"Authorization": teacher_bearer},
+        params={"version": 2},
+    )
+    published = auth_client.post(
+        f"/api/v1/topics/{memory.topic.id}/summary/publish",
+        headers={"Authorization": teacher_bearer},
+    )
+
+    assert changed.json()["version"] == 4
     assert changed.json()["summary_status"] == "reviewed"
+    assert superseded.status_code == 200
+    assert superseded.json()["summary"]["summary_status"] == "withdrawn"
+    assert superseded.json()["summary"]["overview"] == "The second draft."
+    assert published.status_code == 200
+    assert published.json()["version"] == 4
+    assert published.json()["summary_status"] == "published"
 
 
 def test_privacy_and_result_routes_are_gone(auth_client: TestClient) -> None:

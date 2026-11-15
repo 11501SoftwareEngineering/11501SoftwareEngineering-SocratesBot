@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ActiveUser, TeacherUser, get_db
+from app.api.openapi_responses import SUMMARY_PUBLISH_RESPONSES
 from app.schemas.summary import (
     PublishedSummaryResponse,
     PublishSummaryResponse,
@@ -24,10 +25,6 @@ router = APIRouter(tags=["summaries"])
 class SummaryTextRequest(BaseModel):
     overview: str = Field(min_length=1)
     viewpoint_summary: str = Field(min_length=1)
-
-
-class SummaryVersionRequest(BaseModel):
-    version: int
 
 
 @router.post("/topics/{topicId}/summary")
@@ -80,7 +77,7 @@ async def review_summary(
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ReviewSummaryResponse:
-    """Store the visible text when it changed, then mark the summary reviewed."""
+    """Store the visible text when it changed, then mark that version reviewed."""
     return await summary_service.review_summary(
         db,
         teacher=teacher,
@@ -93,17 +90,15 @@ async def review_summary(
 @router.post(
     "/topics/{topicId}/summary/publish",
     response_model_exclude_unset=True,
+    responses=SUMMARY_PUBLISH_RESPONSES,
 )
 async def publish_summary(
     topicId: UUID,
-    payload: SummaryVersionRequest,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PublishSummaryResponse:
-    """Publish a reviewed summary after it contains no student identity."""
-    return await summary_service.publish_summary(
-        db, teacher=teacher, topic_id=topicId, version=payload.version
-    )
+    """Publish the latest summary when that version is reviewed."""
+    return await summary_service.publish_summary(db, teacher=teacher, topic_id=topicId)
 
 
 @router.post(

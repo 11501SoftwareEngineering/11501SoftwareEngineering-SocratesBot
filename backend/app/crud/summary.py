@@ -191,6 +191,17 @@ async def latest_summary(
     return await db.scalar(statement)
 
 
+async def summary_versions(
+    db: AsyncSession, topic_id: UUID
+) -> list[ClassSummaryVersion]:
+    statement = (
+        select(ClassSummaryVersion)
+        .where(ClassSummaryVersion.topic_id == topic_id)
+        .order_by(ClassSummaryVersion.version)
+    )
+    return list(await db.scalars(statement))
+
+
 async def summary_version(
     db: AsyncSession, topic_id: UUID, version: int
 ) -> ClassSummaryVersion | None:

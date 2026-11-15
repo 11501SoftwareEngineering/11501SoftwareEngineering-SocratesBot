@@ -483,7 +483,7 @@ version: 0.2
     - 查無此摘要 (404)
 
 ### 標記摘要審閱完成
-- 功能說明: 以畫面上的文字標記審閱完成。與最新一版不同時，先存成下一版再標 `reviewed`；沒有變動就只改狀態，版本號不變
+- 功能說明: 以畫面上的文字標記審閱完成。與最新一版不同時，先存成下一版再標 `reviewed`；沒有變動就只改狀態，版本號不變。若已有別的 `reviewed` 版本，那個版本改為 `withdrawn`
 - 呼叫方式: POST /topics/{topicId}/summary/review
 - 授權: 老師
 - 輸入資料: `overview`, `viewpoint_summary`（不可空白）
@@ -494,15 +494,15 @@ version: 0.2
     - 查無此摘要 (404)
 
 ### 發布摘要
-- 功能說明: 老師將指定的 `reviewed` 版本發布給學生，成為不可變的發布快照。不接收畫面上的文字，且該版本必須是最新一版
+- 功能說明: 老師發布最新一版，且該版必須是 `reviewed`。不帶版本號，也不接收畫面上的文字。已有較新的未審閱版本時拒絕發布
 - 呼叫方式: POST /topics/{topicId}/summary/publish
 - 授權: 老師
-- 輸入資料: `version`
-- 成功回應: `version`, `summary_status`（`published`）, `message`
+- 輸入資料: 無
+- 成功回應: `version`（實際發布的版本號）, `summary_status`（`published`）, `message`
 - 錯誤:
     - 非該課程老師 (403)
     - 查無此摘要 (404)
-    - 版本不符或尚未審閱 (400)
+    - 最新一版尚未審閱，或已有較新的未審閱版本 (400)。`detail` 為 `version`（最新版本號）, `summary_status`（該版狀態）, `message`
 
 ### 撤回摘要
 - 功能說明: 老師撤回目前發布版本，學生端不再取得該摘要

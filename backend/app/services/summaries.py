@@ -148,7 +148,9 @@ async def review_summary(
     overview: str,
     viewpoint_summary: str,
 ) -> dict:
-    """Store the visible text when it changed, then mark the summary reviewed.
+    """Store the visible text when it changed, then mark that version reviewed.
+
+    An earlier reviewed version is withdrawn. This review is left in place.
 
     Raises:
         HTTPException: 404 if the topic or summary is missing; 403 if the
@@ -163,6 +165,7 @@ async def review_summary(
         viewpoint_summary=viewpoint_summary,
         summary_status="reviewed",
     )
+    await _withdraw_other_reviews(db, topic.id, keep=row.version)
     await db.commit()
     return {
         "version": row.version,
@@ -171,24 +174,19 @@ async def review_summary(
     }
 
 
-async def publish_summary(
-    db: AsyncSession, *, teacher: User, topic_id: UUID, version: int
-) -> dict:
-    """Publish a reviewed summary that contains no student identity.
+async def publish_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -> dict:
+    """Publish the latest summary when that version is reviewed.
+
+    A newer version that is not reviewed blocks publishing an older review.
 
     Raises:
-        HTTPException: 404 if the topic or version is missing; 403 if the
-            caller does not instruct the course; 400 if it is not reviewed
-            or the text contains a name or identifier.
+        HTTPException: 404 if the topic or summary is missing; 403 if the
+            caller does not instruct the course; 400 if the latest version
+            is not reviewed or the text contains a name or identifier.
     """
     topic = await _instructor_topic(db, teacher, topic_id)
-    row = await _version(db, topic.id, version)
+    row = await _reviewed_summary(db, topic.id)
     draft = _draft_dict(row)
-    if draft.get("status") != "reviewed":
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Version mismatch or not reviewed",
-        )
     names, identifiers = _identity_values(draft, await report_crud_names(db, topic.id))
     if leaked_identifier(draft, names=names, identifiers=identifiers):
         raise HTTPException(
@@ -369,19 +367,36 @@ def _fields(body: dict) -> dict:
     }
 
 
-async def _version(
-    db: AsyncSession, topic_id: UUID, version: int
-) -> ClassSummaryVersion:
+async def _reviewed_summary(db: AsyncSession, topic_id: UUID) -> ClassSummaryVersion:
     row = await summary_crud.latest_summary(db, topic_id)
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Summary not found"
         )
-    if row.version != version:
+    if row.body.get("status") != "reviewed":
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="Version mismatch"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "version": row.version,
+                "summary_status": row.body.get("status"),
+                "message": "Summary is not reviewed",
+            },
         )
     return row
+
+
+async def _withdraw_other_reviews(
+    db: AsyncSession, topic_id: UUID, *, keep: int
+) -> None:
+    for old in await summary_crud.summary_versions(db, topic_id):
+        if old.version == keep or old.body.get("status") != "reviewed":
+            continue
+        await summary_crud.upsert_summary_version(
+            db,
+            topic_id=topic_id,
+            version=old.version,
+            body={**old.body, "status": "withdrawn"},
+        )
 
 
 async def _instructor_topic(db: AsyncSession, teacher: User, topic_id: UUID) -> Topic:
