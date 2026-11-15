@@ -11,3 +11,11 @@ class UserRole(StrEnum):
 class SessionStatus(StrEnum):
     IN_PROGRESS = "IN_PROGRESS"
     COMPLETED = "COMPLETED"
+
+
+class CourseRole(StrEnum):
+    """Caller's identity inside one course (API-facing, lowercase)."""
+
+    TEACHER = "teacher"
+    TA = "ta"
+    STUDENT = "student"

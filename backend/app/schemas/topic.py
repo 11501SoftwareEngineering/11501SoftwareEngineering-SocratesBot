@@ -16,7 +16,6 @@ _EXAMPLE_DESCRIPTION = "Discuss the role of AI in education"
 
 
 class TopicCreateRequest(BaseModel):
-    course_id: UUID = Field(examples=[_EXAMPLE_COURSE_ID])
     title: str = Field(min_length=1, max_length=255, examples=[_EXAMPLE_TITLE])
     description: str | None = Field(default=None, examples=[_EXAMPLE_DESCRIPTION])
 

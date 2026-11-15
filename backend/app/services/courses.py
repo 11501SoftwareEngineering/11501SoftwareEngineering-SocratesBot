@@ -1,4 +1,4 @@
-"""Business rules for teacher/student course management."""
+"""Business rules for course management (permissions follow in-course role)."""
 
 from __future__ import annotations
 
@@ -9,9 +9,10 @@ from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import UserRole
+from app.core.enums import CourseRole, UserRole
 from app.crud import course as course_crud
 from app.crud import user as user_crud
+from app.models.course import Course
 from app.models.user import User
 from app.schemas.course import (
     CourseCreateRequest,
@@ -65,6 +66,52 @@ def _is_membership_duplicate_violation(exc: IntegrityError) -> bool:
     return _MEMBERSHIP_PK in text
 
 
+_ROLE_BY_DB_VALUE = {
+    "TEACHER": CourseRole.TEACHER,
+    "TA": CourseRole.TA,
+    "STUDENT": CourseRole.STUDENT,
+}
+
+
+async def get_my_course_role(
+    db: AsyncSession, user: User, course_id: UUID
+) -> CourseRole | None:
+    """Return the caller's identity in the course, or None if not a member."""
+    db_role = await course_crud.get_course_role(
+        db, course_id=course_id, user_id=user.id
+    )
+    return _ROLE_BY_DB_VALUE.get(db_role) if db_role else None
+
+
+def course_not_found() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Course not found",
+    )
+
+
+async def _require_course(db: AsyncSession, course_id: UUID) -> Course:
+    course = await course_crud.get_course_by_id(db, course_id)
+    if course is None:
+        raise course_not_found()
+    return course
+
+
+async def require_course_teacher(
+    db: AsyncSession, user: User, course_id: UUID
+) -> Course:
+    """404 if the course is missing; 403 if ``user`` is not its teacher."""
+    course = await _require_course(db, course_id)
+    if not await course_crud.is_course_instructor(
+        db, course_id=course_id, teacher_id=user.id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Course teacher required",
+        )
+    return course
+
+
 async def create_course(
     db: AsyncSession, teacher: User, payload: CourseCreateRequest
 ) -> CourseCreateResponse:
@@ -103,11 +150,17 @@ async def create_course(
     ) from last_invite_collision
 
 
-async def list_teacher_courses(
-    db: AsyncSession, teacher: User
-) -> list[TeacherCourseListItem]:
-    rows = await course_crud.list_courses_for_instructor(db, teacher.id)
-    return [
+async def list_my_courses(
+    db: AsyncSession, user: User
+) -> list[TeacherCourseListItem | StudentCourseListItem]:
+    """Courses the caller teaches or studies in, merged and sorted by name.
+
+    Each row keeps the shape of the former teacher / student list.
+    """
+    teacher_rows = await course_crud.list_courses_for_instructor(db, user.id)
+    student_rows = await course_crud.list_student_courses(db, user.id)
+
+    items: list[TeacherCourseListItem | StudentCourseListItem] = [
         TeacherCourseListItem(
             course_id=course.id,
             name=course.name,
@@ -116,13 +169,25 @@ async def list_teacher_courses(
             student_count=student_count,
             topic_count=topic_count,
         )
-        for course, student_count, topic_count in rows
+        for course, student_count, topic_count in teacher_rows
     ]
+    seen = {item.course_id for item in items}
+    items.extend(
+        StudentCourseListItem(
+            course_id=course.id,
+            name=course.name,
+            invite_code=course.invitation_code,
+            teacher_name=teacher_name,
+            active_topic_count=session_count,
+        )
+        for course, teacher_name, session_count in student_rows
+        if course.id not in seen
+    )
+    items.sort(key=lambda item: (item.name, str(item.course_id)))
+    return items
 
 
-async def delete_teacher_course(
-    db: AsyncSession, teacher: User, course_id: UUID
-) -> None:
+async def delete_course(db: AsyncSession, teacher: User, course_id: UUID) -> None:
     """Hard-delete a course; idempotent when already gone (no 404)."""
     course = await course_crud.get_course_by_id(db, course_id)
     if course is None:
@@ -138,22 +203,6 @@ async def delete_teacher_course(
     except Exception:
         await db.rollback()
         raise
-
-
-async def list_student_courses(
-    db: AsyncSession, student: User
-) -> list[StudentCourseListItem]:
-    rows = await course_crud.list_student_courses(db, student.id)
-    return [
-        StudentCourseListItem(
-            course_id=course.id,
-            name=course.name,
-            invite_code=course.invitation_code,
-            teacher_name=teacher_name,
-            active_topic_count=session_count,
-        )
-        for course, teacher_name, session_count in rows
-    ]
 
 
 async def _commit_student_enrollment(
@@ -232,11 +281,21 @@ async def join_course(
     )
 
 
-async def leave_course(db: AsyncSession, student: User, course_id: UUID) -> None:
-    """Soft-leave a course; idempotent when already left (no 404)."""
+async def leave_course(db: AsyncSession, user: User, course_id: UUID) -> None:
+    """Student soft-leave; idempotent when already left (no 404).
+
+    Raises:
+        HTTPException: 403 if ``user`` teaches or assists in the course.
+    """
+    role = await get_my_course_role(db, user, course_id)
+    if role in (CourseRole.TEACHER, CourseRole.TA):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Teachers and TAs cannot leave a course this way",
+        )
     try:
         removed = await course_crud.soft_delete_student_membership_by_ids(
-            db, course_id=course_id, user_id=student.id
+            db, course_id=course_id, user_id=user.id
         )
         if removed:
             await db.commit()
@@ -261,7 +320,7 @@ async def _require_instructor(
 async def list_course_students(
     db: AsyncSession, teacher: User, course_id: UUID
 ) -> list[CourseStudentListItem]:
-    await _require_instructor(db, course_id=course_id, teacher=teacher)
+    await require_course_teacher(db, teacher, course_id)
     rows = await course_crud.list_course_students(db, course_id)
     return [
         CourseStudentListItem(
@@ -306,13 +365,13 @@ async def add_course_student(
 
 
 async def remove_course_student(
-    db: AsyncSession, teacher: User, course_id: UUID, student_id: UUID
+    db: AsyncSession, teacher: User, course_id: UUID, user_id: UUID
 ) -> None:
-    """Soft-remove a student; idempotent when already left (no 404)."""
-    await _require_instructor(db, course_id=course_id, teacher=teacher)
+    """Soft-remove a student; idempotent when already left."""
+    await require_course_teacher(db, teacher, course_id)
     try:
         removed = await course_crud.soft_delete_student_membership_by_ids(
-            db, course_id=course_id, user_id=student_id
+            db, course_id=course_id, user_id=user_id
         )
         if removed:
             await db.commit()

@@ -70,6 +70,20 @@ async def is_course_instructor(
     return await db.scalar(statement) is not None
 
 
+async def get_course_role(
+    db: AsyncSession, *, course_id: UUID, user_id: UUID
+) -> str | None:
+    """Return ``"TEACHER"`` / ``"TA"`` / ``"STUDENT"`` for an active member."""
+    if await is_course_instructor(db, course_id=course_id, teacher_id=user_id):
+        return "TEACHER"
+    statement = select(CourseMembership.role).where(
+        CourseMembership.course_id == course_id,
+        CourseMembership.user_id == user_id,
+        CourseMembership.left_at.is_(None),
+    )
+    return await db.scalar(statement)
+
+
 async def list_courses_for_instructor(
     db: AsyncSession, teacher_id: UUID
 ) -> list[InstructorCourseRow]:
