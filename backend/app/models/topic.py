@@ -61,12 +61,6 @@ class Topic(Base):
         default=TopicStage.SETUP.value,
         server_default=TopicStage.SETUP.value,
     )
-    version: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=1,
-        server_default="1",
-    )
     content_language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     age_band: Mapped[str | None] = mapped_column(String(32), nullable=True)

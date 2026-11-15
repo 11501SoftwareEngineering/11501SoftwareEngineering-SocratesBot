@@ -46,7 +46,6 @@ def _topic(**overrides) -> SimpleNamespace:
         "id": uuid4(),
         "course_id": uuid4(),
         "stage": "setup",
-        "version": 1,
         "content_language": None,
         "model_id": "openai/gpt-4o-mini",
         "age_band": None,

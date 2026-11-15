@@ -127,7 +127,6 @@ async def record_inquiry_change(db: AsyncSession, topic: Topic) -> None:
     if version is None:
         return
     db.add(InquiryRevision(topic_id=topic.id, version=version, body=current))
-    topic.version = version
     await db.flush()
 
 

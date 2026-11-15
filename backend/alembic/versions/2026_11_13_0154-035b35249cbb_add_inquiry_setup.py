@@ -30,9 +30,6 @@ def upgrade() -> None:
         ),
     )
     op.add_column(
-        "topics", sa.Column("version", sa.Integer(), server_default="1", nullable=False)
-    )
-    op.add_column(
         "topics", sa.Column("content_language", sa.String(length=16), nullable=True)
     )
     op.add_column("topics", sa.Column("model_id", sa.String(length=128), nullable=True))
@@ -104,6 +101,5 @@ def downgrade() -> None:
     op.drop_column("topics", "age_band")
     op.drop_column("topics", "model_id")
     op.drop_column("topics", "content_language")
-    op.drop_column("topics", "version")
     op.drop_column("topics", "stage")
     # ### end Alembic commands ###
