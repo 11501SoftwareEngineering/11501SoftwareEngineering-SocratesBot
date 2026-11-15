@@ -132,7 +132,7 @@ async def list_member_courses(
             CourseMembership.left_at.is_(None),
         )
     )
-    roles = dict(membership_rows.tuples().all())
+    roles = dict(membership_rows.all())
     if not roles:
         return []
     rows = await _list_course_rows(db, Course.id.in_(list(roles)))
@@ -324,7 +324,7 @@ async def list_my_ta_permissions(
         .where(CourseMembership.user_id == user_id)
     )
     permissions: dict[UUID, list[str]] = {}
-    for course_id, permission in rows.tuples().all():
+    for course_id, permission in rows.all():
         permissions.setdefault(course_id, []).append(permission)
     return permissions
 
