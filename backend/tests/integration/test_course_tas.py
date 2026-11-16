@@ -206,7 +206,38 @@ def test_student_promoted_to_ta_then_revoked_leaves_course_without_sessions() ->
 
 
 @pytest.mark.integration
-def test_non_member_cannot_be_assigned_and_course_delete_cascades() -> None:
+def test_revoked_ta_can_be_assigned_again() -> None:
+    async def _run() -> None:
+        await engine.dispose()
+        await run_migrations()
+
+        async with AsyncSessionLocal() as db:
+            teacher, student, course_id = await _setup_course(db, "ta-again")
+            student_id = uuid.UUID(str(student.id))
+            request = TaAssignRequest(
+                account_id=student.account_id,
+                permissions=[TaPermission.VIEW_REPORTS],
+            )
+            await courses_service.assign_course_ta(db, teacher, course_id, request)
+            await courses_service.revoke_course_ta(db, teacher, course_id, student_id)
+
+            await courses_service.assign_course_ta(db, teacher, course_id, request)
+
+            membership = await _membership_row(
+                db, course_id=course_id, user_id=student_id
+            )
+            assert membership is not None
+            assert membership.role == "TA"
+            assert membership.left_at is None
+            assert (
+                await _permission_rows(db, course_id=course_id, user_id=student_id) == 1
+            )
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_any_account_can_be_assigned_and_course_delete_cascades() -> None:
     async def _run() -> None:
         await engine.dispose()
         await run_migrations()
@@ -222,14 +253,36 @@ def test_non_member_cannot_be_assigned_and_course_delete_cascades() -> None:
             )
             await db.commit()
 
+            # The course's own teacher cannot be a TA of it.
             with pytest.raises(HTTPException) as exc_info:
                 await courses_service.assign_course_ta(
                     db,
                     teacher,
                     course_id,
-                    TaAssignRequest(account_id=outsider.account_id),
+                    TaAssignRequest(account_id=teacher.account_id),
                 )
             assert exc_info.value.status_code == 400
+
+            # Someone outside the course joins it as a TA.
+            await courses_service.assign_course_ta(
+                db,
+                teacher,
+                course_id,
+                TaAssignRequest(
+                    account_id=outsider.account_id,
+                    permissions=[TaPermission.EDIT_TOPICS],
+                ),
+            )
+            assert (
+                await course_crud.get_course_role(
+                    db, course_id=course_id, user_id=outsider.id
+                )
+                == "TA"
+            )
+            assert (
+                await _permission_rows(db, course_id=course_id, user_id=outsider.id)
+                == 1
+            )
 
             await courses_service.assign_course_ta(
                 db,
@@ -247,6 +300,10 @@ def test_non_member_cannot_be_assigned_and_course_delete_cascades() -> None:
             await courses_service.delete_course(db, teacher, course_id)
             assert (
                 await _permission_rows(db, course_id=course_id, user_id=student.id) == 0
+            )
+            assert (
+                await _permission_rows(db, course_id=course_id, user_id=outsider.id)
+                == 0
             )
 
     asyncio.run(_run())
@@ -284,7 +341,7 @@ async def _membership_row(
 
 
 @pytest.mark.integration
-def test_assign_waits_for_concurrent_removal_and_rejects_left_student() -> None:
+def test_assign_waits_for_concurrent_removal_then_reactivates_as_ta() -> None:
     async def _run() -> None:
         await engine.dispose()
         await run_migrations()
@@ -318,19 +375,20 @@ def test_assign_waits_for_concurrent_removal_and_rejects_left_student() -> None:
             assert not assign.done()
             await remover.commit()
 
-            with pytest.raises(HTTPException) as exc_info:
-                await assign
-            assert exc_info.value.status_code == 400
+            # The assign sees the committed removal and brings the row back as
+            # an active TA, never a TA that has left.
+            assigned = await assign
+            assert assigned.permissions == ["view_members"]
 
             membership = await _membership_row(
                 remover, course_id=course_id, user_id=student_id
             )
             assert membership is not None
-            assert membership.role == "STUDENT"
-            assert membership.left_at is not None
+            assert membership.role == "TA"
+            assert membership.left_at is None
             assert (
                 await _permission_rows(remover, course_id=course_id, user_id=student_id)
-                == 0
+                == 1
             )
 
     asyncio.run(_run())

@@ -774,6 +774,7 @@ def _patch_ta_course(
     instructor: bool = True,
     exists: bool = True,
     membership: object | None = None,
+    target_teaches: bool = False,
 ) -> SimpleNamespace:
     """Patch course lookups and TA write helpers; return the mocks."""
     course = _course()
@@ -782,26 +783,33 @@ def _patch_ta_course(
         "get_course_by_id",
         AsyncMock(return_value=course if exists else None),
     )
+    # Assign asks twice: first about the caller, then about the account.
     monkeypatch.setattr(
-        course_crud, "is_course_instructor", AsyncMock(return_value=instructor)
+        course_crud,
+        "is_course_instructor",
+        AsyncMock(side_effect=[instructor, target_teaches]),
     )
+    # Assign reads the row in any state; update / revoke read the active one.
     lookup = AsyncMock(return_value=membership)
+    monkeypatch.setattr(course_crud, "get_membership", lookup)
     monkeypatch.setattr(course_crud, "get_active_membership", lookup)
     mocks = SimpleNamespace(
         course=course,
         lookup=lookup,
+        add=AsyncMock(),
         promote=AsyncMock(),
         set_permissions=AsyncMock(),
         remove=AsyncMock(),
     )
+    monkeypatch.setattr(course_crud, "add_ta_membership", mocks.add)
     monkeypatch.setattr(course_crud, "promote_to_ta", mocks.promote)
     monkeypatch.setattr(course_crud, "set_ta_permissions", mocks.set_permissions)
     monkeypatch.setattr(course_crud, "remove_ta_from_course", mocks.remove)
     return mocks
 
 
-def _membership(role: str) -> SimpleNamespace:
-    return SimpleNamespace(role=role, left_at=None)
+def _membership(role: str, left_at: datetime | None = None) -> SimpleNamespace:
+    return SimpleNamespace(role=role, left_at=left_at)
 
 
 def test_assign_ta_promotes_student_with_sorted_permissions(
@@ -863,17 +871,70 @@ def test_assign_ta_defaults_to_no_permissions(
     mocks.promote.assert_awaited_once_with(course_route_db, membership, [])
 
 
+def test_assign_ta_adds_account_outside_the_course(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
+    bob = seed_user(store, account_id="bob", name="Bob", role=UserRole.TEACHER)
+    mocks = _patch_ta_course(monkeypatch, membership=None)
+
+    response = auth_client.post(
+        f"/api/v1/courses/{mocks.course.id}/tas",
+        headers={"Authorization": bearer},
+        json={"account_id": "bob", "permissions": ["view_members"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["user_id"] == str(bob.id)
+    mocks.add.assert_awaited_once_with(
+        course_route_db,
+        course_id=mocks.course.id,
+        user_id=bob.id,
+        permissions=["view_members"],
+    )
+    mocks.promote.assert_not_awaited()
+    course_route_db.commit.assert_awaited_once()
+
+
+@pytest.mark.parametrize("role", ["STUDENT", "TA"])
+def test_assign_ta_reactivates_a_left_membership(
+    role: str,
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
+    seed_user(store, account_id="alice", name="Alice")
+    membership = _membership(role, left_at=datetime(2026, 11, 1, tzinfo=UTC))
+    mocks = _patch_ta_course(monkeypatch, membership=membership)
+
+    response = auth_client.post(
+        f"/api/v1/courses/{mocks.course.id}/tas",
+        headers={"Authorization": bearer},
+        json={"account_id": "alice"},
+    )
+
+    assert response.status_code == 200
+    mocks.promote.assert_awaited_once_with(course_route_db, membership, [])
+    mocks.add.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
-    ("membership", "admin", "detail"),
+    ("membership", "admin", "target_teaches", "detail"),
     [
-        (None, False, "Account must be a student of this course"),
-        (_membership("TA"), False, "Already a TA of this course"),
-        (_membership("STUDENT"), True, "Admins cannot be TAs"),
+        (_membership("TA"), False, False, "Already a TA of this course"),
+        (_membership("STUDENT"), True, False, "Admins cannot be TAs"),
+        (None, False, True, "Teachers of this course cannot be TAs"),
     ],
 )
 def test_assign_ta_rejected(
     membership: object | None,
     admin: bool,
+    target_teaches: bool,
     detail: str,
     auth_client: TestClient,
     store: FakeStore,
@@ -884,7 +945,9 @@ def test_assign_ta_rejected(
     seed_user(store, account_id="alice", name="Alice")
     if admin:
         monkeypatch.setattr(yaml_config, "SUPER_ADMIN_ACCOUNTS", ["alice"])
-    mocks = _patch_ta_course(monkeypatch, membership=membership)
+    mocks = _patch_ta_course(
+        monkeypatch, membership=membership, target_teaches=target_teaches
+    )
 
     response = auth_client.post(
         f"/api/v1/courses/{mocks.course.id}/tas",
@@ -895,10 +958,29 @@ def test_assign_ta_rejected(
     assert response.status_code == 400
     assert response.json()["detail"] == detail
     mocks.promote.assert_not_awaited()
+    mocks.add.assert_not_awaited()
     course_route_db.commit.assert_not_awaited()
 
 
-def test_assign_ta_concurrent_duplicate_is_400(
+@pytest.mark.parametrize(
+    ("membership", "constraint", "detail"),
+    [
+        (
+            _membership("STUDENT"),
+            "pk_course_ta_permissions",
+            "Already a TA of this course",
+        ),
+        (
+            None,
+            "uq_course_memberships_course_id",
+            "Course membership changed concurrently; retry",
+        ),
+    ],
+)
+def test_assign_ta_concurrent_write_is_400(
+    membership: object | None,
+    constraint: str,
+    detail: str,
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -906,12 +988,12 @@ def test_assign_ta_concurrent_duplicate_is_400(
 ) -> None:
     bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
     seed_user(store, account_id="alice", name="Alice")
-    mocks = _patch_ta_course(monkeypatch, membership=_membership("STUDENT"))
-    mocks.promote.side_effect = IntegrityError(
-        "stmt",
-        {},
-        Exception('duplicate key value violates "pk_course_ta_permissions"'),
+    mocks = _patch_ta_course(monkeypatch, membership=membership)
+    error = IntegrityError(
+        "stmt", {}, Exception(f'duplicate key value violates "{constraint}"')
     )
+    mocks.promote.side_effect = error
+    mocks.add.side_effect = error
 
     response = auth_client.post(
         f"/api/v1/courses/{mocks.course.id}/tas",
@@ -920,7 +1002,7 @@ def test_assign_ta_concurrent_duplicate_is_400(
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Already a TA of this course"
+    assert response.json()["detail"] == detail
     course_route_db.rollback.assert_awaited_once()
 
 

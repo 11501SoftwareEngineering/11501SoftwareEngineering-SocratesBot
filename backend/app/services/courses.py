@@ -424,6 +424,7 @@ async def remove_course_student(
 
 
 _ALREADY_TA_DETAIL = "Already a TA of this course"
+_MEMBERSHIP_RACE_DETAIL = "Course membership changed concurrently; retry"
 
 
 def _ta_assign_rejected(detail: str) -> HTTPException:
@@ -448,11 +449,15 @@ async def _require_active_ta(
 async def assign_course_ta(
     db: AsyncSession, teacher: User, course_id: UUID, payload: TaAssignRequest
 ) -> TaAssignResponse:
-    """Promote an active student of the course to TA with ``permissions``.
+    """Make any registered account a TA of the course with ``permissions``.
+
+    A student of the course is promoted in place (sessions are kept); someone
+    who left or was removed rejoins as a TA; anyone else is added as a TA.
 
     Raises:
         HTTPException: 404 course / account missing; 403 not the course
-            teacher; 400 not an active student here, already a TA, or an admin.
+            teacher; 400 already a TA here, a teacher of this course, or an
+            admin.
     """
     await require_course_teacher(db, teacher, course_id)
     target = await user_crud.get_user_by_account(db, payload.account_id)
@@ -463,24 +468,38 @@ async def assign_course_ta(
         )
     if is_super_admin(target):
         raise _ta_assign_rejected("Admins cannot be TAs")
-    # Lock the row so a concurrent removal or leave cannot slip in between
-    # this check and the promotion.
-    membership = await course_crud.get_active_membership(
+    if await course_crud.is_course_instructor(
+        db, course_id=course_id, teacher_id=target.id
+    ):
+        raise _ta_assign_rejected("Teachers of this course cannot be TAs")
+    # Lock the row (active or soft-left) so a concurrent removal, leave or
+    # revoke cannot slip in between this check and the write.
+    membership = await course_crud.get_membership(
         db, course_id=course_id, user_id=target.id, for_update=True
     )
-    if membership is not None and membership.role == course_crud.MEMBERSHIP_TA:
+    if (
+        membership is not None
+        and membership.left_at is None
+        and membership.role == course_crud.MEMBERSHIP_TA
+    ):
         raise _ta_assign_rejected(_ALREADY_TA_DETAIL)
-    if membership is None:
-        raise _ta_assign_rejected("Account must be a student of this course")
 
     permissions = sort_permissions(payload.permissions)
     try:
-        await course_crud.promote_to_ta(db, membership, permissions)
+        if membership is None:
+            await course_crud.add_ta_membership(
+                db, course_id=course_id, user_id=target.id, permissions=permissions
+            )
+        else:
+            await course_crud.promote_to_ta(db, membership, permissions)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
         if _is_constraint_violation(exc, _TA_PERMISSION_PK):
             raise _ta_assign_rejected(_ALREADY_TA_DETAIL) from None
+        # A first-time member joined (or was added) while we were inserting.
+        if _is_membership_duplicate_violation(exc):
+            raise _ta_assign_rejected(_MEMBERSHIP_RACE_DETAIL) from None
         raise
     except Exception:
         await db.rollback()
@@ -523,8 +542,8 @@ async def revoke_course_ta(
 ) -> None:
     """Revoke a TA, delete their sessions in the course and remove them.
 
-    They can rejoin as a student with the invite code or be re-added by the
-    teacher, like any removed student, starting with no sessions.
+    Like any removed student they cannot rejoin with the invite code; the
+    teacher can add them back as a student or assign them as a TA again.
     """
     await require_course_teacher(db, teacher, course_id)
     membership = await _require_active_ta(db, course_id=course_id, user_id=user_id)

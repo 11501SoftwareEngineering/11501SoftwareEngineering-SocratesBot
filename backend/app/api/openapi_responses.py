@@ -427,14 +427,14 @@ _UNKNOWN_TA_PERMISSION_422 = json_detail_example(
 COURSE_TA_ASSIGN_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: json_detail_examples(
         (
-            "Only an active student of this course can become a TA; "
-            "the account is not a student here (or has left), is already "
-            "a TA, or is an admin"
+            "The account is already a TA of this course, teaches it, or is "
+            "an admin; or its membership changed concurrently (retry)"
         ),
         {
-            "not_student": "Account must be a student of this course",
             "already_ta": "Already a TA of this course",
+            "course_teacher": "Teachers of this course cannot be TAs",
             "admin": "Admins cannot be TAs",
+            "concurrent": "Course membership changed concurrently; retry",
         },
     ),
     401: json_detail_example(

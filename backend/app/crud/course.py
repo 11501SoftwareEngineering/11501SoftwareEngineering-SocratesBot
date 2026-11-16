@@ -286,6 +286,29 @@ async def get_active_membership(
     return await db.scalar(statement)
 
 
+async def get_membership(
+    db: AsyncSession,
+    *,
+    course_id: UUID,
+    user_id: UUID,
+    for_update: bool = False,
+) -> CourseMembership | None:
+    """Return the membership row in any state (active or soft-left), if any.
+
+    With ``for_update`` the row stays locked until the transaction ends and
+    ``role`` / ``left_at`` are the committed values.
+    """
+    statement = select(CourseMembership).where(
+        CourseMembership.course_id == course_id,
+        CourseMembership.user_id == user_id,
+    )
+    if for_update:
+        statement = statement.with_for_update().execution_options(
+            populate_existing=True
+        )
+    return await db.scalar(statement)
+
+
 async def get_ta_permissions(
     db: AsyncSession, *, course_id: UUID, user_id: UUID
 ) -> list[str]:
@@ -321,11 +344,39 @@ async def _delete_ta_permissions(db: AsyncSession, *, membership_id: UUID) -> No
     )
 
 
+async def add_ta_membership(
+    db: AsyncSession,
+    *,
+    course_id: UUID,
+    user_id: UUID,
+    permissions: Iterable[str],
+) -> CourseMembership:
+    """Add someone who has never been in the course as a TA."""
+    membership = CourseMembership(
+        course_id=course_id,
+        user_id=user_id,
+        role=MEMBERSHIP_TA,
+        left_at=None,
+    )
+    db.add(membership)
+    await db.flush()
+    for permission in permissions:
+        _add_ta_permission(db, membership_id=membership.id, permission=permission)
+    await db.flush()
+    return membership
+
+
 async def promote_to_ta(
     db: AsyncSession, membership: CourseMembership, permissions: Iterable[str]
 ) -> None:
-    """Turn a student membership into a TA one (same row keeps its history)."""
+    """Turn an existing membership into a TA one (same row keeps its history).
+
+    A soft-left row (left or removed earlier) rejoins the course as of now.
+    """
     membership.role = MEMBERSHIP_TA
+    if membership.left_at is not None:
+        membership.left_at = None
+        membership.joined_at = datetime.now(UTC)
     for permission in permissions:
         _add_ta_permission(db, membership_id=membership.id, permission=permission)
     await db.flush()
@@ -345,8 +396,8 @@ async def remove_ta_from_course(db: AsyncSession, membership: CourseMembership) 
     """Drop a TA's permissions and sessions and remove them from the course.
 
     Their sessions on this course's topics are deleted. The row becomes a
-    soft-left STUDENT membership, the same state as a removed student, so the
-    user can rejoin later as a student.
+    soft-left STUDENT membership, the same state as a removed student: the
+    teacher can add them back as a student or assign them as a TA again.
     """
     await _delete_ta_permissions(db, membership_id=membership.id)
     course_topics = select(Topic.id).where(Topic.course_id == membership.course_id)
