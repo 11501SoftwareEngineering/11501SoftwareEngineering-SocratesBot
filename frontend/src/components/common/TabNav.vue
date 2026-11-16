@@ -32,7 +32,9 @@ const current = defineModel<K>()
           "
           class="relative flex w-full items-center gap-2 rounded-t px-3 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           :class="[
-            size === 'lg' ? 'justify-center pb-4 text-h1-title' : 'pb-4 text-header',
+            size === 'lg'
+              ? 'justify-center px-2 pb-4 text-h1-title whitespace-nowrap'
+              : 'pb-4 text-header whitespace-nowrap',
             item.key === current
               ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-1 after:h-1.5 after:bg-foreground'
               : 'text-muted-foreground hover:text-foreground',

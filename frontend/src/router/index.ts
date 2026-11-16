@@ -73,6 +73,7 @@ const routes: RouteRecordRaw[] = [
     ],
   ),
 
+  // 教學端（路徑照 Prototype）：老師與助教共用，助教依課程權限顯示功能
   section(
     '/teacher',
     ['TEACHER', 'STUDENT'],
@@ -84,21 +85,39 @@ const routes: RouteRecordRaw[] = [
         () => import('@/views/teacher/CourseListView.vue'),
       ),
       page(
+        'ai-settings',
+        'TeacherAiSettings',
+        'AI 用量與金鑰',
+        () => import('@/views/teacher/AiSettingsView.vue'),
+        { roles: ['TEACHER'] },
+      ),
+      page(
         'courses/:courseId',
         'TeacherCourse',
-        '問題列表',
+        '課程',
         () => import('@/views/teacher/CourseView.vue'),
       ),
       page(
+        'courses/:courseId/topics/new',
+        'TeacherNewActivity',
+        '新增活動',
+        () => import('@/views/teacher/NewActivityView.vue'),
+      ),
+      page(
+        'courses/:courseId/topics/:topicId/setup',
+        'TeacherActivitySetup',
+        '活動設定',
+        () => import('@/views/teacher/ActivitySetupView.vue'),
+      ),
+      page(
         'courses/:courseId/topics/:topicId',
-        'TeacherTopic',
-        '問題結果',
-        () => import('@/views/teacher/TopicView.vue'),
+        'TeacherPerspective',
+        '全班觀點',
+        () => import('@/views/teacher/PerspectiveView.vue'),
       ),
     ],
     { teaching: true },
   ),
-
   section(
     '/student',
     ['STUDENT'],
