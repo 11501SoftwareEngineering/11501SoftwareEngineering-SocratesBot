@@ -92,6 +92,15 @@ async def _locked_setup(db: AsyncSession, topic_id: UUID) -> Topic:
     return topic
 
 
+def _reject_if_stale(topic: Topic, seen_at: object) -> None:
+    """Refuse a write when someone saved this topic while the model was running."""
+    if topic.updated_at != seen_at:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Inquiry was updated",
+        )
+
+
 def _model_failure(exc: ModelCallError) -> HTTPException:
     code = (
         status.HTTP_503_SERVICE_UNAVAILABLE
@@ -301,17 +310,19 @@ async def refine_inquiry(
     """
     topic = await get_instructed_topic(db, teacher, topic_id)
     await _require_setup(topic)
+    seen_at = topic.updated_at
+    topic_id = topic.id
+    model_id = topic.model_id or settings.OPENAI_MODEL
+    language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
+    await db.commit()
     generated = await _complete(
-        topic.model_id or settings.OPENAI_MODEL,
+        model_id,
         _INSTRUCTIONS,
-        _material(
-            payload.setup,
-            content_language=topic.content_language or settings.DEFAULT_LANGUAGE_CODE,
-            feedback=payload.feedback,
-        ),
+        _material(payload.setup, content_language=language, feedback=payload.feedback),
     )
     try:
-        topic = await _locked_setup(db, topic.id)
+        topic = await _locked_setup(db, topic_id)
+        _reject_if_stale(topic, seen_at)
         _apply(topic, generated)
         await _store_setup(db, topic, _fields_of(topic))
         await topic_crud.record_inquiry_change(db, topic)
@@ -333,9 +344,13 @@ async def opening_message(
     """
     topic = await get_instructed_topic(db, teacher, topic_id)
     await _require_setup(topic)
+    seen_at = topic.updated_at
+    topic_id = topic.id
+    model_id = topic.model_id or settings.OPENAI_MODEL
     draft = payload.setup
+    await db.commit()
     raw = await _model_json(
-        topic.model_id or settings.OPENAI_MODEL,
+        model_id,
         _OPENING_INSTRUCTIONS,
         (
             f"age_band: {draft.age_band}\n"
@@ -350,7 +365,8 @@ async def opening_message(
     )
     generated = _validated(raw, OpeningMessageDraft)
     try:
-        topic = await _locked_setup(db, topic.id)
+        topic = await _locked_setup(db, topic_id)
+        _reject_if_stale(topic, seen_at)
         topic.opening_message = generated.opening_message or None
         await topic_crud.record_inquiry_change(db, topic)
         await db.commit()

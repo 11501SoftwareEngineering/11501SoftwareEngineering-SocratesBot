@@ -138,7 +138,7 @@ class OpeningMessageDraft(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    opening_message: str = ""
+    opening_message: str = Field(default="", max_length=_TEXT)
 
     @field_validator("opening_message")
     @classmethod
@@ -153,12 +153,12 @@ class GeneratedInquiry(BaseModel):
 
     age_band: AgeBandValue
     max_turns: TurnCap
-    topic: str
-    core_question: str
-    inquiry_focus: str
-    background_info: str
-    exclusions: str
-    opening_message: str
+    topic: str = Field(max_length=_TEXT)
+    core_question: str = Field(max_length=_TEXT)
+    inquiry_focus: str = Field(max_length=_TEXT)
+    background_info: str = Field(max_length=_TEXT)
+    exclusions: str = Field(max_length=_TEXT)
+    opening_message: str = Field(max_length=_TEXT)
 
     @field_validator("topic", "core_question")
     @classmethod

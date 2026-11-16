@@ -456,7 +456,7 @@ _INQUIRY_DENIED = json_detail_examples(
     "Inquiry access denied",
     {
         "not_teacher": "Teacher privileges required",
-        "not_instructor": "Course instructor required",
+        "not_instructor": "Course teacher required",
     },
 )
 _INQUIRY_MISSING = json_detail_example("Topic not found", "Topic not found")
@@ -485,6 +485,18 @@ INQUIRY_SETUP_WRITE_RESPONSES: dict[int | str, dict[str, Any]] = {
         "Request validation failed",
         "Request validation failed",
     ),
+}
+
+_INQUIRY_GENERATION_FAILED = json_detail_example(
+    "Inquiry generation failed",
+    "Inquiry generation failed",
+)
+
+INQUIRY_GENERATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    **INQUIRY_SETUP_WRITE_RESPONSES,
+    409: json_detail_example("Inquiry was updated", "Inquiry was updated"),
+    502: _INQUIRY_GENERATION_FAILED,
+    503: _INQUIRY_GENERATION_FAILED,
 }
 
 INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -56,6 +57,7 @@ def _topic(**overrides) -> SimpleNamespace:
         "background_info": None,
         "exclusions": None,
         "opening_message": None,
+        "updated_at": datetime(2026, 11, 16, tzinfo=UTC),
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -307,7 +309,6 @@ def test_failed_regeneration_keeps_the_saved_inquiry(
     assert response.status_code == 503
     assert topic.inquiry_topic == "saved topic"
     recorded.assert_not_awaited()
-    course_route_db.commit.assert_not_awaited()
     assert KEY not in caplog.text
     assert DIALOGUE not in caplog.text
     assert DIALOGUE not in response.text
@@ -375,4 +376,65 @@ def test_refine_stops_when_publish_lands_first(
     assert response.status_code == 400
     assert topic.inquiry_topic == "saved topic"
     recorded.assert_not_awaited()
-    course_route_db.commit.assert_not_awaited()
+
+
+def test_overlong_model_text_is_not_stored(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store)
+    topic = _topic(inquiry_topic="saved topic", core_question="saved question")
+    recorded = _ready(monkeypatch, topic)
+
+    async def complete(
+        self, *, instructions: str, material: str, model: str | None = None
+    ):
+        return {**GENERATED, "background_info": "x" * 8001}
+
+    monkeypatch.setattr(OpenAIChatClient, "complete_json", complete)
+    response = auth_client.post(
+        f"/api/v1/topics/{topic.id}/setup/refine",
+        headers={"Authorization": bearer},
+        json={"feedback": "expand", "setup": {"topic": "saved topic"}},
+    )
+
+    assert response.status_code == 502
+    assert topic.inquiry_topic == "saved topic"
+    assert topic.background_info is None
+    recorded.assert_not_awaited()
+
+
+def test_refine_refuses_a_save_that_landed_while_the_model_ran(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store)
+    topic = _topic(inquiry_topic="saved topic", core_question="saved question")
+    recorded = _ready(monkeypatch, topic)
+    seen = topic.updated_at
+
+    async def newer(_db, _topic_id):
+        topic.updated_at = seen + timedelta(seconds=1)
+        return topic
+
+    monkeypatch.setattr(topic_crud, "lock_topic", newer)
+
+    async def complete(
+        self, *, instructions: str, material: str, model: str | None = None
+    ):
+        return GENERATED
+
+    monkeypatch.setattr(OpenAIChatClient, "complete_json", complete)
+    response = auth_client.post(
+        f"/api/v1/topics/{topic.id}/setup/refine",
+        headers={"Authorization": bearer},
+        json={"feedback": "shorter", "setup": {"topic": "saved topic"}},
+    )
+
+    assert response.status_code == 409
+    assert topic.inquiry_topic == "saved topic"
+    recorded.assert_not_awaited()

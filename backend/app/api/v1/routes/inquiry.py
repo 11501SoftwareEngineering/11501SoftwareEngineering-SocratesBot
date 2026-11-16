@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import TeacherUser, get_db
 from app.api.openapi_responses import (
+    INQUIRY_GENERATE_RESPONSES,
     INQUIRY_PUBLISH_RESPONSES,
     INQUIRY_SETUP_READ_RESPONSES,
     INQUIRY_SETUP_WRITE_RESPONSES,
@@ -60,7 +61,7 @@ async def save_inquiry_setup(
     "/topics/{topicId}/setup/refine",
     response_model=InquirySetupResponse,
     response_model_exclude_none=True,
-    responses=INQUIRY_SETUP_WRITE_RESPONSES,
+    responses=INQUIRY_GENERATE_RESPONSES,
 )
 async def refine_inquiry(
     topicId: UUID,
@@ -75,7 +76,7 @@ async def refine_inquiry(
 @router.post(
     "/topics/{topicId}/setup/opening-message",
     response_model=OpeningMessageResponse,
-    responses=INQUIRY_SETUP_WRITE_RESPONSES,
+    responses=INQUIRY_GENERATE_RESPONSES,
 )
 async def opening_message(
     topicId: UUID,
