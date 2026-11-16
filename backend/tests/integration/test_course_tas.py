@@ -109,13 +109,10 @@ def test_student_promoted_to_ta_then_revoked_leaves_course_without_sessions() ->
                 ),
             )
             assert assigned.permissions == ["edit_topics", "view_members"]
-            my_permissions = await course_crud.list_my_ta_permissions(
-                db, user_id=student_id
-            )
-            assert sorted(my_permissions[course_id]) == [
-                "edit_topics",
-                "view_members",
-            ]
+            my_rows = await course_crud.list_my_course_rows(db, student_id)
+            my_row = next(row for row in my_rows if row[0].id == course_id)
+            assert my_row[4] == "TA"
+            assert sorted(my_row[5]) == ["edit_topics", "view_members"]
             assert (
                 await course_crud.get_course_role(
                     db, course_id=course_id, user_id=student.id
@@ -458,5 +455,44 @@ def test_permission_update_waits_for_concurrent_revoke_and_is_404() -> None:
                 await _permission_rows(revoker, course_id=course_id, user_id=student_id)
                 == 0
             )
+
+    asyncio.run(_run())
+
+
+@pytest.mark.integration
+def test_course_list_query_prefers_teacher_role_over_membership() -> None:
+    async def _run() -> None:
+        await engine.dispose()
+        await run_migrations()
+
+        async with AsyncSessionLocal() as db:
+            teacher, student, course_id = await _setup_course(db, "ta-list")
+            teacher_id = uuid.UUID(str(teacher.id))
+            student_id = uuid.UUID(str(student.id))
+            # A membership row for the instructor must not duplicate the course.
+            await course_crud.add_student_membership(
+                db, course_id=course_id, user_id=teacher_id
+            )
+            await db.commit()
+
+            teacher_rows = await course_crud.list_my_course_rows(db, teacher_id)
+            matching = [row for row in teacher_rows if row[0].id == course_id]
+            assert len(matching) == 1
+            _, _, topics, students, db_role, grants = matching[0]
+            assert db_role == "TEACHER"
+            assert topics == 0
+            assert students == 2
+            assert grants == []
+
+            student_rows = await course_crud.list_my_course_rows(db, student_id)
+            assert [(row[0].id, row[4], row[5]) for row in student_rows] == [
+                (course_id, "STUDENT", [])
+            ]
+
+            await course_crud.soft_delete_student_membership_by_ids(
+                db, course_id=course_id, user_id=student_id
+            )
+            await db.commit()
+            assert await course_crud.list_my_course_rows(db, student_id) == []
 
     asyncio.run(_run())

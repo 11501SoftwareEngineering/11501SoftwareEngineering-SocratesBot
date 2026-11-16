@@ -201,43 +201,18 @@ async def list_my_courses(db: AsyncSession, user: User) -> list[CourseListItem]:
         teacher_name,
         topic_count,
         student_count,
-    ) in await course_crud.list_instructed_courses(db, user.id):
-        items.append(
-            CourseListItem(
-                course_id=course.id,
-                name=course.name,
-                description=course.description,
-                teacher_name=teacher_name,
-                topic_count=topic_count,
-                my_role=CourseRole.TEACHER,
-                my_permissions=[],
-                invite_code=course.invitation_code,
-                student_count=student_count,
-            )
-        )
-    seen = {item.course_id for item in items}
-    member_rows = await course_crud.list_member_courses(db, user.id)
-    ta_permissions = (
-        await course_crud.list_my_ta_permissions(db, user_id=user.id)
-        if any(db_role == course_crud.MEMBERSHIP_TA for _, db_role in member_rows)
-        else {}
-    )
-    for (course, teacher_name, topic_count, student_count), db_role in member_rows:
-        if course.id in seen:
-            continue
+        db_role,
+        ta_permissions,
+    ) in await course_crud.list_my_course_rows(db, user.id):
         role = _ROLE_BY_DB_VALUE[db_role]
-        permissions = (
-            sort_permissions(ta_permissions.get(course.id, []))
-            if role is CourseRole.TA
-            else []
-        )
+        permissions: list[str] = []
+        if role is CourseRole.TA:
+            permissions = sort_permissions(ta_permissions)
         # ``student_count`` stays unset (omitted) for students and for TAs
         # without view_members.
-        extra = (
-            {"student_count": student_count}
-            if TaPermission.VIEW_MEMBERS in permissions
-            else {}
-        )
+        extra: dict[str, int] = {}
+        if role is CourseRole.TEACHER or TaPermission.VIEW_MEMBERS in permissions:
+            extra["student_count"] = student_count
         items.append(
             CourseListItem(
                 course_id=course.id,
@@ -251,7 +226,6 @@ async def list_my_courses(db: AsyncSession, user: User) -> list[CourseListItem]:
                 **extra,
             )
         )
-    items.sort(key=lambda item: (item.name, str(item.course_id)))
     return items
 
 

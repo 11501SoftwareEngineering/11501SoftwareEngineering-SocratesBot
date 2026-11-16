@@ -365,20 +365,19 @@ def test_list_courses_merges_teaching_and_studying(
     bearer, user = _login(auth_client, store, "both", UserRole.TEACHER)
     taught = _course(name="Taught", created_by=user.id)
     studied = _course(name="Studied", description=None)
-    monkeypatch.setattr(
-        course_crud,
-        "list_instructed_courses",
-        AsyncMock(return_value=[(taught, "Me", 2, 5)]),
+    # The query returns rows already ordered by course name.
+    rows_mock = AsyncMock(
+        return_value=[
+            (studied, "Other Teacher", 4, 30, "STUDENT", []),
+            (taught, "Me", 2, 5, "TEACHER", []),
+        ]
     )
-    monkeypatch.setattr(
-        course_crud,
-        "list_member_courses",
-        AsyncMock(return_value=[((studied, "Other Teacher", 4, 30), "STUDENT")]),
-    )
+    monkeypatch.setattr(course_crud, "list_my_course_rows", rows_mock)
 
     response = auth_client.get("/api/v1/courses", headers={"Authorization": bearer})
 
     assert response.status_code == 200
+    rows_mock.assert_awaited_once_with(course_route_db, user.id)
     assert response.json() == [
         {
             "course_id": str(studied.id),
@@ -412,12 +411,9 @@ def test_list_courses_student_has_no_student_count(
 ) -> None:
     bearer, _ = _login(auth_client, store, "stud")
     monkeypatch.setattr(
-        course_crud, "list_instructed_courses", AsyncMock(return_value=[])
-    )
-    monkeypatch.setattr(
         course_crud,
-        "list_member_courses",
-        AsyncMock(return_value=[((_course(), "T", 1, 9), "STUDENT")]),
+        "list_my_course_rows",
+        AsyncMock(return_value=[(_course(), "T", 1, 9, "STUDENT", [])]),
     )
     body = auth_client.get("/api/v1/courses", headers={"Authorization": bearer}).json()
     assert "student_count" not in body[0]
@@ -444,22 +440,14 @@ def test_list_courses_ta_permissions_and_student_count(
     assisted = _course(name="Assisted")
     studied = _course(name="Studied")
     monkeypatch.setattr(
-        course_crud, "list_instructed_courses", AsyncMock(return_value=[])
-    )
-    monkeypatch.setattr(
         course_crud,
-        "list_member_courses",
+        "list_my_course_rows",
         AsyncMock(
             return_value=[
-                ((assisted, "T", 1, 9), "TA"),
-                ((studied, "T", 1, 7), "STUDENT"),
+                (assisted, "T", 1, 9, "TA", granted),
+                (studied, "T", 1, 7, "STUDENT", []),
             ]
         ),
-    )
-    monkeypatch.setattr(
-        course_crud,
-        "list_my_ta_permissions",
-        AsyncMock(return_value={assisted.id: granted} if granted else {}),
     )
 
     body = auth_client.get("/api/v1/courses", headers={"Authorization": bearer}).json()

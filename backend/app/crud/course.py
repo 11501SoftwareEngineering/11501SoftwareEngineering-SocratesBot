@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -23,9 +23,10 @@ from app.models.user import User
 MEMBERSHIP_STUDENT = "STUDENT"
 MEMBERSHIP_TA = "TA"
 
-# (course, teacher_name, topic_count, student_count)
-# topic_count is the total topics in the course; student_count is active students.
-MyCourseRow = tuple[Course, str, int, int]
+# (course, teacher_name, topic_count, student_count, db_role, ta_permissions)
+# topic_count is the total topics in the course; student_count is active students;
+# db_role is "TEACHER" / "TA" / "STUDENT"; ta_permissions is unordered.
+MyCourseRow = tuple[Course, str, int, int, str, list[str]]
 
 
 def _active_student_filters():
@@ -96,47 +97,64 @@ def _course_count_subqueries():
     return student_count, topic_count
 
 
-async def _list_course_rows(db: AsyncSession, *membership_filters) -> list[MyCourseRow]:
+async def list_my_course_rows(db: AsyncSession, user_id: UUID) -> list[MyCourseRow]:
+    """Courses ``user_id`` instructs or is an active STUDENT/TA of, in one query.
+
+    A course the user instructs is ``"TEACHER"`` even if a membership row also
+    exists. ``permissions`` holds the TA grants of the user's membership.
+    """
     creator = aliased(User)
+    membership = aliased(CourseMembership)
     student_count, topic_count = _course_count_subqueries()
+    is_instructor = (
+        select(CourseInstructor.course_id)
+        .where(
+            CourseInstructor.course_id == Course.id,
+            CourseInstructor.teacher_id == user_id,
+        )
+        .exists()
+    )
+    role = case((is_instructor, "TEACHER"), else_=membership.role)
+    permissions = (
+        select(func.array_agg(CourseTaPermission.permission))
+        .where(CourseTaPermission.course_membership_id == membership.id)
+        .scalar_subquery()
+    )
     statement = (
-        select(Course, creator.name, topic_count, student_count)
+        select(
+            Course,
+            creator.name,
+            topic_count,
+            student_count,
+            role,
+            permissions,
+        )
         .join(creator, creator.id == Course.created_by)
-        .where(*membership_filters)
+        .outerjoin(
+            membership,
+            and_(
+                membership.course_id == Course.id,
+                membership.user_id == user_id,
+                membership.left_at.is_(None),
+            ),
+        )
+        .where(or_(is_instructor, membership.id.is_not(None)))
         .order_by(Course.name.asc(), Course.id.asc())
     )
     result = await db.execute(statement)
-    return [
-        (course, teacher_name or "", int(topics or 0), int(students or 0))
-        for course, teacher_name, topics, students in result.all()
-    ]
-
-
-async def list_instructed_courses(
-    db: AsyncSession, teacher_id: UUID
-) -> list[MyCourseRow]:
-    """Courses ``teacher_id`` instructs, with teacher name and counts."""
-    instructed = select(CourseInstructor.course_id).where(
-        CourseInstructor.teacher_id == teacher_id
-    )
-    return await _list_course_rows(db, Course.id.in_(instructed))
-
-
-async def list_member_courses(
-    db: AsyncSession, user_id: UUID
-) -> list[tuple[MyCourseRow, str]]:
-    """Courses where ``user_id`` is an active STUDENT/TA, with the DB role."""
-    membership_rows = await db.execute(
-        select(CourseMembership.course_id, CourseMembership.role).where(
-            CourseMembership.user_id == user_id,
-            CourseMembership.left_at.is_(None),
+    rows: list[MyCourseRow] = []
+    for course, teacher_name, topics, students, db_role, grants in result.all():
+        rows.append(
+            (
+                course,
+                teacher_name or "",
+                int(topics or 0),
+                int(students or 0),
+                db_role,
+                list(grants or []),
+            )
         )
-    )
-    roles = dict(membership_rows.all())
-    if not roles:
-        return []
-    rows = await _list_course_rows(db, Course.id.in_(list(roles)))
-    return [(row, roles[row[0].id]) for row in rows]
+    return rows
 
 
 async def get_course_role(
@@ -309,24 +327,6 @@ async def get_ta_permissions(
         )
     )
     return list((await db.scalars(statement)).all())
-
-
-async def list_my_ta_permissions(
-    db: AsyncSession, *, user_id: UUID
-) -> dict[UUID, list[str]]:
-    """Map course id -> permissions ``user_id`` holds as a TA (unordered)."""
-    rows = await db.execute(
-        select(CourseMembership.course_id, CourseTaPermission.permission)
-        .join(
-            CourseMembership,
-            CourseMembership.id == CourseTaPermission.course_membership_id,
-        )
-        .where(CourseMembership.user_id == user_id)
-    )
-    permissions: dict[UUID, list[str]] = {}
-    for course_id, permission in rows.all():
-        permissions.setdefault(course_id, []).append(permission)
-    return permissions
 
 
 def _add_ta_permission(
