@@ -161,7 +161,11 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
-  scrollBehavior: () => ({ top: 0 }),
+  // 有 #錨點（例如 P14 的 #model-prices）時，等頁面資料載入後再捲過去
+  scrollBehavior: (to) =>
+    to.hash
+      ? new Promise((resolve) => setTimeout(() => resolve({ el: to.hash, top: 24 }), 400))
+      : { top: 0 },
 })
 
 router.beforeEach((to) => {

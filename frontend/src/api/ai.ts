@@ -18,6 +18,9 @@ export interface StageUsage {
   stage: UsageStage
   request_count: number
   total_tokens: number
+  /** 規格沒寫；Figma 的「各階段用量」有輸入／輸出兩欄，後端有給就顯示 */
+  input_tokens?: number
+  output_tokens?: number
   cost_usd: number | null
 }
 

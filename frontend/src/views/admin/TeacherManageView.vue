@@ -19,7 +19,6 @@ import PasswordNoticeDialog from '@/components/common/PasswordNoticeDialog.vue'
 import QueryState from '@/components/common/QueryState.vue'
 import { AddRingIcon, RefreshIcon, TrashIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
-import { features } from '@/config/features'
 import { Input } from '@/components/ui/input'
 import { useSearch } from '@/composables/useSearch'
 import { formatDate, getApiErrorMessage } from '@/lib/utils'
@@ -131,7 +130,6 @@ const deleteMutation = useMutation({
         >
           <template #actions>
             <Button
-              v-if="features.teacherPasswordReset"
               variant="secondary"
               :aria-label="`重設 ${teacher.name} 的密碼`"
               @click="ask(teacher, 'reset')"

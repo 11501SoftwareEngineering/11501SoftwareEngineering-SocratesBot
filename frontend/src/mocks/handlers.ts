@@ -1359,7 +1359,7 @@ export const handlers = [
       input_tokens: input,
       output_tokens: output,
       request_count: requests,
-      by_stage: stages.map(({ input_tokens: _i, output_tokens: _o, ...s }) => s),
+      by_stage: stages,
       cost_usd: requests ? cost(input, output) : null,
       cost_source: requests ? 'estimate' : null,
       updated_at: requests ? now() : null,
