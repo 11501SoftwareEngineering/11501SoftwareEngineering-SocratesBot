@@ -73,7 +73,7 @@ async def _permission_rows(
 
 
 @pytest.mark.integration
-def test_student_promoted_to_ta_then_revoked_keeps_sessions() -> None:
+def test_student_promoted_to_ta_then_revoked_leaves_course_without_sessions() -> None:
     async def _run() -> None:
         await engine.dispose()
         await run_migrations()
@@ -92,6 +92,8 @@ def test_student_promoted_to_ta_then_revoked_keeps_sessions() -> None:
                     status=SessionStatus.COMPLETED.value,
                 )
             )
+            # Someone else's session on the same topic must survive the revoke.
+            db.add(Session(topic_id=topic_id, user_id=teacher.id))
             await db.commit()
 
             assigned = await courses_service.assign_course_ta(
@@ -155,7 +157,13 @@ def test_student_promoted_to_ta_then_revoked_keeps_sessions() -> None:
             )
             assert membership is not None
             assert membership.role == "STUDENT"
-            assert membership.left_at is None
+            assert membership.left_at is not None
+            assert (
+                await course_crud.get_course_role(
+                    db, course_id=course_id, user_id=student_id
+                )
+                is None
+            )
             assert (
                 await _permission_rows(db, course_id=course_id, user_id=student_id) == 0
             )
@@ -164,13 +172,35 @@ def test_student_promoted_to_ta_then_revoked_keeps_sessions() -> None:
                 .select_from(Session)
                 .where(Session.user_id == student_id, Session.topic_id == topic_id)
             )
-            assert sessions == 1
+            assert sessions == 0
+            assert (
+                await db.scalar(
+                    select(func.count())
+                    .select_from(Session)
+                    .where(Session.topic_id == topic_id)
+                )
+                == 1
+            )
 
             with pytest.raises(HTTPException) as exc_info:
                 await courses_service.revoke_course_ta(
                     db, teacher, course_id, student_id
                 )
             assert exc_info.value.status_code == 404
+
+            # Like any removed student, they can be enrolled again.
+            rejoined = await course_crud.add_student_membership(
+                db, course_id=course_id, user_id=student_id
+            )
+            await db.commit()
+            assert rejoined.id == membership.id
+            assert rejoined.left_at is None
+            assert (
+                await course_crud.get_course_role(
+                    db, course_id=course_id, user_id=student_id
+                )
+                == "STUDENT"
+            )
 
     asyncio.run(_run())
 
@@ -331,7 +361,7 @@ def test_permission_update_waits_for_concurrent_revoke_and_is_404() -> None:
                 revoker, course_id=course_id, user_id=student_id, for_update=True
             )
             assert membership is not None
-            await course_crud.demote_to_student(revoker, membership)
+            await course_crud.remove_ta_from_course(revoker, membership)
 
             updating_teacher = await updater.get(User, teacher_id)
             assert updating_teacher is not None

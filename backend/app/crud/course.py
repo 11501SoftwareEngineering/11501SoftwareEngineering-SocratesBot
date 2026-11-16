@@ -341,8 +341,21 @@ async def set_ta_permissions(
     await db.flush()
 
 
-async def demote_to_student(db: AsyncSession, membership: CourseMembership) -> None:
-    """Drop a TA's permissions and turn the membership back into a student."""
+async def remove_ta_from_course(db: AsyncSession, membership: CourseMembership) -> None:
+    """Drop a TA's permissions and sessions and remove them from the course.
+
+    Their sessions on this course's topics are deleted. The row becomes a
+    soft-left STUDENT membership, the same state as a removed student, so the
+    user can rejoin later as a student.
+    """
     await _delete_ta_permissions(db, membership_id=membership.id)
+    course_topics = select(Topic.id).where(Topic.course_id == membership.course_id)
+    await db.execute(
+        delete(Session).where(
+            Session.user_id == membership.user_id,
+            Session.topic_id.in_(course_topics),
+        )
+    )
     membership.role = MEMBERSHIP_STUDENT
+    membership.left_at = datetime.now(UTC)
     await db.flush()

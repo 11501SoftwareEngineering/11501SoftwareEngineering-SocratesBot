@@ -521,11 +521,15 @@ async def update_course_ta_permissions(
 async def revoke_course_ta(
     db: AsyncSession, teacher: User, course_id: UUID, user_id: UUID
 ) -> None:
-    """Turn a TA back into a student of the course (sessions are kept)."""
+    """Revoke a TA, delete their sessions in the course and remove them.
+
+    They can rejoin as a student with the invite code or be re-added by the
+    teacher, like any removed student, starting with no sessions.
+    """
     await require_course_teacher(db, teacher, course_id)
     membership = await _require_active_ta(db, course_id=course_id, user_id=user_id)
     try:
-        await course_crud.demote_to_student(db, membership)
+        await course_crud.remove_ta_from_course(db, membership)
         await db.commit()
     except Exception:
         await db.rollback()

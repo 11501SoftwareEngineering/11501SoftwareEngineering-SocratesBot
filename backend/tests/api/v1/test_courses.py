@@ -792,11 +792,11 @@ def _patch_ta_course(
         lookup=lookup,
         promote=AsyncMock(),
         set_permissions=AsyncMock(),
-        demote=AsyncMock(),
+        remove=AsyncMock(),
     )
     monkeypatch.setattr(course_crud, "promote_to_ta", mocks.promote)
     monkeypatch.setattr(course_crud, "set_ta_permissions", mocks.set_permissions)
-    monkeypatch.setattr(course_crud, "demote_to_student", mocks.demote)
+    monkeypatch.setattr(course_crud, "remove_ta_from_course", mocks.remove)
     return mocks
 
 
@@ -1100,7 +1100,7 @@ def test_update_ta_permissions_validation_errors(
     mocks.set_permissions.assert_not_awaited()
 
 
-def test_revoke_ta_demotes_to_student(
+def test_revoke_ta_removes_them_from_course(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -1121,7 +1121,7 @@ def test_revoke_ta_demotes_to_student(
     mocks.lookup.assert_awaited_once_with(
         course_route_db, course_id=mocks.course.id, user_id=ta_id, for_update=True
     )
-    mocks.demote.assert_awaited_once_with(course_route_db, membership)
+    mocks.remove.assert_awaited_once_with(course_route_db, membership)
     course_route_db.commit.assert_awaited_once()
 
 
@@ -1151,7 +1151,7 @@ def test_revoke_ta_errors(
     )
 
     assert response.status_code == expected
-    mocks.demote.assert_not_awaited()
+    mocks.remove.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

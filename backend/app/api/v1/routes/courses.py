@@ -179,5 +179,5 @@ async def revoke_ta(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    """Revoke a TA; they become a student of the course again (204)."""
+    """Revoke a TA, delete their sessions here and remove them (204)."""
     await courses_service.revoke_course_ta(db, current_user, courseId, userId)
