@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import threading
 from contextlib import suppress
 from uuid import UUID
 
@@ -18,6 +17,7 @@ from app.services.summary_text import validate_summary
 logger = logging.getLogger("app.model")
 client = OpenAIChatClient()
 _live: set[UUID] = set()
+_tasks: set[asyncio.Task] = set()
 
 INSTRUCTIONS = (
     "Write a de-identified class summary from the name-free reports. "
@@ -58,13 +58,10 @@ def live_attempts() -> set[UUID]:
 
 
 def schedule(attempt_id: UUID) -> None:
-    """Start summary preparation on a daemon thread."""
-    thread = threading.Thread(
-        target=lambda: asyncio.run(run_summary(attempt_id)),
-        name=f"summary-{attempt_id}",
-        daemon=True,
-    )
-    thread.start()
+    """Start summary preparation on the running event loop."""
+    task = asyncio.get_running_loop().create_task(run_summary(attempt_id))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
 
 
 async def run_summary(attempt_id: UUID) -> None:

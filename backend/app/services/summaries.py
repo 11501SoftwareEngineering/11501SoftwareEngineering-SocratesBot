@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import GenerationStatus, TopicStage
@@ -31,15 +33,19 @@ def _request(bodies: list[tuple[str, dict]]) -> dict:
 
 
 def _attempt_running(latest) -> bool:
-    return latest is not None and latest.status in {
+    if latest is None or latest.status not in {
         GenerationStatus.PENDING.value,
         GenerationStatus.PROCESSING.value,
-    }
+    }:
+        return False
+    lease = latest.lease_expires_at
+    return lease is not None and lease >= datetime.now(UTC)
 
 
 async def _enqueue(
     db: AsyncSession, topic_id: UUID, bodies: list[tuple[str, dict]]
 ) -> None:
+    await db.execute(select(Topic).where(Topic.id == topic_id).with_for_update())
     latest = await summary_crud.latest_attempt(db, topic_id)
     if _attempt_running(latest):
         return
@@ -111,6 +117,7 @@ async def edit_summary(
     """
     topic = await _instructor_topic(db, teacher, topic_id)
     row = await _version(db, topic.id, version)
+    row.version += 1
     row.body = {
         **row.body,
         "overview": overview,
@@ -304,7 +311,7 @@ async def _version(db: AsyncSession, topic_id: UUID, version: int) -> ClassSumma
         )
     if row.version != version:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Version mismatch"
+            status_code=status.HTTP_409_CONFLICT, detail="Version mismatch"
         )
     return row
 

@@ -55,3 +55,32 @@ def test_published_text_omits_identifiers_and_rejects_a_name() -> None:
         )
         == "Ada"
     )
+    assert (
+        leaked_identifier(
+            {
+                **draft,
+                "groups": [
+                    {**draft["groups"][0], "name": "Ada and Ben's view"},
+                ],
+            },
+            names=["Ada"],
+            identifiers=[],
+        )
+        == "Ada"
+    )
+    assert (
+        leaked_identifier(
+            {**draft, "overview": "Analysis of the two accounts."},
+            names=["An"],
+            identifiers=[],
+        )
+        is None
+    )
+    assert (
+        leaked_identifier(
+            {**draft, "overview": "ADA changed her claim."},
+            names=["Ada"],
+            identifiers=[],
+        )
+        == "Ada"
+    )

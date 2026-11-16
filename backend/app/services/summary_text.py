@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 
 def ready_effects(stage: str, outcomes: list[str]) -> tuple[str, list[int]]:
     """Stage moves only when a summary is stored ready. Only open dialogues close."""
@@ -104,14 +106,15 @@ def leaked_identifier(
     names: list[str],
     identifiers: list[str],
 ) -> str | None:
-    """Return the first student name or identifier found in the summary text."""
-    blob = f"{draft['overview']}\n{draft['viewpoint_summary']}"
-    for name in names:
-        if name and name in blob:
-            return name
-    for identifier in identifiers:
-        if identifier and identifier in blob:
-            return identifier
+    """Return the first student name or identifier found in the published text."""
+    published = public_summary(draft)
+    parts = [published["overview"], published["viewpoint_summary"]]
+    for group in published["groups"]:
+        parts.extend((group["name"], group["conditions"]))
+    blob = "\n".join(part for part in parts if isinstance(part, str))
+    for value in (*names, *identifiers):
+        if value and re.search(rf"\b{re.escape(value)}\b", blob, re.IGNORECASE):
+            return value
     return None
 
 

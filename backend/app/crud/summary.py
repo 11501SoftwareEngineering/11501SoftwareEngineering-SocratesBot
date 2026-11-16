@@ -39,6 +39,7 @@ async def insert_attempt(
         topic_id=topic_id,
         status=GenerationStatus.PENDING.value,
         request_json=request_json,
+        lease_expires_at=datetime.now(UTC) + LEASE,
     )
     db.add(attempt)
     await db.flush()
@@ -86,7 +87,9 @@ async def extend_lease(db: AsyncSession, attempt_id: UUID) -> None:
 
 async def list_processing(db: AsyncSession) -> list[SummaryAttempt]:
     statement = select(SummaryAttempt).where(
-        SummaryAttempt.status == GenerationStatus.PROCESSING.value
+        SummaryAttempt.status.in_(
+            (GenerationStatus.PENDING.value, GenerationStatus.PROCESSING.value)
+        )
     )
     return list(await db.scalars(statement))
 
@@ -130,15 +133,17 @@ async def _close_open_dialogues(db: AsyncSession, topic: Topic) -> None:
     )
 
 
-async def _mark_ready(db: AsyncSession, attempt_id: UUID, draft: dict) -> None:
-    await db.execute(
+async def _mark_ready(db: AsyncSession, attempt_id: UUID, draft: dict) -> bool:
+    result = await db.execute(
         update(SummaryAttempt)
         .where(
             SummaryAttempt.id == attempt_id,
             SummaryAttempt.status == GenerationStatus.PROCESSING.value,
         )
         .values(status=GenerationStatus.READY.value, result_json=draft)
+        .returning(SummaryAttempt.id)
     )
+    return result.scalar_one_or_none() is not None
 
 
 async def store_ready_summary(
@@ -148,6 +153,8 @@ async def store_ready_summary(
     topic_id: UUID,
     draft: dict,
 ) -> None:
+    if not await _mark_ready(db, attempt_id, draft):
+        return
     topic = await db.get(Topic, topic_id)
     if topic is None:
         return
@@ -160,7 +167,6 @@ async def store_ready_summary(
         row.version = version
         row.body = body
     await _close_open_dialogues(db, topic)
-    await _mark_ready(db, attempt_id, draft)
 
 
 async def latest_summary(db: AsyncSession, topic_id: UUID) -> ClassSummary | None:
