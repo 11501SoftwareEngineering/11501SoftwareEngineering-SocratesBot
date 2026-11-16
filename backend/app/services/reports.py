@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import DialogueOutcome, GenerationStatus
@@ -137,10 +139,28 @@ async def read_teaching_reports(
     }
 
 
+def _still_running(attempt: ReportAttempt) -> bool:
+    if attempt.status not in {
+        GenerationStatus.PENDING.value,
+        GenerationStatus.PROCESSING.value,
+    }:
+        return False
+    lease = attempt.lease_expires_at
+    return lease is not None and lease >= datetime.now(UTC)
+
+
 async def _start(db: AsyncSession, session: Session) -> dict:
+    await db.execute(select(Session).where(Session.id == session.id).with_for_update())
     attempts = await report_crud.list_for_session(db, session.id)
-    newest = attempts[-1].status if attempts else None
-    action = report_start(session.outcome, newest)
+    newest = attempts[-1] if attempts else None
+    status_value = None if newest is None else newest.status
+    stale = status_value in {
+        GenerationStatus.PENDING.value,
+        GenerationStatus.PROCESSING.value,
+    }
+    if newest is not None and stale and not _still_running(newest):
+        status_value = GenerationStatus.FAILED.value
+    action = report_start(session.outcome, status_value)
     if action == "reject":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_NOT_COMPLETED)
     if action == "insert":

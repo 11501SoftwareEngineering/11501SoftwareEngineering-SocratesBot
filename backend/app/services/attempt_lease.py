@@ -1,7 +1,8 @@
 """A processing attempt stays up only while its task refreshes the lease.
 
-A status read does not fail anything. Startup fails processing rows this
-process is not running. Afterwards only a missing or passed lease does.
+A status read does not fail anything. Startup and the sweep both fail a row
+only when its lease is missing or already past, so another worker's live
+attempt is left alone.
 """
 
 from __future__ import annotations
@@ -32,10 +33,9 @@ def should_fail(
     startup: bool,
 ) -> bool:
     """Return whether this processing row should be stored as failed."""
+    del startup
     if live:
         return False
-    if startup:
-        return True
     return lease is None or lease < now
 
 

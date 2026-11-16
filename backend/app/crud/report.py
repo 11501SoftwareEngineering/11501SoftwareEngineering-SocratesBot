@@ -37,7 +37,9 @@ async def list_for_sessions(
 
 async def insert_pending(db: AsyncSession, session_id: UUID) -> ReportAttempt:
     attempt = ReportAttempt(
-        session_id=session_id, status=GenerationStatus.PENDING.value
+        session_id=session_id,
+        status=GenerationStatus.PENDING.value,
+        lease_expires_at=datetime.now(UTC) + LEASE,
     )
     db.add(attempt)
     await db.flush()
@@ -75,7 +77,9 @@ async def extend_lease(db: AsyncSession, attempt_id: UUID) -> None:
 
 async def list_processing(db: AsyncSession) -> list[ReportAttempt]:
     statement = select(ReportAttempt).where(
-        ReportAttempt.status == GenerationStatus.PROCESSING.value
+        ReportAttempt.status.in_(
+            (GenerationStatus.PENDING.value, GenerationStatus.PROCESSING.value)
+        )
     )
     return list(await db.scalars(statement))
 
