@@ -262,14 +262,27 @@ async def soft_delete_student_membership_by_ids(
 
 
 async def get_active_membership(
-    db: AsyncSession, *, course_id: UUID, user_id: UUID
+    db: AsyncSession,
+    *,
+    course_id: UUID,
+    user_id: UUID,
+    for_update: bool = False,
 ) -> CourseMembership | None:
-    """Return the active (not soft-left) STUDENT or TA membership, if any."""
+    """Return the active (not soft-left) STUDENT or TA membership, if any.
+
+    With ``for_update`` the row stays locked until the transaction ends, so
+    a concurrent leave, removal or role change waits; a row that was soft-left
+    while waiting is not returned, and ``role`` is the committed value.
+    """
     statement = select(CourseMembership).where(
         CourseMembership.course_id == course_id,
         CourseMembership.user_id == user_id,
         CourseMembership.left_at.is_(None),
     )
+    if for_update:
+        statement = statement.with_for_update().execution_options(
+            populate_existing=True
+        )
     return await db.scalar(statement)
 
 

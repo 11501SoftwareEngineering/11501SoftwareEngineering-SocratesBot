@@ -785,11 +785,11 @@ def _patch_ta_course(
     monkeypatch.setattr(
         course_crud, "is_course_instructor", AsyncMock(return_value=instructor)
     )
-    monkeypatch.setattr(
-        course_crud, "get_active_membership", AsyncMock(return_value=membership)
-    )
+    lookup = AsyncMock(return_value=membership)
+    monkeypatch.setattr(course_crud, "get_active_membership", lookup)
     mocks = SimpleNamespace(
         course=course,
+        lookup=lookup,
         promote=AsyncMock(),
         set_permissions=AsyncMock(),
         demote=AsyncMock(),
@@ -832,6 +832,9 @@ def test_assign_ta_promotes_student_with_sorted_permissions(
         "permissions": ["edit_topics", "view_members"],
         "message": "TA assigned",
     }
+    mocks.lookup.assert_awaited_once_with(
+        course_route_db, course_id=mocks.course.id, user_id=alice.id, for_update=True
+    )
     mocks.promote.assert_awaited_once_with(
         course_route_db, membership, ["edit_topics", "view_members"]
     )
@@ -1023,6 +1026,9 @@ def test_update_ta_permissions_replaces_set(
         "permissions": ["view_reports", "view_members"],
         "message": "TA permissions updated",
     }
+    mocks.lookup.assert_awaited_once_with(
+        course_route_db, course_id=mocks.course.id, user_id=ta_id, for_update=True
+    )
     mocks.set_permissions.assert_awaited_once_with(
         course_route_db, membership, ["view_reports", "view_members"]
     )
@@ -1104,12 +1110,17 @@ def test_revoke_ta_demotes_to_student(
     membership = _membership("TA")
     mocks = _patch_ta_course(monkeypatch, membership=membership)
 
+    ta_id = uuid4()
+
     response = auth_client.delete(
-        f"/api/v1/courses/{mocks.course.id}/tas/{uuid4()}",
+        f"/api/v1/courses/{mocks.course.id}/tas/{ta_id}",
         headers={"Authorization": bearer},
     )
 
     assert response.status_code == 204
+    mocks.lookup.assert_awaited_once_with(
+        course_route_db, course_id=mocks.course.id, user_id=ta_id, for_update=True
+    )
     mocks.demote.assert_awaited_once_with(course_route_db, membership)
     course_route_db.commit.assert_awaited_once()
 

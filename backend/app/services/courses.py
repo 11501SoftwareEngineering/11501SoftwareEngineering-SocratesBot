@@ -433,8 +433,9 @@ def _ta_assign_rejected(detail: str) -> HTTPException:
 async def _require_active_ta(
     db: AsyncSession, *, course_id: UUID, user_id: UUID
 ) -> CourseMembership:
+    """Lock the active TA membership; 404 if it is not (or no longer) a TA."""
     membership = await course_crud.get_active_membership(
-        db, course_id=course_id, user_id=user_id
+        db, course_id=course_id, user_id=user_id, for_update=True
     )
     if membership is None or membership.role != course_crud.MEMBERSHIP_TA:
         raise HTTPException(
@@ -462,8 +463,10 @@ async def assign_course_ta(
         )
     if is_super_admin(target):
         raise _ta_assign_rejected("Admins cannot be TAs")
+    # Lock the row so a concurrent removal or leave cannot slip in between
+    # this check and the promotion.
     membership = await course_crud.get_active_membership(
-        db, course_id=course_id, user_id=target.id
+        db, course_id=course_id, user_id=target.id, for_update=True
     )
     if membership is not None and membership.role == course_crud.MEMBERSHIP_TA:
         raise _ta_assign_rejected(_ALREADY_TA_DETAIL)
