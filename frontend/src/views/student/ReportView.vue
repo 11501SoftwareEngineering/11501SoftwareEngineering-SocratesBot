@@ -5,7 +5,7 @@
  *   對話紀錄  Figma「Student_Result_02」（node 785:4795）
  *   全班摘要  Figma「Student_Result_03」（node 787:2744）⚠️ 還沒做
  *
- * 網址：/student/courses/:courseId/sessions/:sessionId/report/:tab
+ * 網址：/student/courses/:courseId/sessions/:sessionId/result/:tab
  *   tab = personal | chat | summary，沒寫就是 personal
  *
  * ⚠️ 還沒接 API，資料來自 src/data/sampleReport.ts。之後要接的 API（docs/API功能規格.md v0.2）：

@@ -4,13 +4,13 @@ import { computed } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
 import AppLogo from '@/components/common/AppLogo.vue'
 import { Button } from '@/components/ui/button'
-import { HOME_ROUTE, useAuthStore } from '@/stores/auth'
+import { useAuthStore } from '@/stores/auth'
 
 defineProps<{ title: string; description: string }>()
 
 const authStore = useAuthStore()
 const home = computed<RouteLocationRaw>(() =>
-  authStore.userRole ? { name: HOME_ROUTE[authStore.userRole] } : { name: 'Home' },
+  authStore.userRole ? { name: authStore.homeRoute } : { name: 'Home' },
 )
 </script>
 

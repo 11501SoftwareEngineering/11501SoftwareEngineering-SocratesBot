@@ -13,7 +13,9 @@
  * - loading 時按鈕變成「處理中…」且不能重複送出
  * - :dismissible="false"：不能用 Esc、點背景關閉，「取消」按鈕改成發出 cancel 事件（強制改密碼用）
  */
+import { provide } from 'vue'
 import { Button } from '@/components/ui/button'
+import { FORM_FIELD_LAYOUT } from './FormField.vue'
 import {
   Dialog,
   DialogClose,
@@ -37,6 +39,8 @@ withDefaults(
 )
 
 const open = defineModel<boolean>('open', { default: false })
+// 對話框裡的欄位用 Figma 對話框的字級（標籤 32px、提示 22px）
+provide(FORM_FIELD_LAYOUT, 'dialog')
 defineEmits<{ submit: []; cancel: [] }>()
 
 function preventIfLocked(event: Event, dismissible: boolean) {
@@ -50,21 +54,24 @@ function preventIfLocked(event: Event, dismissible: boolean) {
       :show-close-button="false"
       @escape-key-down="preventIfLocked($event, dismissible)"
       @interact-outside="preventIfLocked($event, dismissible)"
-      class="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] gap-0 overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-elevated sm:max-w-[626px] sm:p-10"
+      class="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] gap-0 overflow-y-auto rounded-2xl border border-border bg-card px-6 py-[27px] shadow-elevated sm:max-w-[626px] sm:px-[68px]"
     >
-      <DialogTitle class="text-center text-h1-title text-foreground">{{ title }}</DialogTitle>
+      <!-- Figma「P09_AddCourse」「Common_ChangePassword」等：標題 H1 40px 粗體置中，下面 20px 開始欄位 -->
+      <DialogTitle class="text-center text-page-title font-bold text-foreground">{{
+        title
+      }}</DialogTitle>
       <DialogDescription
         :class="description ? 'mt-2 text-center text-body text-muted-foreground' : 'sr-only'"
       >
         {{ description || title }}
       </DialogDescription>
 
-      <form class="mt-8 flex flex-col gap-5" novalidate @submit.prevent="$emit('submit')">
+      <form class="mt-5 flex flex-col gap-3" novalidate @submit.prevent="$emit('submit')">
         <slot />
 
-        <p v-if="error" role="alert" class="text-right text-body text-destructive">{{ error }}</p>
+        <p v-if="error" role="alert" class="text-right text-header text-destructive">{{ error }}</p>
 
-        <div class="mt-2 flex justify-end gap-4">
+        <div class="mt-2 flex justify-end gap-5 py-2">
           <DialogClose v-if="dismissible" as-child>
             <Button type="button" variant="secondary" size="lg" :disabled="loading">
               {{ cancelText }}

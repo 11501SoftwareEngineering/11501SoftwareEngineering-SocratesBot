@@ -94,6 +94,12 @@ export default {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
         },
+        // Figma「主色_淺」（主色＋20% 白）：語言按鈕、已發布標籤、學生泡泡
+        'primary-light': '#A5C6C1',
+        // Figma「主色_深」（主色＋20% 黑）：卡片上的文字連結（檢視觀點↗、進入課程↗）
+        'primary-dark': '#72938E',
+        // Figma「輔色_淺」（輔色＋20% 白）：草稿標籤
+        'secondary-light': '#DDD4C8',
         secondary: {
           DEFAULT: 'hsl(var(--secondary))',
           foreground: 'hsl(var(--secondary-foreground))',

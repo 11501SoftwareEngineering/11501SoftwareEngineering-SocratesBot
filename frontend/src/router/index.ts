@@ -6,7 +6,7 @@ import {
   type RouteRecordSingleView,
 } from 'vue-router'
 import type { UserRole } from '@/api/auth'
-import { HOME_ROUTE, useAuthStore } from '@/stores/auth'
+import { useAuthStore } from '@/stores/auth'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -14,6 +14,8 @@ declare module 'vue-router' {
     roles?: UserRole[]
     /** 已登入的人不需要看到的頁面（登入、註冊），會直接導回他的首頁 */
     guestOnly?: boolean
+    /** 教學端頁面：老師，或在某門課當助教的學生才能進 */
+    teaching?: boolean
     /** 瀏覽器分頁標題 */
     title?: string
   }
@@ -33,11 +35,16 @@ function page(
 }
 
 /** 某個身分的一組頁面：需要登入、只有 roles 能進；打開前綴網址時導到第一個頁面 */
-function section(path: string, roles: UserRole[], children: RouteRecordRaw[]): RouteRecordRaw {
+function section(
+  path: string,
+  roles: UserRole[],
+  children: RouteRecordRaw[],
+  meta: RouteMeta = {},
+): RouteRecordRaw {
   const home = children[0]?.name
   return {
     path,
-    meta: { requiresAuth: true, roles },
+    meta: { requiresAuth: true, roles, ...meta },
     children: [{ path: '', redirect: { name: home } }, ...children],
   }
 }
@@ -68,7 +75,7 @@ const routes: RouteRecordRaw[] = [
 
   section(
     '/teacher',
-    ['TEACHER'],
+    ['TEACHER', 'STUDENT'],
     [
       page(
         'courses',
@@ -89,6 +96,7 @@ const routes: RouteRecordRaw[] = [
         () => import('@/views/teacher/TopicView.vue'),
       ),
     ],
+    { teaching: true },
   ),
 
   section(
@@ -120,7 +128,7 @@ const routes: RouteRecordRaw[] = [
         () => import('@/views/student/ResultView.vue'),
       ),
       page(
-        'courses/:courseId/sessions/:sessionId/report/:tab(personal|chat|summary)?',
+        'courses/:courseId/sessions/:sessionId/result/:tab(personal|chat|summary)?',
         'StudentReport',
         '探索結果報告',
         () => import('@/views/student/ReportView.vue'),
@@ -153,7 +161,12 @@ router.beforeEach((to) => {
 
   // 2. 已登入卻打開登入、註冊頁 → 回到自己的首頁
   if (to.meta.guestOnly && authStore.isAuthenticated && authStore.userRole) {
-    return { name: HOME_ROUTE[authStore.userRole] }
+    return { name: authStore.homeRoute }
+  }
+
+  // 教學端只有老師和助教能進（學生打開 /teacher 會到沒有權限頁）
+  if (to.meta.teaching && authStore.isAuthenticated && !authStore.canTeach) {
+    return { name: 'Forbidden' }
   }
 
   // 3. 身分不符（例如學生打開 /teacher）→ 沒有權限頁。管理員同時也是老師時，兩邊都能進

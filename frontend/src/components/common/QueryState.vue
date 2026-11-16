@@ -17,7 +17,8 @@
  * 想自訂某個狀態的畫面，可以用 #loading、#error、#empty 這三個 slot 覆蓋。
  */
 import { computed } from 'vue'
-import { CircleAlert, Inbox } from '@lucide/vue'
+import { CircleAlert } from '@lucide/vue'
+import notFoundUrl from '@/assets/brand/not-found.svg'
 import { RefreshIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { getApiErrorMessage } from '@/lib/utils'
@@ -85,13 +86,14 @@ const errorMessage = computed(() => getApiErrorMessage(props.error, props.errorT
   </div>
 
   <!-- 沒有資料 -->
-  <div
-    v-else-if="empty"
-    class="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-muted-foreground/40 bg-card/60 px-6 py-10 text-center"
-  >
+  <!-- Figma「P09_Teacher_Home_Empty」：皺眉的導魷拿放大鏡（NOTFOUND）＋粗體說明，第二行可放連結（#empty-action） -->
+  <div v-else-if="empty" class="flex flex-col items-center gap-2 px-6 py-10 text-center">
     <slot name="empty">
-      <Inbox class="size-10 text-muted-foreground" aria-hidden="true" />
-      <p class="text-body-lg text-muted-foreground">{{ emptyText }}</p>
+      <img :src="notFoundUrl" alt="" width="156" height="232" class="h-[232px] w-[156px]" />
+      <p class="text-h1-title text-foreground">{{ emptyText }}</p>
+      <p v-if="$slots['empty-action']" class="text-h1-title text-foreground">
+        <slot name="empty-action" />
+      </p>
     </slot>
   </div>
 

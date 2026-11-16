@@ -32,7 +32,7 @@ describe('student ReportView', () => {
         { path: '/student/courses', name: 'StudentCourses', component: stub },
         { path: '/student/courses/:courseId', name: 'StudentCourse', component: stub },
         {
-          path: '/student/courses/:courseId/sessions/:sessionId/report/:tab(personal|chat|summary)?',
+          path: '/student/courses/:courseId/sessions/:sessionId/result/:tab(personal|chat|summary)?',
           name: 'StudentReport',
           component: ReportView,
         },
@@ -54,7 +54,7 @@ describe('student ReportView', () => {
   }
 
   it('對話紀錄分頁依序顯示每一則訊息，AI 訊息有朗讀按鈕', async () => {
-    const view = await open('/student/courses/course-1/sessions/s1/report/chat')
+    const view = await open('/student/courses/course-1/sessions/s1/result/chat')
 
     const items = view.findAll('ol[aria-label="對話紀錄"] > li')
     expect(items).toHaveLength(sampleReport.messages.length)
@@ -67,7 +67,7 @@ describe('student ReportView', () => {
   })
 
   it('按喇叭會朗讀，再按一次會停止', async () => {
-    const view = await open('/student/courses/course-1/sessions/s1/report/chat')
+    const view = await open('/student/courses/course-1/sessions/s1/result/chat')
 
     await view.get('button[aria-label="朗讀這則訊息"]').trigger('click')
     expect(speak).toHaveBeenCalledTimes(1)
@@ -79,7 +79,7 @@ describe('student ReportView', () => {
   })
 
   it('沒指定分頁時是「個人報告」，還沒做的分頁顯示製作中', async () => {
-    const view = await open('/student/courses/course-1/sessions/s1/report')
+    const view = await open('/student/courses/course-1/sessions/s1/result')
 
     expect(view.get('[aria-current="page"]').text()).toBe('個人報告')
     expect(view.text()).toContain('個人報告製作中')
@@ -87,7 +87,7 @@ describe('student ReportView', () => {
   })
 
   it('麵包屑連回我的課程和課程頁', async () => {
-    const view = await open('/student/courses/course-1/sessions/s1/report/chat')
+    const view = await open('/student/courses/course-1/sessions/s1/result/chat')
 
     const links = view.findAll('nav[aria-label="目前位置"] a')
     expect(links.map((a) => a.attributes('href'))).toEqual([

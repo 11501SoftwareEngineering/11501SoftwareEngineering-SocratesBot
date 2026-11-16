@@ -15,7 +15,7 @@ import FormField from '@/components/common/FormField.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getApiErrorMessage } from '@/lib/utils'
-import { HOME_ROUTE, useAuthStore } from '@/stores/auth'
+import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -27,10 +27,10 @@ const formError = ref('')
 const mutation = useMutation({
   mutationFn: async () => {
     const account = form.account.trim()
-    await authApi.register({ account, password: form.password, name: form.name.trim() })
-    return authStore.login({ account, password: form.password })
+    await authApi.register({ account_id: account, password: form.password, name: form.name.trim() })
+    return authStore.login({ account_id: account, password: form.password })
   },
-  onSuccess: (user) => router.replace({ name: HOME_ROUTE[user.role] }),
+  onSuccess: () => router.replace({ name: authStore.homeRoute }),
   onError: (error) => {
     formError.value = getApiErrorMessage(error, '註冊失敗，請稍後再試')
   },
@@ -56,9 +56,10 @@ function handleSubmit() {
 
 <template>
   <AuthCard>
-    <AppLogo :size="160" class="mx-auto" />
+    <!-- Figma「P03_Register」：Logo 210px；標籤寬 165px -->
+    <AppLogo :size="210" class="mx-auto" />
 
-    <form class="mt-8 flex flex-col gap-5" novalidate @submit.prevent="handleSubmit">
+    <form class="mt-5 flex flex-col gap-3" novalidate @submit.prevent="handleSubmit">
       <FormField
         v-slot="field"
         label="帳號名稱"
@@ -67,7 +68,7 @@ function handleSubmit() {
       >
         <Input v-model="form.account" v-bind="field" :id="field.id" autocomplete="username" />
       </FormField>
-      <FormField v-slot="field" label="姓名" hint="老師會在學生名單看到" :error="errors.name">
+      <FormField v-slot="field" label="真實姓名" hint="老師會在學生名單看到" :error="errors.name">
         <Input v-model="form.name" v-bind="field" :id="field.id" autocomplete="name" />
       </FormField>
       <FormField v-slot="field" label="建立密碼" hint="至少 8 個字元" :error="errors.password">
@@ -90,7 +91,7 @@ function handleSubmit() {
       </FormField>
 
       <div class="flex flex-wrap items-center justify-between gap-4">
-        <p class="text-body text-foreground">
+        <p class="text-body-lg text-foreground">
           已經有帳號了嗎？
           <RouterLink
             :to="{ name: 'Login' }"

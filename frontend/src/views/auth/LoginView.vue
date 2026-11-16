@@ -12,26 +12,26 @@ import FormField from '@/components/common/FormField.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getApiErrorMessage } from '@/lib/utils'
-import { HOME_ROUTE, useAuthStore } from '@/stores/auth'
+import { useAuthStore } from '@/stores/auth'
 
 const authStore = useAuthStore()
+const showForgotHint = ref(false)
 const route = useRoute()
 const router = useRouter()
 
 const form = reactive({ account: '', password: '' })
 const errors = reactive({ account: '', password: '' })
 const formError = ref('')
-const showForgotHint = ref(false)
 
 const mutation = useMutation({
-  mutationFn: () => authStore.login({ account: form.account.trim(), password: form.password }),
-  onSuccess: (user) => {
+  mutationFn: () => authStore.login({ account_id: form.account.trim(), password: form.password }),
+  onSuccess: () => {
     const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
     // 只接受站內路徑，避免被導到外部網站
     if (redirect.startsWith('/') && !redirect.startsWith('//')) {
       void router.replace(redirect)
     } else {
-      void router.replace({ name: HOME_ROUTE[user.role] })
+      void router.replace({ name: authStore.homeRoute })
     }
   },
   onError: (error) => {
@@ -50,7 +50,8 @@ function handleSubmit() {
 
 <template>
   <AuthCard>
-    <AppLogo :size="200" class="mx-auto" />
+    <!-- Figma「P04_Login」：Logo 290px、上方留 20px；標籤寬 108px、整組往右 34px；欄位間距 39px -->
+    <AppLogo :size="290" class="mx-auto mt-5" />
 
     <p
       v-if="authStore.sessionExpired"
@@ -60,7 +61,11 @@ function handleSubmit() {
       登入已過期，請重新登入
     </p>
 
-    <form class="mt-8 flex flex-col gap-5" novalidate @submit.prevent="handleSubmit">
+    <form
+      class="mt-5 flex flex-col gap-[39px] sm:pl-[34px] sm:[--form-label-width:108px]"
+      novalidate
+      @submit.prevent="handleSubmit"
+    >
       <FormField v-slot="field" inline label="帳號" :error="errors.account">
         <Input v-model="form.account" v-bind="field" :id="field.id" autocomplete="username" />
       </FormField>
@@ -74,24 +79,25 @@ function handleSubmit() {
         />
       </FormField>
 
-      <div class="flex items-center justify-end gap-4">
-        <Button as-child variant="ghost" size="lg" class="font-medium">
-          <RouterLink :to="{ name: 'Register' }">註冊</RouterLink>
-        </Button>
-        <Button type="submit" size="lg" :disabled="mutation.isPending.value">
-          {{ mutation.isPending.value ? '登入中…' : '登入' }}
-        </Button>
-      </div>
-      <div class="text-right">
+      <div class="-mt-[29px] flex flex-col items-end pt-[10px]">
+        <div class="flex items-center gap-4 py-[5px]">
+          <Button as-child variant="ghost" size="lg" class="font-medium">
+            <RouterLink :to="{ name: 'Register' }">註冊</RouterLink>
+          </Button>
+          <Button type="submit" size="lg" :disabled="mutation.isPending.value">
+            {{ mutation.isPending.value ? '登入中…' : '登入' }}
+          </Button>
+        </div>
+        <!-- 後端沒有忘記密碼的 API：點了提示找老師或管理員重設 -->
         <button
           type="button"
-          class="rounded text-body text-foreground underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          class="rounded text-header text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
           :aria-expanded="showForgotHint"
           @click="showForgotHint = !showForgotHint"
         >
           忘記密碼?
         </button>
-        <p v-if="showForgotHint" class="mt-1 text-body text-muted-foreground">
+        <p v-if="showForgotHint" role="status" class="mt-1 text-body text-muted-foreground">
           請聯絡老師或管理員協助重設密碼。
         </p>
       </div>

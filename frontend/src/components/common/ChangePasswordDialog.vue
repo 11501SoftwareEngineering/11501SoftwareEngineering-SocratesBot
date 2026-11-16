@@ -1,7 +1,10 @@
 <script setup lang="ts">
 /**
- * 修改密碼。從帳號選單打開；老師帳號第一次登入（must_change_password）時會強制打開，
- * 改完才能用其他功能（後端也會擋）。
+ * 修改密碼。對應 Figma「Common_ChangePassword」（node 699:2152）。從帳號選單打開。
+ *
+ * 老師帳號第一次登入（must_change_password）時強制打開，改完才能用其他功能（後端也會擋）：
+ * 對應 Figma「Common_FirstLoginPassword」（node 1022:3084）：只有新密碼、確認密碼，按鈕是「登出」「確認」。
+ * 原密碼用登入時輸入的初始密碼；重新整理後記憶體裡沒有了，才會多出「原密碼」欄位。
  */
 import { computed, reactive, ref, watch } from 'vue'
 import { useMutation } from '@tanstack/vue-query'
@@ -21,11 +24,17 @@ const errors = reactive({ oldPassword: '', newPassword: '', confirm: '' })
 const formError = ref('')
 
 // 三個欄位都是密碼框，只差標籤、提示和瀏覽器自動填入的種類
-const fields = [
+const allFields = [
   { key: 'oldPassword', label: '原密碼', autocomplete: 'current-password' },
   { key: 'newPassword', label: '新密碼', hint: '至少 8 個字元', autocomplete: 'new-password' },
-  { key: 'confirm', label: '確認新密碼', autocomplete: 'new-password' },
+  { key: 'confirm', label: '確認密碼', autocomplete: 'new-password' },
 ] as const
+
+/** 第一次登入、而且記得初始密碼：不用再問原密碼 */
+const firstLogin = computed(() => props.forced && !!authStore.initialPassword)
+const fields = computed(() =>
+  allFields.filter((f) => !(firstLogin.value && f.key === 'oldPassword')),
+)
 const done = ref(false)
 
 watch(open, (isOpen) => {
@@ -36,13 +45,12 @@ watch(open, (isOpen) => {
   done.value = false
 })
 
-const description = computed(() =>
-  props.forced ? '這是第一次登入，請先把管理員給你的初始密碼改成自己的密碼。' : undefined,
-)
-
 const mutation = useMutation({
   mutationFn: () =>
-    authApi.changePassword({ old_password: form.oldPassword, new_password: form.newPassword }),
+    authApi.changePassword({
+      old_password: firstLogin.value ? (authStore.initialPassword ?? '') : form.oldPassword,
+      new_password: form.newPassword,
+    }),
   onSuccess: () => {
     authStore.markPasswordChanged()
     open.value = false
@@ -53,7 +61,7 @@ const mutation = useMutation({
 })
 
 function handleSubmit() {
-  errors.oldPassword = form.oldPassword ? '' : '請輸入原密碼'
+  errors.oldPassword = firstLogin.value || form.oldPassword ? '' : '請輸入原密碼'
   errors.newPassword = form.newPassword.length >= 8 ? '' : '新密碼至少要 8 個字元'
   errors.confirm = form.confirm === form.newPassword ? '' : '兩次輸入的新密碼不一樣'
   formError.value = ''
@@ -65,9 +73,8 @@ function handleSubmit() {
 <template>
   <FormDialog
     v-model:open="open"
-    title="修改密碼"
-    :description="description"
-    submit-text="修改"
+    :title="forced ? '設定首次登入密碼' : '修改密碼'"
+    submit-text="確認"
     :cancel-text="forced ? '登出' : '取消'"
     :dismissible="!forced"
     :loading="mutation.isPending.value"
