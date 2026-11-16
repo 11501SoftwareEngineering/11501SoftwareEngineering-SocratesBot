@@ -1,11 +1,13 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import SessionStatus
+from app.core.enums import MessageSender, SessionStatus
 from app.models.course import CourseMembership
+from app.models.message import DialogueMessage
 from app.models.session import Session
 from app.models.topic import Topic
 
@@ -85,7 +87,22 @@ async def insert_session_id(
         )
         .returning(Session.id)
     )
-    return await db.scalar(statement)
+    session_id = await db.scalar(statement)
+    if session_id is None:
+        return None
+    topic = await db.get(Topic, topic_id)
+    opening = (topic.opening_message or "").strip() if topic is not None else ""
+    if opening:
+        db.add(
+            DialogueMessage(
+                session_id=session_id,
+                sender=MessageSender.AI,
+                content=opening,
+                created_at=datetime.now(UTC),
+            )
+        )
+        await db.flush()
+    return session_id
 
 
 async def get_or_create_session_id(

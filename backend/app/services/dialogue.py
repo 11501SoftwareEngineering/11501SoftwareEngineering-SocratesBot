@@ -1,6 +1,7 @@
 """One dialogue: history, a waiting reply stream, and end actions."""
 
-from uuid import UUID
+from datetime import UTC, datetime, timedelta
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,11 +73,11 @@ def _complete(goal_reached: bool) -> _End:
     )
 
 
-def _continue(status_value: str) -> _End:
+def _continue(status_value: str, goal_reached: bool) -> _End:
     return (
         DialogueOutcome.OPEN.value,
         status_value,
-        False,
+        goal_reached,
         False,
         "Dialogue continues",
     )
@@ -105,11 +106,15 @@ def apply_end(
     if action == DialogueAction.COMPLETE:
         return _complete(goal_reached)
     if action == DialogueAction.CONTINUE:
-        return _continue(status_value)
+        return _continue(status_value, goal_reached)
     return _abandon()
 
 
-def reply_material(topic: Topic, messages: list[DialogueMessage]) -> str:
+def reply_material(
+    topic: Topic,
+    messages: list[DialogueMessage],
+    latest: str | None = None,
+) -> str:
     """Build the model prompt from the saved inquiry and the messages so far."""
     lines = [
         f"topic: {topic.inquiry_topic or ''}",
@@ -120,8 +125,19 @@ def reply_material(topic: Topic, messages: list[DialogueMessage]) -> str:
         f"content_language: {topic.content_language or ''}",
         f"age_band: {topic.age_band or ''}",
     ]
+    opening = (topic.opening_message or "").strip()
+    already_open = bool(
+        opening
+        and messages
+        and messages[0].sender == MessageSender.AI
+        and messages[0].content == opening
+    )
+    if opening and not already_open:
+        lines.append(f"{MessageSender.AI}: {opening}")
     for message in messages:
         lines.append(f"{message.sender}: {message.content}")
+    if latest:
+        lines.append(f"{MessageSender.STUDENT}: {latest}")
     return "\n".join(lines)
 
 
@@ -129,11 +145,39 @@ def _turn_count(messages: list[DialogueMessage]) -> int:
     return sum(message.sender == MessageSender.STUDENT for message in messages)
 
 
+def _shown(
+    session: Session, topic: Topic, messages: list[DialogueMessage]
+) -> list[DialogueMessage]:
+    opening = (topic.opening_message or "").strip()
+    if not opening:
+        return messages
+    if (
+        messages
+        and messages[0].sender == MessageSender.AI
+        and messages[0].content == opening
+    ):
+        return messages
+    when = (
+        messages[0].created_at - timedelta(microseconds=1)
+        if messages
+        else datetime.now(UTC)
+    )
+    lead = DialogueMessage(
+        id=uuid5(NAMESPACE_URL, f"opening:{session.id}"),
+        session_id=session.id,
+        sender=MessageSender.AI,
+        content=opening,
+        created_at=when,
+    )
+    return [lead, *messages]
+
+
 def _history(
     session: Session,
     topic: Topic,
     messages: list[DialogueMessage],
 ) -> DialogueHistoryResponse:
+    shown = _shown(session, topic, messages)
     return DialogueHistoryResponse(
         messages=[
             DialogueMessageItem(
@@ -142,7 +186,7 @@ def _history(
                 content=message.content,
                 created_at=message.created_at,
             )
-            for message in messages
+            for message in shown
         ],
         session_status=session.outcome,
         max_turns=topic.max_turns,
@@ -231,8 +275,21 @@ async def _ask_and_store(
     try:
         text, goal_reached = await client.complete_reply(
             instructions=REPLY_INSTRUCTIONS,
-            material=reply_material(topic, messages),
+            material=reply_material(topic, messages, latest=content),
         )
+        locked = await message_crud.lock_session(db, session_id)
+        if locked is None or locked.outcome != DialogueOutcome.OPEN.value:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Dialogue is not accepting replies",
+            )
+        if topic.max_turns is not None:
+            turns = await message_crud.count_student_turns(db, session_id)
+            if turns >= topic.max_turns:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Turn cap reached",
+                )
         message_id = await message_crud.save_exchange(
             db,
             session_id=session_id,
@@ -338,6 +395,11 @@ async def end_dialogue(
     session, _topic, _messages = await _owned(
         db, user_id=user_id, session_id=session_id
     )
+    if session_id in _BUSY:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Another reply is in progress",
+        )
     try:
         outcome, status_value, goal_reached, awaiting, message = apply_end(
             action,

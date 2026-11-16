@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -31,6 +31,17 @@ async def load_owned_dialogue(
         )
     )
     return session, topic, messages
+
+
+async def lock_session(db: AsyncSession, session_id: UUID) -> Session | None:
+    """Lock the dialogue row and reload it before a reply is stored."""
+    statement = (
+        select(Session)
+        .where(Session.id == session_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return (await db.execute(statement)).scalar_one_or_none()
 
 
 async def count_student_turns(db: AsyncSession, session_id: UUID) -> int:
@@ -68,7 +79,7 @@ async def save_exchange(
         session_id=session_id,
         sender=MessageSender.AI,
         content=reply,
-        created_at=now,
+        created_at=now + timedelta(microseconds=1),
     )
     db.add(ai_message)
     await db.flush()

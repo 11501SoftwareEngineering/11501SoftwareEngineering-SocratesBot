@@ -27,6 +27,19 @@ def test_complete_before_the_goal_stays_open() -> None:
     assert caught.value.status_code == 409
 
 
+def test_continue_keeps_a_reached_goal() -> None:
+    outcome, _status, goal_reached, awaiting, _message = apply_end(
+        "continue",
+        outcome="open",
+        status_value="IN_PROGRESS",
+        goal_reached=True,
+    )
+
+    assert outcome == "open"
+    assert goal_reached is True
+    assert awaiting is False
+
+
 def test_abandon_does_not_complete() -> None:
     outcome, status_value, goal_reached, awaiting, _message = apply_end(
         "abandon",
@@ -92,6 +105,12 @@ def test_history_remains_after_complete() -> None:
     assert body.messages[0].content == "hello"
     assert body.completed_turns == 1
 
+    topic.opening_message = "Hello"
+    opened = _history(session, topic, [message])
+    assert opened.messages[0].content == "Hello"
+    assert opened.messages[1].content == "hello"
+    assert opened.completed_turns == 1
+
 
 def test_reply_material_omits_the_student_and_uses_unspecified() -> None:
     topic = Topic(
@@ -109,3 +128,8 @@ def test_reply_material_omits_the_student_and_uses_unspecified() -> None:
     assert "exclusions: unspecified" in material
     assert "Cities" in material
     assert str(topic.created_by) not in material
+
+    topic.opening_message = "Where should we start?"
+    with_turn = reply_material(topic, [], latest="I think the cost is public")
+    assert "ai: Where should we start?" in with_turn
+    assert "student: I think the cost is public" in with_turn
