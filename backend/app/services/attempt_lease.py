@@ -1,8 +1,7 @@
 """A processing attempt stays up only while its task refreshes the lease.
 
-A status read does not fail anything. Startup and the sweep both fail a row
-only when its lease is missing or already past, so another worker's live
-attempt is left alone.
+A status read does not fail anything. A row fails only when its lease is
+missing or already past, so another worker's live attempt is left alone.
 """
 
 from __future__ import annotations
@@ -25,15 +24,8 @@ REFRESH_SECONDS = 10
 ListProcessing = Callable[[AsyncSession], Awaitable[list]]
 
 
-def should_fail(
-    lease: datetime | None,
-    now: datetime,
-    *,
-    live: bool,
-    startup: bool,
-) -> bool:
+def should_fail(lease: datetime | None, now: datetime, *, live: bool) -> bool:
     """Return whether this processing row should be stored as failed."""
-    del startup
     if live:
         return False
     return lease is None or lease < now
@@ -70,19 +62,14 @@ def _pairs() -> list[tuple[ListProcessing, set[UUID]]]:
     return pairs
 
 
-async def reclaim_open_attempts(*, startup: bool) -> None:
+async def reclaim_open_attempts() -> None:
     """Fail processing attempts whose lease is no longer held."""
     now = datetime.now(UTC)
     async with AsyncSessionLocal() as db:
         changed = False
         for list_processing, live in _pairs():
             for row in await list_processing(db):
-                if should_fail(
-                    row.lease_expires_at,
-                    now,
-                    live=row.id in live,
-                    startup=startup,
-                ):
+                if should_fail(row.lease_expires_at, now, live=row.id in live):
                     row.status = GenerationStatus.FAILED.value
                     changed = True
         if changed:
@@ -94,6 +81,6 @@ async def watch_leases() -> None:
     while True:
         await asyncio.sleep(REFRESH_SECONDS)
         try:
-            await reclaim_open_attempts(startup=False)
+            await reclaim_open_attempts()
         except Exception:
             logger.info("attempt lease sweep failed")

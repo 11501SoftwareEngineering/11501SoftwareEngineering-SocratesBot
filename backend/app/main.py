@@ -37,7 +37,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if settings.SEED_DEV_DATA:
             # No credential dump on hot reload; use `make seed` for the summary.
             await run_seed_db(print_summary=False)
-    await reclaim_open_attempts(startup=True)
+    await reclaim_open_attempts()
     watcher = asyncio.create_task(watch_leases())
     try:
         yield

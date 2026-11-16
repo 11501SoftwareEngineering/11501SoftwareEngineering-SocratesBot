@@ -37,7 +37,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
 
     monkeypatch.setattr(settings, "APP_ENV", "test")
 
-    async def skip_reclaim(*, startup: bool) -> None:
+    async def skip_reclaim() -> None:
         return None
 
     async def skip_watch() -> None:
