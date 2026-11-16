@@ -4,11 +4,11 @@
  * 白色卡片裡依序列出這次的對話；AI 訊息下面有喇叭，可以用瀏覽器語音朗讀。
  *
  * 用法：<ChatRecordTab :messages="messages" />
- *   messages 的格式就是 GET /sessions/{sessionId}/messages 回傳的 `messages`。
+ *   messages 就是 GET /sessions/{sessionId}/messages 回傳的 `messages`。
  */
 import ChatBubble from '@/components/common/ChatBubble.vue'
 import SpeakButton from '@/components/common/SpeakButton.vue'
-import type { SessionMessage } from '@/data/sampleReport'
+import type { SessionMessage } from '@/api/sessions'
 
 defineProps<{
   messages: SessionMessage[]

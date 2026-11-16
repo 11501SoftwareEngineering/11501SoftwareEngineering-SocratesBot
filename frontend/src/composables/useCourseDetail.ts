@@ -1,21 +1,10 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { useQuery } from '@tanstack/vue-query'
-import { studentApi, studentKeys } from '@/api/student'
 import { teacherApi, teacherKeys } from '@/api/teacher'
 
 /**
- * 課程資訊＋問題列表。頁面和 Header（顯示課程名稱）共用同一份快取，只會打一次 API。
+ * 老師舊版課程頁用的課程資訊＋問題列表（v0.2 頁面改用 composables/useCourse.ts）。
  */
-export function useStudentCourse(courseId: MaybeRefOrGetter<string>) {
-  const id = computed(() => toValue(courseId))
-  return useQuery({
-    queryKey: computed(() => studentKeys.course(id.value)),
-    enabled: () => Boolean(id.value),
-    queryFn: ({ signal }) => studentApi.getCourseTopics(id.value, signal),
-    retry: false,
-  })
-}
-
 export function useTeacherCourse(courseId: MaybeRefOrGetter<string>) {
   const id = computed(() => toValue(courseId))
   return useQuery({
