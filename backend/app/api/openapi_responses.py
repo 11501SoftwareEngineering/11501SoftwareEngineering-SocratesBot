@@ -297,22 +297,6 @@ _TOPIC_TITLE_TOO_SHORT_422 = json_detail_example(
     ],
 )
 
-TOPIC_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
-    401: json_detail_example(
-        AUTH_UNAUTHORIZED_DETAIL,
-        AUTH_UNAUTHORIZED_DETAIL,
-    ),
-    403: json_detail_example(
-        "Course teacher required",
-        "Course teacher required",
-    ),
-    404: json_detail_example(
-        "Course not found",
-        "Course not found",
-    ),
-    422: _TOPIC_TITLE_TOO_SHORT_422,
-}
-
 TEACHER_TOPIC_UPDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,

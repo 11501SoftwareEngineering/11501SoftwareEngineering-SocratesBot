@@ -65,7 +65,7 @@ class Topic(Base):
     model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     age_band: Mapped[str | None] = mapped_column(String(32), nullable=True)
     max_turns: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Course title stays on ``title``. This is the inquiry topic and may be empty in setup.
+    # ``title`` mirrors this ("" while unset). ``description`` mirrors core_question.
     inquiry_topic: Mapped[str | None] = mapped_column(Text, nullable=True)
     core_question: Mapped[str | None] = mapped_column(Text, nullable=True)
     inquiry_focus: Mapped[str | None] = mapped_column(Text, nullable=True)

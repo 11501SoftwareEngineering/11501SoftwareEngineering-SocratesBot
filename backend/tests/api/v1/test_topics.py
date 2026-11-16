@@ -1,4 +1,4 @@
-"""Topic API tests: list / create / delete / explanation (mocked CRUD)."""
+"""Topic API tests: list / delete / explanation (mocked CRUD)."""
 
 from __future__ import annotations
 
@@ -224,73 +224,16 @@ def test_topic_list_non_member_or_missing(
     assert response.status_code == expected
 
 
-def test_create_topic_in_path_course(
-    auth_client: TestClient,
-    store: FakeStore,
-    course_route_db: AsyncMock,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    bearer, user = _login(auth_client, store, "teach", UserRole.TEACHER)
-    course = _course()
-    _patch_role(monkeypatch, "TEACHER", course)
-    topic = _topic(course.id, title="New")
-    create_mock = AsyncMock(return_value=topic)
-    monkeypatch.setattr(topic_crud, "create_topic", create_mock)
-
-    response = auth_client.post(
-        f"/api/v1/courses/{course.id}/topics",
-        headers={"Authorization": bearer},
-        json={"title": "New", "description": "Background"},
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "topic_id": str(topic.id),
-        "course_id": str(course.id),
-        "title": "New",
-        "description": "Background",
-        "message": "Topic created",
-    }
-    create_mock.assert_awaited_once_with(
-        course_route_db,
-        course_id=course.id,
-        created_by=user.id,
-        title="New",
-        description="Background",
-    )
-    course_route_db.commit.assert_awaited_once()
-
-
-@pytest.mark.parametrize(
-    ("db_role", "exists", "body", "expected"),
-    [
-        ("STUDENT", True, {"title": "x"}, 403),
-        (None, True, {"title": "x"}, 403),
-        ("TEACHER", False, {"title": "x"}, 404),
-        ("TEACHER", True, {"title": ""}, 422),
-    ],
-)
-def test_create_topic_errors(
-    db_role: str | None,
-    exists: bool,
-    body: dict,
-    expected: int,
-    auth_client: TestClient,
-    store: FakeStore,
-    course_route_db: AsyncMock,
-    monkeypatch: pytest.MonkeyPatch,
+def test_create_topic_endpoint_is_removed(
+    auth_client: TestClient, store: FakeStore
 ) -> None:
     bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
-    _patch_role(monkeypatch, db_role, _course() if exists else None)
-    create_mock = AsyncMock()
-    monkeypatch.setattr(topic_crud, "create_topic", create_mock)
     response = auth_client.post(
         f"/api/v1/courses/{uuid4()}/topics",
         headers={"Authorization": bearer},
-        json=body,
+        json={"title": "New", "description": "Background"},
     )
-    assert response.status_code == expected
-    create_mock.assert_not_awaited()
+    assert response.status_code == 405
 
 
 def test_teacher_update_topic_still_works(

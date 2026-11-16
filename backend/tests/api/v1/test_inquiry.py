@@ -153,6 +153,8 @@ def test_publish_stores_the_screen_and_rejects_an_incomplete_one(
     assert topic.stage == "conversation"
     assert topic.inquiry_topic == "Cities"
     assert topic.title == "Cities"
+    assert topic.core_question == "Who maintains them?"
+    assert topic.description == "Who maintains them?"
     assert topic.age_band == "university_plus"
     recorded.assert_awaited()
     course_route_db.commit.assert_awaited()
@@ -190,6 +192,9 @@ def test_save_stores_fields_without_returning_a_version(
     assert "version" not in body
     assert topic.opening_message is None
     assert topic.inquiry_topic == "Cities"
+    assert topic.title == "Cities"
+    assert topic.core_question == "Who maintains them?"
+    assert topic.description == "Who maintains them?"
     assert topic.exclusions == "unspecified"
     assert topic.stage == "setup"
     recorded.assert_awaited_once()
@@ -269,6 +274,8 @@ def test_refine_uses_the_screen_setup(
     assert "opening_message" not in body
     assert body["setup"]["opening_message"] == "Where should we start?"
     assert topic.inquiry_topic == "generated topic"
+    assert topic.title == "generated topic"
+    assert topic.description == "generated question"
     course_route_db.commit.assert_awaited()
 
 
