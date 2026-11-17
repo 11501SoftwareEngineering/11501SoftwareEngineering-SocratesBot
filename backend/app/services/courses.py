@@ -19,17 +19,16 @@ from app.models.user import User
 from app.schemas.course import (
     CourseCreateRequest,
     CourseCreateResponse,
+    CourseJoinRequest,
+    CourseJoinResponse,
+    CourseListItem,
     CourseStudentAddRequest,
     CourseStudentListItem,
     MessageResponse,
-    StudentCourseListItem,
-    StudentJoinRequest,
-    StudentJoinResponse,
     TaAssignRequest,
     TaAssignResponse,
     TaPermissionsUpdateRequest,
     TaPermissionsUpdateResponse,
-    TeacherCourseListItem,
 )
 from app.services.course_invites import (
     INVITE_ALPHABET,
@@ -176,6 +175,7 @@ async def create_course(
                 name=course.name,
                 description=course.description,
                 invite_code=course.invitation_code,
+                my_role=CourseRole.TEACHER,
                 message="Course created",
             )
         except IntegrityError as exc:
@@ -193,40 +193,39 @@ async def create_course(
     ) from last_invite_collision
 
 
-async def list_my_courses(
-    db: AsyncSession, user: User
-) -> list[TeacherCourseListItem | StudentCourseListItem]:
-    """Courses the caller teaches or studies in, merged and sorted by name.
-
-    Each row keeps the shape of the former teacher / student list.
-    """
-    teacher_rows = await course_crud.list_courses_for_instructor(db, user.id)
-    student_rows = await course_crud.list_student_courses(db, user.id)
-
-    items: list[TeacherCourseListItem | StudentCourseListItem] = [
-        TeacherCourseListItem(
-            course_id=course.id,
-            name=course.name,
-            description=course.description,
-            invite_code=course.invitation_code,
-            student_count=student_count,
-            topic_count=topic_count,
+async def list_my_courses(db: AsyncSession, user: User) -> list[CourseListItem]:
+    """Courses the caller teaches, assists in, or studies in (one merged list)."""
+    items: list[CourseListItem] = []
+    for (
+        course,
+        teacher_name,
+        topic_count,
+        student_count,
+        db_role,
+        ta_permissions,
+    ) in await course_crud.list_my_course_rows(db, user.id):
+        role = _ROLE_BY_DB_VALUE[db_role]
+        permissions: list[str] = []
+        if role is CourseRole.TA:
+            permissions = sort_permissions(ta_permissions)
+        # ``student_count`` stays unset (omitted) for students and for TAs
+        # without view_members.
+        extra: dict[str, int] = {}
+        if role is CourseRole.TEACHER or TaPermission.VIEW_MEMBERS in permissions:
+            extra["student_count"] = student_count
+        items.append(
+            CourseListItem(
+                course_id=course.id,
+                name=course.name,
+                description=course.description,
+                teacher_name=teacher_name,
+                topic_count=topic_count,
+                my_role=role,
+                my_permissions=permissions,
+                invite_code=course.invitation_code,
+                **extra,
+            )
         )
-        for course, student_count, topic_count in teacher_rows
-    ]
-    seen = {item.course_id for item in items}
-    items.extend(
-        StudentCourseListItem(
-            course_id=course.id,
-            name=course.name,
-            invite_code=course.invitation_code,
-            teacher_name=teacher_name,
-            active_topic_count=session_count,
-        )
-        for course, teacher_name, session_count in student_rows
-        if course.id not in seen
-    )
-    items.sort(key=lambda item: (item.name, str(item.course_id)))
     return items
 
 
@@ -281,8 +280,8 @@ async def _commit_student_enrollment(
 
 
 async def join_course(
-    db: AsyncSession, student: User, payload: StudentJoinRequest
-) -> StudentJoinResponse:
+    db: AsyncSession, user: User, payload: CourseJoinRequest
+) -> CourseJoinResponse:
     code = payload.invite_code.strip().upper()
     if not _INVITE_RE.fullmatch(code):
         raise HTTPException(
@@ -295,15 +294,21 @@ async def join_course(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Course not found for this invitation code",
         )
+    role = await get_my_course_role(db, user, course.id)
+    if role in (CourseRole.TEACHER, CourseRole.TA):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Already a teacher or TA of this course",
+        )
+    if role is CourseRole.STUDENT:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Already a member of this course",
+        )
     prior = await course_crud.get_student_membership_row(
-        db, course_id=course.id, user_id=student.id
+        db, course_id=course.id, user_id=user.id
     )
     if prior is not None:
-        if prior.left_at is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Already a member of this course",
-            )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot rejoin after leaving this course",
@@ -311,15 +316,16 @@ async def join_course(
     await _commit_student_enrollment(
         db,
         course_id=course.id,
-        user_id=student.id,
+        user_id=user.id,
         duplicate_detail="Already a member of this course",
         missing_course_detail="Course not found for this invitation code",
     )
 
-    return StudentJoinResponse(
+    return CourseJoinResponse(
         course_id=course.id,
         name=course.name,
         invite_code=course.invitation_code,
+        my_role=CourseRole.STUDENT,
         message="Joined course",
     )
 
