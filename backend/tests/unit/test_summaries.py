@@ -84,3 +84,11 @@ def test_published_text_omits_identifiers_and_rejects_a_name() -> None:
         )
         == "Ada"
     )
+    assert (
+        leaked_identifier(
+            {**draft, "overview": "王小明認為交通最重要"},
+            names=["王小明"],
+            identifiers=[],
+        )
+        == "王小明"
+    )

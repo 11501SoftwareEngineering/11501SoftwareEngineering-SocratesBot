@@ -113,7 +113,9 @@ def leaked_identifier(
         parts.extend((group["name"], group["conditions"]))
     blob = "\n".join(part for part in parts if isinstance(part, str))
     for value in (*names, *identifiers):
-        if value and re.search(rf"\b{re.escape(value)}\b", blob, re.IGNORECASE):
+        # Chinese names have no spaces, so only ASCII letters and digits are boundaries.
+        pattern = rf"(?<![A-Za-z0-9]){re.escape(value)}(?![A-Za-z0-9])"
+        if value and re.search(pattern, blob, re.IGNORECASE):
             return value
     return None
 
