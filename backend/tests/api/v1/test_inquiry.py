@@ -156,6 +156,7 @@ def test_publish_stores_the_screen_and_rejects_an_incomplete_one(
     assert topic.inquiry_topic == "Cities"
     assert topic.title == "Cities"
     assert topic.age_band == "university_plus"
+    assert topic.description == "Who maintains them?"
     recorded.assert_awaited()
     course_route_db.commit.assert_awaited()
 

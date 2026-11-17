@@ -245,6 +245,8 @@ async def _store_setup(db: AsyncSession, topic: Topic, setup: InquiryFields) -> 
     )
     if setup.topic:
         topic.title = setup.topic
+    if setup.core_question:
+        topic.description = setup.core_question
     return topic
 
 
