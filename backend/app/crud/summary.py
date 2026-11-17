@@ -155,7 +155,9 @@ async def store_ready_summary(
 ) -> None:
     if not await _mark_ready(db, attempt_id, draft):
         return
-    topic = await db.get(Topic, topic_id)
+    topic = (
+        await db.execute(select(Topic).where(Topic.id == topic_id).with_for_update())
+    ).scalar_one_or_none()
     if topic is None:
         return
     row = await latest_summary(db, topic_id)
@@ -213,15 +215,21 @@ async def summary_version(
 
 
 async def published_document(db: AsyncSession, topic_id: UUID) -> dict | None:
-    row = await latest_summary(db, topic_id)
-    if row is None:
-        return None
-    return row.body.get("published")
+    statement = (
+        select(ClassSummaryVersion.body["published"])
+        .where(ClassSummaryVersion.topic_id == topic_id)
+        .order_by(ClassSummaryVersion.version.desc())
+        .limit(1)
+    )
+    return await db.scalar(statement)
 
 
 async def published_version(db: AsyncSession, topic_id: UUID) -> int | None:
-    row = await latest_summary(db, topic_id)
-    if row is None:
-        return None
-    value = row.body.get("published_version")
+    statement = (
+        select(ClassSummaryVersion.body["published_version"])
+        .where(ClassSummaryVersion.topic_id == topic_id)
+        .order_by(ClassSummaryVersion.version.desc())
+        .limit(1)
+    )
+    value = await db.scalar(statement)
     return None if value is None else int(value)

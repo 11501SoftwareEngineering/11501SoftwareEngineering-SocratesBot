@@ -13,6 +13,7 @@ from app.core.enums import GenerationStatus, TopicStage
 from app.crud import course as course_crud
 from app.crud import session as session_crud
 from app.crud import summary as summary_crud
+from app.crud import topic as topic_crud
 from app.models.class_summary import ClassSummaryVersion
 from app.models.topic import Topic
 from app.models.user import User
@@ -185,6 +186,7 @@ async def publish_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) ->
             is not reviewed or the text contains a name or identifier.
     """
     topic = await _instructor_topic(db, teacher, topic_id)
+    await topic_crud.lock_topic(db, topic.id)
     row = await _reviewed_summary(db, topic.id)
     draft = _draft_dict(row)
     names, identifiers = _identity_values(draft, await report_crud_names(db, topic.id))
@@ -193,17 +195,15 @@ async def publish_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) ->
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Summary contains a name or identifier",
         )
-    await summary_crud.upsert_summary_version(
-        db,
-        topic_id=row.topic_id,
-        version=row.version,
-        body={
-            **draft,
-            "published": public_summary(draft),
-            "published_version": row.version,
-            "status": "published",
-        },
-    )
+    _latest, previous = await _published_row(db, topic.id)
+    if previous is not None and previous is not row:
+        previous.body = {**previous.body, "status": "withdrawn"}
+    row.body = {
+        **draft,
+        "published": public_summary(draft),
+        "published_version": row.version,
+        "status": "published",
+    }
     await db.commit()
     return {
         "version": row.version,
@@ -220,22 +220,21 @@ async def withdraw_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -
             403 if the caller does not instruct the course.
     """
     topic = await _instructor_topic(db, teacher, topic_id)
-    row = await summary_crud.latest_summary(db, topic.id)
-    if row is None or not row.body.get("published"):
+    await topic_crud.lock_topic(db, topic.id)
+    latest, published = await _published_row(db, topic.id)
+    if latest is None or published is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="No published summary"
         )
-    await summary_crud.upsert_summary_version(
-        db,
-        topic_id=row.topic_id,
-        version=row.version,
-        body={
-            **row.body,
+    published.body = {**published.body, "status": "withdrawn"}
+    if latest is published:
+        latest.body = {
+            **published.body,
             "published": None,
             "published_version": None,
-            "status": "withdrawn",
-        },
-    )
+        }
+    else:
+        latest.body = {**latest.body, "published": None, "published_version": None}
     await db.commit()
     return {"summary_status": "withdrawn", "message": "Summary withdrawn"}
 
@@ -268,7 +267,9 @@ async def _teacher_body(db: AsyncSession, topic: Topic) -> dict:
     )
     return {
         "topic_status": topic.stage,
-        "published_version": await summary_crud.published_version(db, topic.id),
+        "published_version": None
+        if latest is None
+        else latest.body.get("published_version"),
         "summary": summary,
         "preparation_status": None if attempt is None else attempt.status,
     }
@@ -305,20 +306,29 @@ async def _write_text(
     viewpoint_summary: str,
     summary_status: str,
 ) -> ClassSummaryVersion:
+    await topic_crud.lock_topic(db, row.topic_id)
+    current = await summary_crud.latest_summary(db, row.topic_id)
+    if current is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Summary not found"
+        )
     changed = (
-        row.body.get("overview") != overview
-        or row.body.get("viewpoint_summary") != viewpoint_summary
+        current.body.get("overview") != overview
+        or current.body.get("viewpoint_summary") != viewpoint_summary
     )
     body = {
-        **row.body,
+        **current.body,
         "overview": overview,
         "viewpoint_summary": viewpoint_summary,
         "status": summary_status,
     }
+    if not changed:
+        current.body = body
+        return current
     return await summary_crud.upsert_summary_version(
         db,
-        topic_id=row.topic_id,
-        version=row.version + (1 if changed else 0),
+        topic_id=current.topic_id,
+        version=current.version + 1,
         body=body,
     )
 
@@ -385,18 +395,28 @@ async def _reviewed_summary(db: AsyncSession, topic_id: UUID) -> ClassSummaryVer
     return row
 
 
+async def _published_row(
+    db: AsyncSession, topic_id: UUID
+) -> tuple[ClassSummaryVersion | None, ClassSummaryVersion | None]:
+    """Return the latest row and the row named by its published_version."""
+    latest = await summary_crud.latest_summary(db, topic_id)
+    if latest is None:
+        return None, None
+    version = latest.body.get("published_version")
+    if version is None or not latest.body.get("published"):
+        return latest, None
+    if latest.version == int(version):
+        return latest, latest
+    return latest, await summary_crud.summary_version(db, topic_id, int(version))
+
+
 async def _withdraw_other_reviews(
     db: AsyncSession, topic_id: UUID, *, keep: int
 ) -> None:
     for old in await summary_crud.summary_versions(db, topic_id):
         if old.version == keep or old.body.get("status") != "reviewed":
             continue
-        await summary_crud.upsert_summary_version(
-            db,
-            topic_id=topic_id,
-            version=old.version,
-            body={**old.body, "status": "withdrawn"},
-        )
+        old.body = {**old.body, "status": "withdrawn"}
 
 
 async def _instructor_topic(db: AsyncSession, teacher: User, topic_id: UUID) -> Topic:

@@ -546,6 +546,21 @@ SUMMARY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
             "identifier": "Summary contains a name or identifier",
         },
     ),
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Course instructor required",
+        "Course instructor required",
+    ),
+    404: json_detail_examples(
+        "Topic or summary not found",
+        {
+            "topic_not_found": "Topic not found",
+            "summary_not_found": "Summary not found",
+        },
+    ),
 }
 
 INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -559,9 +574,14 @@ INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
     422: json_detail_examples(
         "Inquiry was not published",
         {
-            "invalid": "Request validation failed",
             "incomplete": "Incomplete setup: topic",
-            "invalid": "Request validation failed",
+            "invalid": [
+                {
+                    "type": "missing",
+                    "loc": ["body", "setup", "age_band"],
+                    "msg": "Field required",
+                }
+            ],
         },
     ),
 }

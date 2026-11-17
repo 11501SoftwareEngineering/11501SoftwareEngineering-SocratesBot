@@ -14,6 +14,7 @@ from app.crud import course as course_crud
 from app.crud import report as report_crud
 from app.crud import session as session_crud
 from app.crud import summary as summary_crud
+from app.crud import topic as topic_crud
 from app.models.session import Session
 from app.models.topic import Topic
 from app.services import summary_runner
@@ -151,6 +152,10 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
         assert topic_id == memory.topic.id
         return [(memory.session, "Ada")]
 
+    async def lock_topic(_db, topic_id):
+        assert topic_id == memory.topic.id
+        return memory.topic
+
     monkeypatch.setattr(course_crud, "is_course_instructor", is_instructor)
     monkeypatch.setattr(session_crud, "is_course_member", is_member)
     monkeypatch.setattr(report_crud, "topic_dialogues", topic_dialogues)
@@ -163,6 +168,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
     monkeypatch.setattr(summary_crud, "upsert_summary_version", upsert_summary_version)
     monkeypatch.setattr(summary_crud, "published_document", published_document)
     monkeypatch.setattr(summary_crud, "published_version", published_version)
+    monkeypatch.setattr(topic_crud, "lock_topic", lock_topic)
     monkeypatch.setattr(
         summary_runner,
         "schedule",
@@ -275,6 +281,12 @@ def test_summary_publish_stays_stable_until_withdraw(
     assert denied.status_code == 403
     assert withdrawn.status_code == 200
     assert after_withdraw.json()["summary"] is None
+    assert memory.versions[1].body["status"] == "withdrawn"
+    latest = max(memory.versions.values(), key=lambda row: row.version)
+    assert latest.version > 1
+    assert latest.body["status"] == "draft"
+    assert latest.body["published"] is None
+    assert latest.body["published_version"] is None
 
 
 def test_summary_keeps_an_older_version_without_sending_one(

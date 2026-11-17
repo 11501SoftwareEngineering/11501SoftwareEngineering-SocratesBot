@@ -494,7 +494,7 @@ version: 0.2
     - 查無此摘要 (404)
 
 ### 發布摘要
-- 功能說明: 老師發布最新一版，且該版必須是 `reviewed`。不帶版本號，也不接收畫面上的文字。已有較新的未審閱版本時拒絕發布
+- 功能說明: 老師發布最新一版，且該版必須是 `reviewed`。不帶版本號，也不接收畫面上的文字。已有較新的未審閱版本時拒絕發布。前一個 `published` 版本改為 `withdrawn`
 - 呼叫方式: POST /topics/{topicId}/summary/publish
 - 授權: 老師
 - 輸入資料: 無
@@ -505,7 +505,7 @@ version: 0.2
     - 最新一版尚未審閱，或已有較新的未審閱版本 (400)。`detail` 為 `version`（最新版本號）, `summary_status`（該版狀態）, `message`
 
 ### 撤回摘要
-- 功能說明: 老師撤回目前發布版本，學生端不再取得該摘要
+- 功能說明: 老師撤回目前發布版本，學生端不再取得該摘要。最新一版只清掉 `published` 與 `published_version`，不改它的狀態；較舊的發布版改為 `withdrawn`
 - 呼叫方式: POST /topics/{topicId}/summary/withdraw
 - 授權: 老師
 - 輸入資料: 無

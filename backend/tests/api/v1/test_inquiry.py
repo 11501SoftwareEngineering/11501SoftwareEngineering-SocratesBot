@@ -148,17 +148,20 @@ def test_publish_stores_the_screen_and_rejects_an_incomplete_one(
         },
     )
     assert published.status_code == 200
-    assert published.json()["setup"]["topic"] == "Cities"
+    body = published.json()
+    assert "opening_message" not in body
+    assert body["setup"]["topic"] == "Cities"
     assert topic.stage == "conversation"
     assert topic.inquiry_topic == "Cities"
     assert topic.title == "Cities"
     assert topic.age_band == "university_plus"
     assert topic.max_turns == 5
     assert topic.core_question == "Who maintains them?"
+    assert topic.description == "Who maintains them?"
     recorded.assert_awaited()
     course_route_db.commit.assert_awaited()
 
-    published = auth_client.post(
+    published_again = auth_client.post(
         f"/api/v1/topics/{topic.id}/publish",
         headers={"Authorization": bearer},
         json={
@@ -171,16 +174,8 @@ def test_publish_stores_the_screen_and_rejects_an_incomplete_one(
             }
         },
     )
-    assert published.status_code == 200
-    body = published.json()
-    assert "opening_message" not in body
-    assert body["setup"]["topic"] == "Cities"
-    assert topic.stage == "conversation"
-    assert topic.inquiry_topic == "Cities"
-    assert topic.title == "Cities"
-    assert topic.age_band == "university_plus"
-    assert topic.description == "Who maintains them?"
-    recorded.assert_awaited()
+    assert published_again.status_code == 400
+    assert published_again.json()["detail"] == "Topic is not in setup"
     course_route_db.commit.assert_awaited()
 
 
