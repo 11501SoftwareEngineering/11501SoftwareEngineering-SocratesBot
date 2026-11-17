@@ -1,21 +1,28 @@
-"""CRUD helpers for courses, instructors, and student memberships."""
+"""CRUD helpers for courses, instructors, memberships and TA permissions."""
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.enums import SessionStatus
-from app.models.course import Course, CourseInstructor, CourseMembership
+from app.models.course import (
+    Course,
+    CourseInstructor,
+    CourseMembership,
+    CourseTaPermission,
+)
 from app.models.session import Session
 from app.models.topic import Topic
 from app.models.user import User
 
 MEMBERSHIP_STUDENT = "STUDENT"
+MEMBERSHIP_TA = "TA"
 
 # (course, student_count, topic_count) — topic_count is total topics in the course
 InstructorCourseRow = tuple[Course, int, int]
@@ -252,3 +259,154 @@ async def soft_delete_student_membership_by_ids(
     )
     result = await db.execute(statement)
     return (result.rowcount or 0) > 0
+
+
+async def get_active_membership(
+    db: AsyncSession,
+    *,
+    course_id: UUID,
+    user_id: UUID,
+    for_update: bool = False,
+) -> CourseMembership | None:
+    """Return the active (not soft-left) STUDENT or TA membership, if any.
+
+    With ``for_update`` the row stays locked until the transaction ends, so
+    a concurrent leave, removal or role change waits; a row that was soft-left
+    while waiting is not returned, and ``role`` is the committed value.
+    """
+    statement = select(CourseMembership).where(
+        CourseMembership.course_id == course_id,
+        CourseMembership.user_id == user_id,
+        CourseMembership.left_at.is_(None),
+    )
+    if for_update:
+        statement = statement.with_for_update().execution_options(
+            populate_existing=True
+        )
+    return await db.scalar(statement)
+
+
+async def get_membership(
+    db: AsyncSession,
+    *,
+    course_id: UUID,
+    user_id: UUID,
+    for_update: bool = False,
+) -> CourseMembership | None:
+    """Return the membership row in any state (active or soft-left), if any.
+
+    With ``for_update`` the row stays locked until the transaction ends and
+    ``role`` / ``left_at`` are the committed values.
+    """
+    statement = select(CourseMembership).where(
+        CourseMembership.course_id == course_id,
+        CourseMembership.user_id == user_id,
+    )
+    if for_update:
+        statement = statement.with_for_update().execution_options(
+            populate_existing=True
+        )
+    return await db.scalar(statement)
+
+
+async def get_ta_permissions(
+    db: AsyncSession, *, course_id: UUID, user_id: UUID
+) -> list[str]:
+    """Return the permissions granted to a TA (unordered; empty if none)."""
+    statement = (
+        select(CourseTaPermission.permission)
+        .join(
+            CourseMembership,
+            CourseMembership.id == CourseTaPermission.course_membership_id,
+        )
+        .where(
+            CourseMembership.course_id == course_id,
+            CourseMembership.user_id == user_id,
+        )
+    )
+    return list((await db.scalars(statement)).all())
+
+
+def _add_ta_permission(
+    db: AsyncSession, *, membership_id: UUID, permission: str
+) -> None:
+    """Stage one TA permission row; the caller flushes."""
+    db.add(
+        CourseTaPermission(course_membership_id=membership_id, permission=permission)
+    )
+
+
+async def _delete_ta_permissions(db: AsyncSession, *, membership_id: UUID) -> None:
+    await db.execute(
+        delete(CourseTaPermission).where(
+            CourseTaPermission.course_membership_id == membership_id
+        )
+    )
+
+
+async def add_ta_membership(
+    db: AsyncSession,
+    *,
+    course_id: UUID,
+    user_id: UUID,
+    permissions: Iterable[str],
+) -> CourseMembership:
+    """Add someone who has never been in the course as a TA."""
+    membership = CourseMembership(
+        course_id=course_id,
+        user_id=user_id,
+        role=MEMBERSHIP_TA,
+        left_at=None,
+    )
+    db.add(membership)
+    await db.flush()
+    for permission in permissions:
+        _add_ta_permission(db, membership_id=membership.id, permission=permission)
+    await db.flush()
+    return membership
+
+
+async def promote_to_ta(
+    db: AsyncSession, membership: CourseMembership, permissions: Iterable[str]
+) -> None:
+    """Turn an existing membership into a TA one (same row keeps its history).
+
+    A soft-left row (left or removed earlier) rejoins the course as of now.
+    """
+    membership.role = MEMBERSHIP_TA
+    if membership.left_at is not None:
+        membership.left_at = None
+        membership.joined_at = datetime.now(UTC)
+    for permission in permissions:
+        _add_ta_permission(db, membership_id=membership.id, permission=permission)
+    await db.flush()
+
+
+async def set_ta_permissions(
+    db: AsyncSession, membership: CourseMembership, permissions: Iterable[str]
+) -> None:
+    """Replace a TA's permissions with ``permissions``."""
+    await _delete_ta_permissions(db, membership_id=membership.id)
+    for permission in permissions:
+        _add_ta_permission(db, membership_id=membership.id, permission=permission)
+    await db.flush()
+
+
+async def remove_ta_from_course(db: AsyncSession, membership: CourseMembership) -> None:
+    """Drop a TA's permissions and sessions and remove them from the course.
+
+    Their sessions on this course's topics are deleted. The row becomes a
+    soft-left STUDENT membership, the same state as a removed student: the
+    teacher can add them back as a student or assign them as a TA again.
+    """
+    await _delete_ta_permissions(db, membership_id=membership.id)
+    course_topics = select(Topic.id).where(Topic.course_id == membership.course_id)
+    await db.execute(
+        delete(Session).where(
+            Session.user_id == membership.user_id,
+            Session.topic_id.in_(course_topics),
+        )
+    )
+    membership.role = MEMBERSHIP_STUDENT
+    membership.left_at = datetime.now(UTC)
+    await db.flush()

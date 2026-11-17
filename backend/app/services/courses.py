@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from uuid import UUID
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import CourseRole, UserRole
+from app.core.authz import is_super_admin
+from app.core.enums import CourseRole, TaPermission, UserRole
 from app.crud import course as course_crud
 from app.crud import user as user_crud
-from app.models.course import Course
+from app.models.course import Course, CourseMembership
 from app.models.user import User
 from app.schemas.course import (
     CourseCreateRequest,
@@ -23,6 +25,10 @@ from app.schemas.course import (
     StudentCourseListItem,
     StudentJoinRequest,
     StudentJoinResponse,
+    TaAssignRequest,
+    TaAssignResponse,
+    TaPermissionsUpdateRequest,
+    TaPermissionsUpdateResponse,
     TeacherCourseListItem,
 )
 from app.services.course_invites import (
@@ -34,7 +40,8 @@ from app.services.course_invites import (
 
 _INVITE_RE = re.compile(rf"^[{INVITE_ALPHABET}]{{{INVITE_LENGTH}}}$")
 _INVITE_UNIQUE_CONSTRAINT = "uq_courses_invitation_code"
-_MEMBERSHIP_PK = "pk_course_memberships"
+_MEMBERSHIP_UNIQUE = "uq_course_memberships_course_id"
+_TA_PERMISSION_PK = "pk_course_ta_permissions"
 
 
 def _integrity_constraint_name(exc: IntegrityError) -> str | None:
@@ -57,13 +64,17 @@ def _is_invite_unique_violation(exc: IntegrityError) -> bool:
     return _INVITE_UNIQUE_CONSTRAINT in text
 
 
-def _is_membership_duplicate_violation(exc: IntegrityError) -> bool:
-    """True only for course_memberships primary-key conflicts."""
+def _is_constraint_violation(exc: IntegrityError, name: str) -> bool:
     constraint = _integrity_constraint_name(exc)
-    if constraint == _MEMBERSHIP_PK:
+    if constraint == name:
         return True
     text = str(getattr(exc, "orig", None) or exc).lower()
-    return _MEMBERSHIP_PK in text
+    return name in text
+
+
+def _is_membership_duplicate_violation(exc: IntegrityError) -> bool:
+    """True only for course_memberships ``(course_id, user_id)`` conflicts."""
+    return _is_constraint_violation(exc, _MEMBERSHIP_UNIQUE)
 
 
 _ROLE_BY_DB_VALUE = {
@@ -110,6 +121,38 @@ async def require_course_teacher(
             detail="Course teacher required",
         )
     return course
+
+
+_PERMISSION_ORDER = {permission: index for index, permission in enumerate(TaPermission)}
+
+
+def sort_permissions(permissions: Iterable[str]) -> list[str]:
+    """Deduplicate TA permissions and order them as declared in ``TaPermission``."""
+    return sorted(set(permissions), key=lambda p: _PERMISSION_ORDER[TaPermission(p)])
+
+
+async def require_course_teacher_or_ta(
+    db: AsyncSession, user: User, course_id: UUID, permission: TaPermission
+) -> tuple[Course, CourseRole]:
+    """Allow the course teacher, or a TA holding ``permission``.
+
+    Permissions are read on every call, so a change applies to the next request.
+
+    Raises:
+        HTTPException: 404 if the course is missing; 403 otherwise.
+    """
+    course = await _require_course(db, course_id)
+    role = await get_my_course_role(db, user, course_id)
+    if role is CourseRole.TEACHER:
+        return course, role
+    if role is CourseRole.TA and permission in await course_crud.get_ta_permissions(
+        db, course_id=course_id, user_id=user.id
+    ):
+        return course, role
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=f"Course teacher or TA with {permission} permission required",
+    )
 
 
 async def create_course(
@@ -375,6 +418,138 @@ async def remove_course_student(
         )
         if removed:
             await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+
+
+_ALREADY_TA_DETAIL = "Already a TA of this course"
+_MEMBERSHIP_RACE_DETAIL = "Course membership changed concurrently; retry"
+
+
+def _ta_assign_rejected(detail: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
+
+
+async def _require_active_ta(
+    db: AsyncSession, *, course_id: UUID, user_id: UUID
+) -> CourseMembership:
+    """Lock the active TA membership; 404 if it is not (or no longer) a TA."""
+    membership = await course_crud.get_active_membership(
+        db, course_id=course_id, user_id=user_id, for_update=True
+    )
+    if membership is None or membership.role != course_crud.MEMBERSHIP_TA:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="TA not found",
+        )
+    return membership
+
+
+async def assign_course_ta(
+    db: AsyncSession, teacher: User, course_id: UUID, payload: TaAssignRequest
+) -> TaAssignResponse:
+    """Make any registered account a TA of the course with ``permissions``.
+
+    A student of the course is promoted in place (sessions are kept); someone
+    who left or was removed rejoins as a TA; anyone else is added as a TA.
+
+    Raises:
+        HTTPException: 404 course / account missing; 403 not the course
+            teacher; 400 already a TA here, a teacher of this course, or an
+            admin.
+    """
+    await require_course_teacher(db, teacher, course_id)
+    target = await user_crud.get_user_by_account(db, payload.account_id)
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Account not found",
+        )
+    if is_super_admin(target):
+        raise _ta_assign_rejected("Admins cannot be TAs")
+    if await course_crud.is_course_instructor(
+        db, course_id=course_id, teacher_id=target.id
+    ):
+        raise _ta_assign_rejected("Teachers of this course cannot be TAs")
+    # Lock the row (active or soft-left) so a concurrent removal, leave or
+    # revoke cannot slip in between this check and the write.
+    membership = await course_crud.get_membership(
+        db, course_id=course_id, user_id=target.id, for_update=True
+    )
+    if (
+        membership is not None
+        and membership.left_at is None
+        and membership.role == course_crud.MEMBERSHIP_TA
+    ):
+        raise _ta_assign_rejected(_ALREADY_TA_DETAIL)
+
+    permissions = sort_permissions(payload.permissions)
+    try:
+        if membership is None:
+            await course_crud.add_ta_membership(
+                db, course_id=course_id, user_id=target.id, permissions=permissions
+            )
+        else:
+            await course_crud.promote_to_ta(db, membership, permissions)
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if _is_constraint_violation(exc, _TA_PERMISSION_PK):
+            raise _ta_assign_rejected(_ALREADY_TA_DETAIL) from None
+        # A first-time member joined (or was added) while we were inserting.
+        if _is_membership_duplicate_violation(exc):
+            raise _ta_assign_rejected(_MEMBERSHIP_RACE_DETAIL) from None
+        raise
+    except Exception:
+        await db.rollback()
+        raise
+    return TaAssignResponse(
+        user_id=target.id,
+        account_id=target.account_id,
+        name=target.name,
+        permissions=permissions,
+        message="TA assigned",
+    )
+
+
+async def update_course_ta_permissions(
+    db: AsyncSession,
+    teacher: User,
+    course_id: UUID,
+    user_id: UUID,
+    payload: TaPermissionsUpdateRequest,
+) -> TaPermissionsUpdateResponse:
+    """Replace a TA's permissions; a TA editing their own gets 403."""
+    await require_course_teacher(db, teacher, course_id)
+    membership = await _require_active_ta(db, course_id=course_id, user_id=user_id)
+    permissions = sort_permissions(payload.permissions)
+    try:
+        await course_crud.set_ta_permissions(db, membership, permissions)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return TaPermissionsUpdateResponse(
+        user_id=user_id,
+        permissions=permissions,
+        message="TA permissions updated",
+    )
+
+
+async def revoke_course_ta(
+    db: AsyncSession, teacher: User, course_id: UUID, user_id: UUID
+) -> None:
+    """Revoke a TA, delete their sessions in the course and remove them.
+
+    Like any removed student they cannot rejoin with the invite code; the
+    teacher can add them back as a student or assign them as a TA again.
+    """
+    await require_course_teacher(db, teacher, course_id)
+    membership = await _require_active_ta(db, course_id=course_id, user_id=user_id)
+    try:
+        await course_crud.remove_ta_from_course(db, membership)
+        await db.commit()
     except Exception:
         await db.rollback()
         raise

@@ -1,7 +1,15 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,17 +57,23 @@ class CourseMembership(Base):
             "role IN ('STUDENT', 'TA')",
             name="role",
         ),
+        UniqueConstraint("course_id", "user_id"),
     )
 
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
     course_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("courses.id", ondelete="CASCADE"),
-        primary_key=True,
+        nullable=False,
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id"),
-        primary_key=True,
+        nullable=False,
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     joined_at: Mapped[datetime] = mapped_column(
@@ -87,3 +101,29 @@ class CourseInstructor(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
     )
+
+
+class CourseTaPermission(Base):
+    """One granted permission of a course TA (one row per permission)."""
+
+    __tablename__ = "course_ta_permissions"
+
+    __table_args__ = (
+        CheckConstraint(
+            "permission IN "
+            "('edit_topics', 'view_reports', 'edit_summary', 'view_members')",
+            name="permission",
+        ),
+    )
+
+    course_membership_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        # Named explicitly: the naming-convention name exceeds 63 characters.
+        ForeignKey(
+            "course_memberships.id",
+            name="fk_course_ta_permissions_course_membership_id",
+            ondelete="CASCADE",
+        ),
+        primary_key=True,
+    )
+    permission: Mapped[str] = mapped_column(String(32), primary_key=True)
