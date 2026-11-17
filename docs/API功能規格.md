@@ -532,7 +532,20 @@ version: 0.2
 - 功能說明: 取得本人本月 AI 用量
 - 呼叫方式: GET /users/me/ai/usage
 - 輸入資料: 無
-- 成功回應: `month`, `total_tokens`, `input_tokens`, `output_tokens`, `request_count`, `by_stage`（分階段統計）, `cost_usd`（無資料時為 null，不代表 0）, `cost_source`, `updated_at`
+- 成功回應: `month`, `total_tokens`, `input_tokens`, `output_tokens`, `request_count`, `by_stage`（分階段統計，格式見下）, `cost_usd`（無資料時為 null，不代表 0）, `cost_source`, `updated_at`
+    - `by_stage`: 陣列，固定 4 筆，依 `setup`、`dialogue`、`report`、`summary` 的順序；本月沒有用量的階段也要回傳（數量為 0、`cost_usd` 為 null）
+        - `stage`: `setup`（活動設定）、`dialogue`（學生對話）、`report`（個人報告）、`summary`（全班統整）
+        - `request_count`, `total_tokens`, `input_tokens`, `output_tokens`: 整數
+        - `cost_usd`: 該階段本月花費（美元）；無資料時為 null，不代表 0
+    - `by_stage` 範例:
+        ```json
+        [
+          { "stage": "setup", "request_count": 18, "total_tokens": 31200, "input_tokens": 21400, "output_tokens": 9800, "cost_usd": 0.02 },
+          { "stage": "dialogue", "request_count": 352, "total_tokens": 80150, "input_tokens": 61800, "output_tokens": 18350, "cost_usd": 0.05 },
+          { "stage": "report", "request_count": 36, "total_tokens": 13100, "input_tokens": 9800, "output_tokens": 3300, "cost_usd": 0.01 },
+          { "stage": "summary", "request_count": 0, "total_tokens": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": null }
+        ]
+        ```
 - 錯誤:
     - 非老師身分 (403)
 
