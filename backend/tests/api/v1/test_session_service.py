@@ -7,7 +7,6 @@ import pytest
 
 from app.services.session import (
     CourseAccessDeniedError,
-    DialogueExistsError,
     TopicClosedError,
     TopicNotFoundError,
     TopicNotOpenError,
@@ -99,13 +98,12 @@ async def test_reentry_keeps_existing_session(
     saved = store.sessions[(store.user_id, store.topic_id)]
     saved.status = session_status
 
-    with pytest.raises(DialogueExistsError) as caught:
-        await create_or_enter_session(
-            user_id=store.user_id, topic_id=store.topic_id, store=store
-        )
+    again = await create_or_enter_session(
+        user_id=store.user_id, topic_id=store.topic_id, store=store
+    )
 
-    assert caught.value.session_id == first.session_id
-    assert caught.value.session_status == "open"
+    assert again.session_id == first.session_id
+    assert again.session_status == "open"
     assert saved.status == session_status
     assert len(store.sessions) == 1
     assert store.create_calls == 1
@@ -223,10 +221,10 @@ async def test_insert_conflict_rejects_with_original_id(
 
     store.insert_session_id = lost_insert  # type: ignore[method-assign]
 
-    with pytest.raises(DialogueExistsError) as caught:
-        await create_or_enter_session(
-            user_id=store.user_id, topic_id=store.topic_id, store=store
-        )
+    again = await create_or_enter_session(
+        user_id=store.user_id, topic_id=store.topic_id, store=store
+    )
 
-    assert caught.value.session_id == original.id
+    assert again.session_id == original.id
+    assert again.session_status == "open"
     assert len(store.sessions) == 1

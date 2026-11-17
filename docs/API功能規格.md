@@ -358,15 +358,15 @@ version: 0.2
     - 非課程成員或查無此題目 (404)
 
 ### 建立對話 Session
-- 功能說明: 學生第一次進入題目時建立本人 Session。已有 Session 時（題目列表的 `session_id` 不為 null）前端應改用 `GET /sessions/{sessionId}/messages`
+- 功能說明: 學生第一次進入題目時建立本人 Session，固定題目設定、內容語言、模型及設定版本。已有 Session 時回傳該 Session
 - 呼叫方式: POST /topics/{topicId}/sessions
 - 授權: 學生
 - 輸入資料: 無
-- 成功回應: `session_id`, `topic_id`, `session_status`
+- 成功回應: `session_id`, `topic_id`, `session_status`（已有 Session 時為該對話目前的狀態）
 - 錯誤:
     - 非課程學生 (403)
     - 查無此題目，或題目仍在 `setup` (404)
-    - 題目已進入 `summary`，不能再開始對話；或本人已有此題目的 Session (400)
+    - 題目已進入 `summary`，且本人還沒有 Session (400)
 
 ### 取得對話紀錄
 - 功能說明: 取得本人 Session 的正式訊息歷史與進度，也用於斷線後校準

@@ -21,7 +21,6 @@ from app.models.topic import Topic
 from app.models.user import User
 from app.services.session import (
     CourseAccessDeniedError,
-    DialogueExistsError,
     TopicNotFoundError,
     create_or_enter_session,
 )
@@ -316,16 +315,16 @@ def test_service_creates_and_reuses_session_with_database() -> None:
                 topic_id=topic.id,
                 store=store,
             )
-            with pytest.raises(DialogueExistsError) as caught:
-                await create_or_enter_session(
-                    user_id=student.id,
-                    topic_id=topic.id,
-                    store=store,
-                )
+            again = await create_or_enter_session(
+                user_id=student.id,
+                topic_id=topic.id,
+                store=store,
+            )
 
             assert first.topic_id == topic.id
             assert first.session_status == "open"
-            assert caught.value.session_id == first.session_id
+            assert again.session_id == first.session_id
+            assert again.session_status == "open"
 
             created = await db.get(Session, first.session_id)
             assert created is not None

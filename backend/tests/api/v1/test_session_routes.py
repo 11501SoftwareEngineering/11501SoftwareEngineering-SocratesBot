@@ -204,9 +204,10 @@ def test_enter_existing_session_returns_original_id(
         headers={"Authorization": bearer_from(login)},
     )
 
-    assert response.status_code == 400
-    assert response.json()["detail"]["session_id"] == str(existing_session_id)
-    assert response.json()["detail"]["session_status"] == "open"
+    assert response.status_code == 200
+    assert response.json()["session_id"] == str(existing_session_id)
+    assert response.json()["topic_id"] == str(topic_id)
+    assert response.json()["session_status"] == "open"
     lookup_mock.assert_awaited_once_with(
         session_route_db,
         user_id=student.id,
