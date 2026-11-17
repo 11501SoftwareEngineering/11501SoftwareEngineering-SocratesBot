@@ -147,7 +147,7 @@ version: 0.2
 
 | permission | 允許做的事 |
 | --- | --- |
-| `edit_topics` | 可修改 `setup` 階段題目的設定（AI 產生、修訂、儲存） |
+| `edit_topics` | 可建立題目、修改 `setup` 階段題目的設定（AI 產生、修訂、儲存） |
 | `view_reports` | 檢視學生個人報告、觀點 tag，以及摘要分組與報告中的學生姓名 |
 | `edit_summary` | 在 `summary` 階段重新產生及修訂摘要草稿；不能審閱、發布或撤回 |
 | `view_members` | 檢視學生名單；不能移除學生或管理助教 |
@@ -234,7 +234,7 @@ version: 0.2
 
 | `topic_status` | 階段 | 進入方式 | 規則 |
 | --- | --- | --- | --- |
-| `setup` | 題目設定 | 新題目寫入後 | 設定 API 可用；學生看不到此題目 |
+| `setup` | 題目設定 | 建立題目 | 設定 API 可用；學生看不到此題目 |
 | `conversation` | 學生對話 | 老師發布題目 | 鎖定八欄、內容語言與模型；學生可建立／繼續 Session |
 | `summary` | 觀點摘要 | 老師第一次產生摘要草稿 | 學生不能再建立 Session 或送出訊息；未完成的 Session 保留但不計入完成數；摘要內的細分狀態見 `summary_status` |
 
@@ -253,12 +253,22 @@ version: 0.2
 - 授權: 老師、助教、學生
 - 輸入資料: 無
 - 成功回應: `course_id`, `name`, `invite_code`, `my_role`, `my_permissions`, `topics`[`topic_id`, `title`, `description`, `topic_status`（內容見上方表格）, `age_band`, `max_turns`, 依身分另含下列欄位]
-    - `title` 等於八欄的 `topic`。設定階段尚未填寫時為空字串
-    - `description` 等於八欄的 `core_question`。尚未填寫時為 null
     - 學生: 只列 `conversation`、`summary` 階段的題目；另含 `session_status`（未進入時為 null）, `session_id`
     - 老師與助教: `answered_count`, `student_count`
 - 錯誤:
     - 非課程成員或查無此課程 (404)
+
+### 建立題目
+- 功能說明: 「新增活動」頁送出後，後端以選定模型將課程描述交由 AI 產生八欄設定並建立題目，將 `topic_status` 設為 `setup`
+- 呼叫方式: POST /courses/{courseId}/topics
+- 授權: 老師、助教需 `edit_topics`
+- 輸入資料: `age_band`, `max_turns`, `course_description`（不可空白，最多 6000 字元）
+- 成功回應: 同「取得題目設定」
+- 錯誤:
+    - 欄位未填寫或不符規則、模型代號無效 (422)
+    - 無權限 (403)
+    - 查無此課程 (404)
+    - AI 服務失敗 (502／503)
 
 ### 刪除題目
 - 功能說明: 老師刪除題目，連帶刪除對話、報告與摘要，沒有封存

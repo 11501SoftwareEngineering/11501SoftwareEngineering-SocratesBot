@@ -159,7 +159,6 @@ def _material(
 
 def _apply(topic: Topic, generated: GeneratedInquiry) -> None:
     topic.title = generated.topic
-    topic.description = generated.core_question
     topic.age_band = generated.age_band
     topic.max_turns = generated.max_turns
     topic.inquiry_topic = generated.topic
@@ -213,7 +212,7 @@ async def create_inquiry_topic(
             course_id=course.id,
             created_by=user.id,
             title=generated.topic,
-            description=generated.core_question,
+            description=payload.course_description,
         )
         topic.content_language = language
         topic.model_id = model_id
@@ -242,6 +241,8 @@ async def _store_setup(db: AsyncSession, topic: Topic, setup: InquiryFields) -> 
         exclusions=setup.exclusions or "unspecified",
         opening_message=setup.opening_message,
     )
+    if setup.topic:
+        topic.title = setup.topic
     return topic
 
 

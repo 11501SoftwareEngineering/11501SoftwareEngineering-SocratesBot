@@ -19,6 +19,7 @@ from app.schemas.topic import (
     StudentTopicListItem,
     TeacherCourseTopicsResponse,
     TeacherTopicListItem,
+    TopicCreateRequest,
     TopicExplanationResponse,
     TopicUpdateRequest,
     TopicWriteResponse,
@@ -56,6 +57,30 @@ def _write_response(topic: Topic, message: str) -> TopicWriteResponse:
         description=topic.description,
         message=message,
     )
+
+
+async def create_topic(
+    db: AsyncSession, user: User, course_id: UUID, payload: TopicCreateRequest
+) -> TopicWriteResponse:
+    """Create a topic in a course.
+
+    Raises:
+        HTTPException: 404 if the course is missing; 403 if not its teacher.
+    """
+    course = await courses_service.require_course_teacher(db, user, course_id)
+    try:
+        topic = await topic_crud.create_topic(
+            db,
+            course_id=course.id,
+            created_by=user.id,
+            title=payload.title,
+            description=payload.description,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return _write_response(topic, "Topic created")
 
 
 async def update_topic(

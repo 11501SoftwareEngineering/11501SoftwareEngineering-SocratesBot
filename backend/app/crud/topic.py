@@ -85,9 +85,6 @@ async def save_inquiry(
     topic.max_turns = max_turns
     topic.inquiry_topic = inquiry_topic
     topic.core_question = core_question
-    # title is NOT NULL; a blank inquiry topic is stored as "".
-    topic.title = inquiry_topic or ""
-    topic.description = core_question
     topic.inquiry_focus = inquiry_focus
     topic.background_info = background_info
     topic.exclusions = exclusions
