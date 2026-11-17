@@ -9,11 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authz import is_reserved_super_admin_account, is_super_admin
 from app.core.enums import UserRole
 from app.core.security import generate_initial_password
-from app.crud import user
+from app.crud import auth, user
 from app.schemas.admin import (
     TeacherCreateRequest,
     TeacherCreateResponse,
     TeacherListItem,
+    TeacherPasswordResetResponse,
 )
 
 
@@ -100,3 +101,40 @@ async def delete_teacher(db: AsyncSession, teacher_id: UUID) -> None:
             detail="Cannot delete elevated admin account",
         )
     await user.delete_teacher(db, target)
+
+
+async def reset_teacher_password(
+    db: AsyncSession, teacher_id: UUID
+) -> TeacherPasswordResetResponse:
+    """Reset a TEACHER's password to a new generated initial password.
+
+    Sets ``must_change_password=true`` and revokes the teacher's existing
+    refresh tokens. The plaintext password is returned once in the response.
+
+    Raises:
+        HTTPException: 404 if missing or not a TEACHER; 403 if the teacher is
+            config-elevated via ``SUPER_ADMIN_ACCOUNTS``.
+    """
+    target = await user.get_user_by_id(db, teacher_id)
+    if target is None or target.role != UserRole.TEACHER.value:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Teacher not found",
+        )
+    if is_super_admin(target):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot reset elevated admin account password",
+        )
+    initial_password = generate_initial_password()
+    await user.update_password(
+        db,
+        target,
+        new_password=initial_password,
+        must_change_password=True,
+    )
+    await auth.revoke_all_for_user(db, target.id)
+    return TeacherPasswordResetResponse(
+        password=initial_password,
+        message="Password reset",
+    )

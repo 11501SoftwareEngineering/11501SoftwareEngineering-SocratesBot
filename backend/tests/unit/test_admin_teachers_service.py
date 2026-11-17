@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy.exc import IntegrityError
 
+from app.core.enums import UserRole
 from app.schemas.admin import TeacherCreateRequest
 from app.services import admin_teachers as admin_teachers_service
 
@@ -45,3 +48,46 @@ def test_create_teacher_integrity_error_maps_to_400(
     assert exc.value.status_code == 400
     assert exc.value.detail == "Account already exists"
     db.rollback.assert_awaited_once()
+
+
+def test_reset_teacher_password_sets_flag_and_revokes_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    teacher = SimpleNamespace(
+        id=uuid.uuid4(),
+        account_id="teach1",
+        role=UserRole.TEACHER.value,
+    )
+    monkeypatch.setattr(
+        "app.services.admin_teachers.user.get_user_by_id",
+        AsyncMock(return_value=teacher),
+    )
+    monkeypatch.setattr(
+        "app.services.admin_teachers.is_super_admin",
+        lambda _user: False,
+    )
+    monkeypatch.setattr(
+        "app.services.admin_teachers.generate_initial_password",
+        lambda: "generated-password",
+    )
+    update_password = AsyncMock(return_value=teacher)
+    revoke_all = AsyncMock()
+    monkeypatch.setattr(
+        "app.services.admin_teachers.user.update_password", update_password
+    )
+    monkeypatch.setattr(
+        "app.services.admin_teachers.auth.revoke_all_for_user", revoke_all
+    )
+    db = AsyncMock()
+
+    result = asyncio.run(admin_teachers_service.reset_teacher_password(db, teacher.id))
+
+    assert result.password == "generated-password"
+    assert result.message == "Password reset"
+    update_password.assert_awaited_once_with(
+        db,
+        teacher,
+        new_password="generated-password",
+        must_change_password=True,
+    )
+    revoke_all.assert_awaited_once_with(db, teacher.id)

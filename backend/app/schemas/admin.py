@@ -23,6 +23,15 @@ class TeacherCreateResponse(BaseModel):
     )
 
 
+class TeacherPasswordResetResponse(BaseModel):
+    # One-time plaintext initial password; only returned on reset.
+    password: str = Field(examples=["generated-initial-password"])
+    message: str = Field(
+        default="Password reset",
+        examples=["Password reset"],
+    )
+
+
 class TeacherListItem(BaseModel):
     id: UUID
     account_id: str = Field(examples=["teacher1"])

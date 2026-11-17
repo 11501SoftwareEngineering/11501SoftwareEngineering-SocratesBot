@@ -5,11 +5,15 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import SuperAdminUser, get_db
-from app.api.openapi_responses import TEACHER_CREATE_RESPONSES
+from app.api.openapi_responses import (
+    TEACHER_CREATE_RESPONSES,
+    TEACHER_PASSWORD_RESET_RESPONSES,
+)
 from app.schemas.admin import (
     TeacherCreateRequest,
     TeacherCreateResponse,
     TeacherListItem,
+    TeacherPasswordResetResponse,
 )
 from app.services import admin_teachers as admin_teachers_service
 
@@ -54,3 +58,22 @@ async def delete_teacher(
 ) -> None:
     """Delete a teacher by user UUID (204, no body)."""
     await admin_teachers_service.delete_teacher(db, teacherId)
+
+
+@router.post(
+    "/{teacherId}/reset-password",
+    response_model=TeacherPasswordResetResponse,
+    responses=TEACHER_PASSWORD_RESET_RESPONSES,
+)
+async def reset_teacher_password(
+    teacherId: UUID,
+    _admin: SuperAdminUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> TeacherPasswordResetResponse:
+    """Reset a teacher's initial password and require a change on next login.
+
+    Raises:
+        HTTPException: 404 if the teacher does not exist; 403 if the target is
+            a config-elevated admin.
+    """
+    return await admin_teachers_service.reset_teacher_password(db, teacherId)
