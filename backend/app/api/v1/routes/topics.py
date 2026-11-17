@@ -14,14 +14,14 @@ from app.api.openapi_responses import (
     TOPIC_DELETE_RESPONSES,
     TOPIC_EXPLANATION_RESPONSES,
 )
+from app.schemas.inquiry import CreateInquiryTopicRequest, InquirySetupResponse
 from app.schemas.session import CreateSessionResponse
 from app.schemas.topic import (
     StudentCourseTopicsResponse,
     TeacherCourseTopicsResponse,
-    TopicCreateRequest,
     TopicExplanationResponse,
-    TopicWriteResponse,
 )
+from app.services import inquiry as inquiry_service
 from app.services import session as session_service
 from app.services import topics as topics_service
 
@@ -44,17 +44,20 @@ async def list_course_topics(
 
 @router.post(
     "/courses/{courseId}/topics",
-    response_model=TopicWriteResponse,
+    response_model=InquirySetupResponse,
+    response_model_exclude_none=True,
     responses=TOPIC_CREATE_RESPONSES,
 )
 async def create_topic(
     courseId: UUID,
-    payload: TopicCreateRequest,
+    payload: CreateInquiryTopicRequest,
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> TopicWriteResponse:
-    """Create a topic in a course the caller teaches."""
-    return await topics_service.create_topic(db, current_user, courseId, payload)
+) -> InquirySetupResponse:
+    """Create a setup topic and fill the eight fields from the course description."""
+    return await inquiry_service.create_inquiry_topic(
+        db, current_user, courseId, payload
+    )
 
 
 @router.delete(

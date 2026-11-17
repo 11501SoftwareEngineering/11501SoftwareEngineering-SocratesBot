@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.enums import TopicStage
+from app.core.enums import TaPermission, TopicStage
 from app.crud import topic as topic_crud
 from app.models.topic import Topic
 from app.models.user import User
@@ -190,10 +190,12 @@ async def create_inquiry_topic(
     """Create a setup topic and fill the eight fields from the model.
 
     Raises:
-        HTTPException: 404 if the course is missing; 403 if not its teacher;
-            502 or 503 if the model call fails.
+        HTTPException: 404 if the course is missing; 403 if the caller is not
+            the teacher or a TA with edit_topics; 502 or 503 if the model fails.
     """
-    course = await courses_service.require_course_teacher(db, user, course_id)
+    course, _role = await courses_service.require_course_teacher_or_ta(
+        db, user, course_id, TaPermission.EDIT_TOPICS
+    )
     language = settings.DEFAULT_LANGUAGE_CODE
     model_id = settings.OPENAI_MODEL
     generated = await _complete(
