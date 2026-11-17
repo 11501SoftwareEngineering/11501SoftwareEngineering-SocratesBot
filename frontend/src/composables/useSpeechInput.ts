@@ -1,4 +1,5 @@
 import { onBeforeUnmount, ref } from 'vue'
+import { i18n, localeInfo, translate } from '@/i18n'
 
 /*
  * TypeScript 內建的型別沒有 SpeechRecognition（各瀏覽器還沒統一），這裡只宣告用得到的部分。
@@ -33,15 +34,16 @@ function getRecognition(): RecognitionConstructor | undefined {
   return w.SpeechRecognition ?? w.webkitSpeechRecognition
 }
 
-const GENERIC_ERROR = '語音辨識失敗，請再試一次或改用文字輸入。'
-const ERROR_MESSAGES: Record<string, string> = {
-  'not-allowed': '無法使用麥克風，請確認瀏覽器已允許麥克風權限。',
-  'service-not-allowed': '無法使用麥克風，請確認瀏覽器已允許麥克風權限。',
-  'audio-capture': '找不到麥克風，請確認裝置有接上麥克風。',
-  network: '語音辨識需要網路連線，請確認網路後再試一次。',
-  'no-speech': '沒有聽到聲音，請再按一次麥克風說話。',
-  'language-not-supported': '這個瀏覽器不支援中文語音辨識，請改用文字輸入。',
+// 錯誤代碼 → i18n key（speech.*）
+const ERROR_KEYS: Record<string, string> = {
+  'not-allowed': 'notAllowed',
+  'service-not-allowed': 'notAllowed',
+  'audio-capture': 'audioCapture',
+  network: 'network',
+  'no-speech': 'noSpeech',
+  'language-not-supported': 'languageNotSupported',
 }
+const errorText = (code: string) => translate(`speech.${ERROR_KEYS[code] ?? 'generic'}`)
 
 /**
  * 語音輸入（語音轉文字），全部在前端做，不需要後端 API。
@@ -68,7 +70,8 @@ export function useSpeechInput(options: { onText: (text: string) => void; lang?:
     if (!Recognition || recognition) return
     errorMessage.value = ''
     const r = new Recognition()
-    r.lang = options.lang ?? 'zh-TW'
+    // 沒指定就用介面語言（例如介面是日本語就辨識日語）
+    r.lang = options.lang ?? localeInfo(i18n.global.locale.value).speech
     r.continuous = true
     r.interimResults = true
     r.onresult = (event) => {
@@ -78,8 +81,7 @@ export function useSpeechInput(options: { onText: (text: string) => void; lang?:
     }
     r.onerror = (event) => {
       // aborted 是我們自己呼叫 cancel()，不是錯誤
-      if (event.error !== 'aborted')
-        errorMessage.value = ERROR_MESSAGES[event.error] ?? GENERIC_ERROR
+      if (event.error !== 'aborted') errorMessage.value = errorText(event.error)
     }
     r.onend = () => {
       isListening.value = false
@@ -90,7 +92,7 @@ export function useSpeechInput(options: { onText: (text: string) => void; lang?:
       recognition = r
       isListening.value = true
     } catch {
-      errorMessage.value = GENERIC_ERROR
+      errorMessage.value = errorText('')
     }
   }
 

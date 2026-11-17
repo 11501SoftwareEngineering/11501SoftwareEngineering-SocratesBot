@@ -5,6 +5,9 @@ import { RouterLink, type RouteLocationRaw } from 'vue-router'
 import AppLogo from '@/components/common/AppLogo.vue'
 import { Button } from '@/components/ui/button'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{ title: string; description: string }>()
 
@@ -20,7 +23,7 @@ const home = computed<RouteLocationRaw>(() =>
     <h1 class="text-h1-title text-foreground">{{ title }}</h1>
     <p class="max-w-md text-body-lg text-muted-foreground">{{ description }}</p>
     <Button as-child size="lg">
-      <RouterLink :to="home">回到首頁</RouterLink>
+      <RouterLink :to="home">{{ t('common.backHome') }}</RouterLink>
     </Button>
   </div>
 </template>

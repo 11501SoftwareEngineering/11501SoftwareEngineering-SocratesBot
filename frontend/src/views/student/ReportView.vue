@@ -21,6 +21,9 @@ import { useAuthStore } from '@/stores/auth'
 import ChatRecordTab from './report/ChatRecordTab.vue'
 import PersonalTab from './report/PersonalTab.vue'
 import SummaryTab from './report/SummaryTab.vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 type ReportTab = 'personal' | 'chat' | 'summary'
 
@@ -39,11 +42,14 @@ const topic = computed(() => course.value?.topics.find((t) => t.session_id === s
 const tabs = computed(() =>
   (
     [
-      { key: 'personal', label: '個人報告' },
-      { key: 'chat', label: '對話紀錄' },
-      { key: 'summary', label: '全班摘要' },
+      { key: 'personal', label: t('report.personal') },
+      { key: 'chat', label: t('report.chat') },
+      { key: 'summary', label: t('report.summary') },
     ] as const
-  ).map((t) => ({ ...t, to: { name: 'StudentReport', params: { ...route.params, tab: t.key } } })),
+  ).map((tab) => ({
+    ...tab,
+    to: { name: 'StudentReport', params: { ...route.params, tab: tab.key } },
+  })),
 )
 
 const messages = useQuery({
@@ -56,15 +62,18 @@ const messages = useQuery({
 <template>
   <div :class="pageClass">
     <PageTitle
-      title="探索結果報告"
+      :title="t('report.title')"
       :breadcrumbs="[
-        { label: '我的課程', to: { name: 'StudentCourses' } },
-        { label: course?.name ?? '課程', to: { name: 'StudentCourse', params: { courseId } } },
+        { label: t('common.myCourses'), to: { name: 'StudentCourses' } },
+        {
+          label: course?.name ?? t('common.course'),
+          to: { name: 'StudentCourse', params: { courseId } },
+        },
       ]"
     />
 
     <h2 class="mt-[23px] text-h1-title text-foreground">{{ topic?.title ?? '…' }}</h2>
-    <TabNav class="mt-4" :items="tabs" :model-value="currentTab" label="報告分頁" />
+    <TabNav class="mt-4" :items="tabs" :model-value="currentTab" :label="t('report.tabs')" />
 
     <section class="mt-4" :aria-label="tabs.find((t) => t.key === currentTab)?.label">
       <PersonalTab v-if="currentTab === 'personal'" :session-id="sessionId" />
@@ -72,7 +81,7 @@ const messages = useQuery({
         v-else-if="currentTab === 'chat'"
         :loading="messages.isPending.value"
         :error="messages.error.value"
-        error-text="無法取得對話紀錄"
+        :error-text="t('report.chatError')"
         @retry="messages.refetch()"
       >
         <ChatRecordTab

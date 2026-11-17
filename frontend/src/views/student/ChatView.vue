@@ -29,6 +29,9 @@ import { useSpeechInput } from '@/composables/useSpeechInput'
 import { getApiErrorMessage } from '@/lib/utils'
 import { cardClass } from '@/lib/ui'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 interface DisplayMessage extends SessionMessage {
   pending?: boolean
@@ -168,7 +171,7 @@ async function handleSend(text: string) {
     }
     messages.value = messages.value.filter((m) => !m.message_id.endsWith(`-${stamp}`))
     draft.value = text
-    sendError.value = getApiErrorMessage(err, '導魷沒有回應，請再送一次')
+    sendError.value = getApiErrorMessage(err, t('chat.noReply'))
   }
 }
 
@@ -196,11 +199,11 @@ const abandon = useMutation({
   },
   onError: (err) => {
     abandonOpen.value = false
-    sendError.value = getApiErrorMessage(err, '放棄失敗，請稍後再試')
+    sendError.value = getApiErrorMessage(err, t('chat.abandonFailed'))
   },
 })
 
-const studentName = computed(() => authStore.user?.name ?? '學生')
+const studentName = computed(() => authStore.user?.name ?? t('common.student'))
 const remaining = computed(() => Math.max(0, maxTurns.value - usedTurns.value))
 const reportLink = computed(() => ({
   name: 'StudentReport',
@@ -212,10 +215,13 @@ const reportLink = computed(() => ({
   <div class="flex min-h-full flex-1 flex-col">
     <div class="mx-auto w-full max-w-[1200px] flex-1 px-4 pt-[30px] pb-6">
       <PageTitle
-        :title="`探索活動 - ${topic?.title ?? '…'}`"
+        :title="t('chat.title', { title: topic?.title ?? '…' })"
         :breadcrumbs="[
-          { label: '我的課程', to: { name: 'StudentCourses' } },
-          { label: course?.name ?? '課程', to: { name: 'StudentCourse', params: { courseId } } },
+          { label: t('common.myCourses'), to: { name: 'StudentCourses' } },
+          {
+            label: course?.name ?? t('common.course'),
+            to: { name: 'StudentCourse', params: { courseId } },
+          },
         ]"
       >
         <template v-if="sessionId && !completed && !closed" #after-title>
@@ -224,7 +230,7 @@ const reportLink = computed(() => ({
             size="sm"
             :disabled="isStreaming || abandon.isPending.value"
             @click="abandonOpen = true"
-            >放棄探究</Button
+            >{{ t('chat.abandon') }}</Button
           >
         </template>
       </PageTitle>
@@ -232,13 +238,13 @@ const reportLink = computed(() => ({
         class="mx-auto mt-4 max-w-[1000px]"
         :loading="loading"
         :error="loadError"
-        error-text="無法進入對話"
+        :error-text="t('chat.loadError')"
         :skeleton-count="2"
         @retry="retryLoad"
       >
         <ol
           :class="[cardClass, 'flex flex-col gap-[22px] px-4 py-2 sm:px-5']"
-          aria-label="對話紀錄"
+          :aria-label="t('chat.log')"
           aria-live="polite"
         >
           <li v-for="message in messages" :key="message.message_id" class="flex flex-col">
@@ -259,13 +265,13 @@ const reportLink = computed(() => ({
           :class="[cardClass, 'mt-4 flex flex-col items-center gap-4 p-6 text-center']"
         >
           <p class="text-h2-title text-foreground">
-            {{ completed ? '這次的探究結束了！' : '老師已經結束這個活動的作答' }}
+            {{ completed ? t('chat.finished') : t('chat.closed') }}
           </p>
           <p v-if="completed" class="text-body-lg text-muted-foreground">
-            導魷正在整理你的個人報告，看看你的想法怎麼變化。
+            {{ t('chat.preparingReport') }}
           </p>
           <Button v-if="completed" as-child size="lg">
-            <RouterLink :to="reportLink">查看個人報告</RouterLink>
+            <RouterLink :to="reportLink">{{ t('chat.viewReport') }}</RouterLink>
           </Button>
         </div>
       </QueryState>
@@ -274,9 +280,9 @@ const reportLink = computed(() => ({
 
     <ConfirmDialog
       v-model:open="abandonOpen"
-      title="放棄這次探究？"
-      description="放棄後這次的對話不算完成，也不會產生個人報告。之後可以從課程頁重新開始。"
-      confirm-text="放棄"
+      :title="t('chat.abandonTitle')"
+      :description="t('chat.abandonDescription')"
+      :confirm-text="t('chat.abandonConfirm')"
       destructive
       :loading="abandon.isPending.value"
       @confirm="abandon.mutate()"

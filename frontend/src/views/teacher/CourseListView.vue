@@ -21,6 +21,9 @@ import { Button } from '@/components/ui/button'
 import { useConfirmAction } from '@/composables/useConfirmAction'
 import { useSearch } from '@/composables/useSearch'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const queryClient = useQueryClient()
 const { data, isPending, error, refetch } = useQuery({
@@ -49,7 +52,7 @@ function openForm(course: CourseSummary | null) {
 
 const remove = useConfirmAction((course: CourseSummary) => coursesApi.remove(course.course_id), {
   onSuccess: () => queryClient.invalidateQueries({ queryKey: courseKeys.all }),
-  errorText: '刪除失敗，請稍後再試',
+  errorText: t('errors.deleteFailed'),
 })
 </script>
 
@@ -59,27 +62,30 @@ const remove = useConfirmAction((course: CourseSummary) => coursesApi.remove(cou
     :class="isTeacher && 'lg:grid-cols-[minmax(0,731px)_minmax(0,398px)]'"
   >
     <section class="flex min-w-0 flex-col gap-2" aria-labelledby="courses-title">
-      <SectionHeading title="我的課程" :count="courses.length" :level="1">
+      <SectionHeading :title="t('common.myCourses')" :count="courses.length" :level="1">
         <template #actions>
-          <Button v-if="isTeacher" @click="openForm(null)"><AddRingIcon /> 新增課程</Button>
+          <Button v-if="isTeacher" @click="openForm(null)"
+            ><AddRingIcon /> {{ t('courses.addCourse') }}</Button
+          >
         </template>
       </SectionHeading>
-      <SearchInput v-model="keyword" label="搜尋課程" />
+      <SearchInput v-model="keyword" :label="t('courses.search')" />
       <QueryState
         :loading="isPending"
         :error="error"
         :empty="results.length === 0"
-        :empty-text="keyword || isTeacher ? '找不到課程' : '還沒有被指派的課程'"
-        error-text="無法取得課程列表"
+        :empty-text="keyword || isTeacher ? t('courses.notFound') : t('courses.noAssigned')"
+        :error-text="t('courses.loadError')"
         @retry="refetch()"
       >
         <template v-if="isTeacher" #empty-action>
-          試試<button
+          {{ t('common.tryPrefix')
+          }}<button
             type="button"
             class="rounded underline underline-offset-4 outline-none hover:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
             @click="openForm(null)"
           >
-            新增課程
+            {{ t('courses.addCourse') }}
           </button>
         </template>
         <div class="flex flex-col gap-2">
@@ -93,7 +99,7 @@ const remove = useConfirmAction((course: CourseSummary) => coursesApi.remove(cou
               <Button
                 variant="ghost"
                 size="icon-sm"
-                :aria-label="`編輯 ${course.name}`"
+                :aria-label="t('courses.editAria', { name: course.name })"
                 @click="openForm(course)"
               >
                 <EditIcon />
@@ -101,7 +107,7 @@ const remove = useConfirmAction((course: CourseSummary) => coursesApi.remove(cou
               <Button
                 variant="ghost"
                 size="icon-sm"
-                :aria-label="`刪除 ${course.name}`"
+                :aria-label="t('courses.deleteAria', { name: course.name })"
                 @click="remove.ask(course)"
               >
                 <TrashIcon />
@@ -117,9 +123,9 @@ const remove = useConfirmAction((course: CourseSummary) => coursesApi.remove(cou
     <CourseFormDialog v-model:open="formOpen" :course="editing" />
     <ConfirmDialog
       v-model:open="remove.open"
-      title="確認刪除?"
-      :description="`刪除「${remove.target?.name}」後，課程裡的探究活動、學生的對話和報告都會一起刪除，這個動作無法復原。`"
-      confirm-text="確認"
+      :title="t('courses.deleteTitle')"
+      :description="t('courses.deleteDescription', { name: remove.target?.name ?? '' })"
+      :confirm-text="t('common.ok')"
       destructive
       :loading="remove.isPending"
       :error="remove.error"

@@ -7,6 +7,9 @@
  */
 import DonutChart from './DonutChart.vue'
 import { cardClass } from '@/lib/ui'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{
   counts: number[]
@@ -21,10 +24,14 @@ defineProps<{
     :class="[cardClass, 'flex flex-col items-center gap-6 p-6 sm:flex-row sm:items-start']"
     aria-labelledby="class-distribution"
   >
-    <DonutChart :counts="counts" :total="total" :label="`全班 ${total} 份報告的觀點分布`" />
+    <DonutChart
+      :counts="counts"
+      :total="total"
+      :label="t('report.distributionAria', { n: total })"
+    />
     <div class="flex min-w-0 flex-1 flex-col gap-2">
       <h2 id="class-distribution" class="font-heading text-h2-title text-foreground">
-        全班觀點分布
+        {{ t('report.distribution') }}
       </h2>
       <slot name="text">
         <p class="text-body-lg whitespace-pre-line text-muted-foreground">{{ text }}</p>

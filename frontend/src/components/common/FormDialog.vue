@@ -23,6 +23,9 @@ import {
   DialogDescription,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 withDefaults(
   defineProps<{
@@ -35,7 +38,7 @@ withDefaults(
     error?: string
     dismissible?: boolean
   }>(),
-  { submitText: '新增', cancelText: '取消', loading: false, dismissible: true },
+  { loading: false, dismissible: true },
 )
 
 const open = defineModel<boolean>('open', { default: false })
@@ -74,7 +77,7 @@ function preventIfLocked(event: Event, dismissible: boolean) {
         <div class="mt-2 flex justify-end gap-5 py-2">
           <DialogClose v-if="dismissible" as-child>
             <Button type="button" variant="secondary" size="lg" :disabled="loading">
-              {{ cancelText }}
+              {{ cancelText ?? t('common.cancel') }}
             </Button>
           </DialogClose>
           <Button
@@ -85,10 +88,10 @@ function preventIfLocked(event: Event, dismissible: boolean) {
             :disabled="loading"
             @click="$emit('cancel')"
           >
-            {{ cancelText }}
+            {{ cancelText ?? t('common.cancel') }}
           </Button>
           <Button type="submit" size="lg" :disabled="loading">
-            {{ loading ? '處理中…' : submitText }}
+            {{ loading ? t('common.processing') : (submitText ?? t('common.add')) }}
           </Button>
         </div>
       </form>

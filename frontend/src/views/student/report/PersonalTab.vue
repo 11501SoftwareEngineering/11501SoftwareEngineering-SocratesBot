@@ -14,6 +14,9 @@ import { SpinnerIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { cardClass } from '@/lib/ui'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{ sessionId: string }>()
 const authStore = useAuthStore()
@@ -50,26 +53,33 @@ const retry = useMutation({
 </script>
 
 <template>
-  <QueryState :loading="isPending" :error="error" error-text="無法取得個人報告" @retry="refetch()">
+  <QueryState
+    :loading="isPending"
+    :error="error"
+    :error-text="t('report.personalError')"
+    @retry="refetch()"
+  >
     <div :class="[cardClass, 'px-5 py-6 sm:px-10']">
       <PersonalReport
         v-if="data?.report_status === 'ready' && data.report"
         :report="data.report"
-        :name="authStore.user?.name ?? '我'"
+        :name="authStore.user?.name ?? t('report.me')"
         :message-text="messageText"
       />
       <div
         v-else-if="data?.report_status === 'failed'"
         class="flex flex-col items-center gap-4 py-10 text-center"
       >
-        <p class="text-h2-title text-foreground">報告產生失敗</p>
-        <p class="text-body-lg text-muted-foreground">可能是 AI 服務暫時有問題，請再試一次。</p>
-        <Button :disabled="retry.isPending.value" @click="retry.mutate()">重新產生報告</Button>
+        <p class="text-h2-title text-foreground">{{ t('report.failedTitle') }}</p>
+        <p class="text-body-lg text-muted-foreground">{{ t('report.failedDescription') }}</p>
+        <Button :disabled="retry.isPending.value" @click="retry.mutate()">{{
+          t('report.retry')
+        }}</Button>
       </div>
       <div v-else class="flex flex-col items-center gap-3 py-10 text-center" role="status">
         <SpinnerIcon class="animate-spin" />
-        <p class="text-h2-title text-foreground">導魷正在整理你的報告…</p>
-        <p class="text-body-lg text-muted-foreground">通常不到一分鐘，這個頁面會自動更新。</p>
+        <p class="text-h2-title text-foreground">{{ t('report.preparingTitle') }}</p>
+        <p class="text-body-lg text-muted-foreground">{{ t('report.preparingDescription') }}</p>
       </div>
     </div>
   </QueryState>

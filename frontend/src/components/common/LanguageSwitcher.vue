@@ -12,7 +12,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useUiLanguage } from '@/composables/useUiLanguage'
-import type { UiLanguage } from '@/api/auth'
+import type { Locale } from '@/i18n'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const { language, label, options, setLanguage } = useUiLanguage()
 </script>
@@ -21,7 +24,7 @@ const { language, label, options, setLanguage } = useUiLanguage()
   <DropdownMenu>
     <DropdownMenuTrigger
       class="flex items-center gap-1.5 rounded-2xl bg-primary-light py-1.5 pr-2.5 pl-3 text-body-lg whitespace-nowrap text-foreground outline-none hover:brightness-95 focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      :aria-label="`介面語言：${label}`"
+      :aria-label="t('language.switcher', { label })"
     >
       <GlobeIcon />
       <span class="hidden sm:inline">{{ label }}</span>
@@ -33,7 +36,7 @@ const { language, label, options, setLanguage } = useUiLanguage()
     >
       <DropdownMenuRadioGroup
         :model-value="language"
-        @update:model-value="(value) => setLanguage(value as UiLanguage)"
+        @update:model-value="(value) => setLanguage(value as Locale)"
       >
         <DropdownMenuRadioItem
           v-for="option in options"

@@ -5,6 +5,9 @@
 import { useId } from 'vue'
 import type { InquiryModel } from '@/api/topics'
 import { ChevronDownIcon } from '@/components/icons'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{ label: string; models: InquiryModel[]; disabled?: boolean; error?: string }>()
 const value = defineModel<string>({ default: '' })
@@ -21,7 +24,7 @@ const id = useId()
         :disabled="disabled || !models.length"
         class="h-11 w-full appearance-none rounded-lg border border-input bg-background px-3 pr-10 text-body-lg text-foreground shadow-elevated outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
       >
-        <option v-if="!value" value="" disabled>請選擇模型</option>
+        <option v-if="!value" value="" disabled>{{ t('ai.selectModel') }}</option>
         <option v-for="model in models" :key="model.model_id" :value="model.model_id">
           {{ model.name }}
         </option>

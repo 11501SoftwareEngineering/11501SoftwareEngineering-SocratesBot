@@ -9,6 +9,9 @@ import type { RouteLocationRaw } from 'vue-router'
 import CardLink from '@/components/common/CardLink.vue'
 import { cardClass } from '@/lib/ui'
 import { groupColor } from './colors'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{
   name: string
@@ -35,7 +38,9 @@ defineProps<{
         />
         <span class="truncate" :title="name">{{ name }}</span>
       </h3>
-      <CardLink v-if="to" :to="to" :aria-label="`檢視「${name}」的報告`">檢視報告</CardLink>
+      <CardLink v-if="to" :to="to" :aria-label="t('report.viewGroupAria', { name })">{{
+        t('report.viewGroupReports')
+      }}</CardLink>
     </div>
     <p class="text-body-lg text-muted-foreground">{{ conditions }}</p>
     <p class="text-foreground">

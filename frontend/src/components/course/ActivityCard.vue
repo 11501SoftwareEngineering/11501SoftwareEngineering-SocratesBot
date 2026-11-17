@@ -12,6 +12,9 @@ import CardLink from '@/components/common/CardLink.vue'
 import StatusTag from '@/components/common/StatusTag.vue'
 import { AlarmClockIcon, GroupIcon } from '@/components/icons'
 import { cardClass } from '@/lib/ui'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   title: string
@@ -50,7 +53,7 @@ const percent = computed(() =>
           v-if="link && link.arrow !== '→'"
           :to="link.to"
           stretched
-          :aria-label="`${link.label}：${title}`"
+          :aria-label="t('common.labelColon', { label: link.label }) + title"
           >{{ link.label }}</CardLink
         >
         <span v-else-if="note" class="shrink-0 text-body text-muted-foreground">{{ note }}</span>
@@ -70,17 +73,19 @@ const percent = computed(() =>
         </li>
         <li v-if="ageBand">{{ ageBandLabel(ageBand) }}</li>
         <li v-if="maxTurns" class="flex items-center gap-1">
-          <AlarmClockIcon /><span class="sr-only">回合數</span>{{ maxTurns }}
+          <AlarmClockIcon /><span class="sr-only">{{ t('common.turnsLabel') }}</span
+          >{{ maxTurns }}
         </li>
         <li v-if="progress" class="flex items-center gap-1">
-          <GroupIcon /><span class="sr-only">完成人數</span>{{ progress.done }}/{{ progress.total }}
+          <GroupIcon /><span class="sr-only">{{ t('activity.completedCount') }}</span
+          >{{ progress.done }}/{{ progress.total }}
           <span
             class="ml-1.5 h-[7px] w-[122px] overflow-hidden rounded-full bg-secondary"
             role="progressbar"
             :aria-valuenow="percent"
             aria-valuemin="0"
             aria-valuemax="100"
-            :aria-label="`完成 ${percent}%`"
+            :aria-label="t('activity.completedPercent', { n: percent })"
           >
             <span class="block h-full rounded-full bg-primary" :style="{ width: `${percent}%` }" />
           </span>
@@ -93,7 +98,7 @@ const percent = computed(() =>
           :to="link.to"
           arrow="→"
           stretched
-          :aria-label="`${link.label}：${title}`"
+          :aria-label="t('common.labelColon', { label: link.label }) + title"
           >{{ link.label }}</CardLink
         >
       </div>

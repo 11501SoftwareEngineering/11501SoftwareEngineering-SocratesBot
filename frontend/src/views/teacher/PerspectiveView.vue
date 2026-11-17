@@ -26,6 +26,9 @@ import { getApiErrorMessage } from '@/lib/utils'
 import { pageClass } from '@/lib/ui'
 import StudentReportsTab from './perspective/StudentReportsTab.vue'
 import SummaryReviewTab from './perspective/SummaryReviewTab.vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 type Tab = 'summary' | 'reports'
 
@@ -73,12 +76,12 @@ const group = computed({
     void router.replace({ query: { ...route.query, group: value || undefined } }),
 })
 const tabs = computed(() => [
-  { key: 'summary' as const, label: '摘要審閱' },
+  { key: 'summary' as const, label: t('perspective.reviewTab') },
   ...(can('view_reports')
     ? [
         {
           key: 'reports' as const,
-          label: '學生報告',
+          label: t('perspective.reportsTab'),
           count: reports.data.value?.reports.length ?? 0,
         },
       ]
@@ -89,9 +92,21 @@ const stats = computed(() => {
   const r = reports.data.value
   const s = summary.data.value?.summary
   return [
-    { label: '完成人數', value: r ? `${r.completed_count}/${r.class_size}` : '—', icon: GroupIcon },
-    { label: '可用報告', value: r ? `${r.ready_count}/${r.completed_count}` : '—', icon: FileIcon },
-    { label: '觀點群組', value: s ? String(s.groups.length) : '—', icon: DoughnutIcon },
+    {
+      label: t('perspective.completed'),
+      value: r ? `${r.completed_count}/${r.class_size}` : '—',
+      icon: GroupIcon,
+    },
+    {
+      label: t('perspective.readyReports'),
+      value: r ? `${r.ready_count}/${r.completed_count}` : '—',
+      icon: FileIcon,
+    },
+    {
+      label: t('perspective.groups'),
+      value: s ? String(s.groups.length) : '—',
+      icon: DoughnutIcon,
+    },
   ]
 })
 
@@ -112,7 +127,7 @@ const generate = useMutation({
   },
   onError: (err) => {
     generateOpen.value = false
-    generateError.value = getApiErrorMessage(err, '整理摘要失敗，請稍後再試')
+    generateError.value = getApiErrorMessage(err, t('perspective.generateFailed'))
   },
 })
 function askGenerate() {
@@ -124,10 +139,13 @@ function askGenerate() {
 <template>
   <div :class="pageClass">
     <PageTitle
-      title="全班觀點"
+      :title="t('perspective.title')"
       :breadcrumbs="[
-        { label: '我的課程', to: { name: 'TeacherCourses' } },
-        { label: course?.name ?? '課程', to: { name: 'TeacherCourse', params: { courseId } } },
+        { label: t('common.myCourses'), to: { name: 'TeacherCourses' } },
+        {
+          label: course?.name ?? t('common.course'),
+          to: { name: 'TeacherCourse', params: { courseId } },
+        },
       ]"
     />
 
@@ -137,22 +155,22 @@ function askGenerate() {
         v-if="topic?.topic_status === 'setup' && can('edit_topics')"
         :to="{ name: 'TeacherActivitySetup', params: { courseId, topicId } }"
         class="rounded text-body-lg text-muted-foreground underline outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >編輯設定</RouterLink
+        >{{ t('perspective.editSetup') }}</RouterLink
       >
       <Button v-if="canGenerate" :disabled="generate.isPending.value" @click="askGenerate">
         <SpinnerIcon v-if="generate.isPending.value" class="animate-spin" />
         <RefreshIcon v-else />
         {{
           generate.isPending.value
-            ? '整理中…'
+            ? t('perspective.summarizing')
             : summary.data.value?.summary
-              ? '重新整理摘要'
-              : '產生全班摘要'
+              ? t('perspective.refresh')
+              : t('perspective.generate')
         }}
       </Button>
     </div>
     <p v-if="generate.isPending.value" role="status" class="mt-2 text-body text-muted-foreground">
-      AI 正在整理全班的觀點，請稍候…
+      {{ t('perspective.generatingHint') }}
     </p>
     <p v-if="generateError" role="alert" class="mt-2 text-body text-destructive">
       {{ generateError }}
@@ -168,14 +186,14 @@ function askGenerate() {
       />
     </dl>
 
-    <TabNav v-model="tab" class="mt-4" :items="tabs" label="全班觀點分頁" />
+    <TabNav v-model="tab" class="mt-4" :items="tabs" :label="t('perspective.tabs')" />
 
     <section class="mt-4">
       <template v-if="tab === 'summary'">
         <QueryState
           :loading="summary.isPending.value"
           :error="summary.error.value"
-          error-text="無法取得全班摘要"
+          :error-text="t('perspective.summaryError')"
           @retry="summary.refetch()"
         >
           <SummaryReviewTab
@@ -185,8 +203,8 @@ function askGenerate() {
             :can-edit="can('edit_summary')"
             :is-teacher="isTeacher"
           />
-          <ComingSoon v-else title="還沒有全班摘要">
-            學生完成探究之後，按「產生全班摘要」，AI 會依報告把全班的觀點分組整理。
+          <ComingSoon v-else :title="t('perspective.noSummaryTitle')">
+            {{ t('perspective.noSummaryDescription') }}
           </ComingSoon>
         </QueryState>
       </template>
@@ -194,7 +212,7 @@ function askGenerate() {
         v-else
         :loading="reports.isPending.value"
         :error="reports.error.value"
-        error-text="無法取得學生報告"
+        :error-text="t('perspective.reportsError')"
         @retry="reports.refetch()"
       >
         <StudentReportsTab
@@ -207,9 +225,9 @@ function askGenerate() {
 
     <ConfirmDialog
       v-model:open="generateOpen"
-      title="產生全班摘要？"
-      description="第一次產生摘要後，學生就不能再作答了（還沒完成的對話不會算進去），這個動作無法復原。"
-      confirm-text="產生"
+      :title="t('perspective.generateTitle')"
+      :description="t('perspective.generateDescription')"
+      :confirm-text="t('perspective.generateConfirm')"
       :loading="generate.isPending.value"
       @confirm="generate.mutate()"
     />

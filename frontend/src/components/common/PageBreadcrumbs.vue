@@ -7,6 +7,9 @@
  *   <PageBreadcrumbs :items="[{ label: '我的課程', to: { name: 'StudentCourses' } }, { label: '公民思辨' }]" />
  */
 import type { RouteLocationRaw } from 'vue-router'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{
   items: { label: string; to?: RouteLocationRaw }[]
@@ -14,7 +17,7 @@ defineProps<{
 </script>
 
 <template>
-  <nav aria-label="目前位置">
+  <nav :aria-label="t('common.breadcrumb')">
     <ol class="flex flex-wrap items-center gap-2.5 text-header text-muted-foreground">
       <li v-for="(item, i) in items" :key="i" class="flex items-center gap-2.5">
         <RouterLink

@@ -15,6 +15,9 @@ import { groupColor } from '@/components/report/colors'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogScrollContent, DialogTitle } from '@/components/ui/dialog'
 import { useSearch } from '@/composables/useSearch'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{ data: TopicReports }>()
 const group = defineModel<string>('group', { default: '' })
@@ -51,13 +54,13 @@ const open = computed({
 <template>
   <div class="flex flex-col gap-3">
     <div class="flex items-center gap-3">
-      <SearchInput v-model="keyword" label="搜尋學生或觀點" class="flex-1" />
+      <SearchInput v-model="keyword" :label="t('perspective.searchReports')" class="flex-1" />
       <Button variant="secondary" :disabled="!group" @click="group = ''"
-        ><CloseRingIcon /> 清除 tag</Button
+        ><CloseRingIcon /> {{ t('perspective.clearTag') }}</Button
       >
     </div>
 
-    <ul v-if="groups.length" class="flex flex-wrap gap-3" aria-label="觀點 tag">
+    <ul v-if="groups.length" class="flex flex-wrap gap-3" :aria-label="t('perspective.tags')">
       <li v-for="(g, i) in groups" :key="g.group_id" class="min-w-0 max-w-[240px]">
         <button
           type="button"
@@ -78,9 +81,10 @@ const open = computed({
     </ul>
     <p class="flex flex-wrap gap-x-3 text-body text-muted-foreground" role="status">
       <span
-        >目前 tag：<b class="font-bold text-foreground">{{ current?.name ?? '全部' }}</b></span
+        >{{ t('perspective.currentTag')
+        }}<b class="font-bold text-foreground">{{ current?.name ?? t('perspective.all') }}</b></span
       >
-      <span>{{ results.length }} 份報告</span>
+      <span>{{ t('perspective.reportCount', { n: results.length }) }}</span>
     </p>
 
     <div class="overflow-x-auto rounded-2xl shadow-elevated">
@@ -88,18 +92,18 @@ const open = computed({
       <table class="w-full min-w-[760px] border-collapse bg-card text-center text-body-lg">
         <thead class="bg-[#AAA195] text-[20px] font-bold leading-none text-white">
           <tr>
-            <th scope="col" class="w-[116px] px-2 py-4">姓名</th>
-            <th scope="col" class="w-[116px] px-2 py-4">匿名代碼</th>
-            <th scope="col" class="px-2 py-4">目前觀點</th>
-            <th scope="col" class="w-[116px] px-2 py-4">使用回合數</th>
-            <th scope="col" class="w-[146px] px-2 py-4">提交時間</th>
-            <th scope="col" class="w-[146px] px-2 py-4">學生報告</th>
+            <th scope="col" class="w-[116px] px-2 py-4">{{ t('perspective.colName') }}</th>
+            <th scope="col" class="w-[116px] px-2 py-4">{{ t('perspective.colAnonymous') }}</th>
+            <th scope="col" class="px-2 py-4">{{ t('perspective.colViewpoint') }}</th>
+            <th scope="col" class="w-[116px] px-2 py-4">{{ t('perspective.colTurns') }}</th>
+            <th scope="col" class="w-[146px] px-2 py-4">{{ t('perspective.colSubmitted') }}</th>
+            <th scope="col" class="w-[146px] px-2 py-4">{{ t('perspective.colReport') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!results.length">
             <td colspan="6" class="px-3 py-6 text-muted-foreground">
-              {{ data.reports.length ? '沒有符合的報告' : '還沒有可以看的報告' }}
+              {{ data.reports.length ? t('perspective.noMatch') : t('perspective.noReports') }}
             </td>
           </tr>
           <tr
@@ -118,10 +122,10 @@ const open = computed({
             <td class="px-2 py-3">
               <Button
                 variant="secondary"
-                :aria-label="`檢視 ${r.student_display_name} 的報告`"
+                :aria-label="t('perspective.viewAria', { name: r.student_display_name })"
                 @click="selected = r"
               >
-                <FileIcon /> 檢視
+                <FileIcon /> {{ t('perspective.view') }}
               </Button>
             </td>
           </tr>
@@ -129,12 +133,19 @@ const open = computed({
       </table>
     </div>
     <p v-if="data.processing_count || data.failed_count" class="text-body text-muted-foreground">
-      還有 {{ data.processing_count }} 份報告產生中、{{ data.failed_count }} 份產生失敗。
+      {{
+        t('perspective.pending', {
+          processing: data.processing_count,
+          failed: data.failed_count,
+        })
+      }}
     </p>
 
     <Dialog v-model:open="open">
       <DialogScrollContent class="max-w-[883px] bg-card p-6 sm:p-10">
-        <DialogTitle class="sr-only">{{ selected?.student_display_name }} 的個人報告</DialogTitle>
+        <DialogTitle class="sr-only">{{
+          t('perspective.reportTitle', { name: selected?.student_display_name ?? '' })
+        }}</DialogTitle>
         <PersonalReport v-if="selected" :report="selected" :name="selected.student_display_name" />
       </DialogScrollContent>
     </Dialog>

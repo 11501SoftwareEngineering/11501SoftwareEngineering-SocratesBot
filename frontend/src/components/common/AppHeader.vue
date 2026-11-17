@@ -10,7 +10,7 @@
  */
 import { computed } from 'vue'
 import { RouterLink, useRoute, type RouteLocationRaw } from 'vue-router'
-import { ROLE_LABELS } from '@/api/auth'
+import { roleLabel as labelOf } from '@/api/auth'
 import AccountBadge from '@/components/common/AccountBadge.vue'
 import AppLogo from '@/components/common/AppLogo.vue'
 import LanguageSwitcher from '@/components/common/LanguageSwitcher.vue'
@@ -23,6 +23,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { usePasswordDialog } from '@/composables/usePasswordDialog'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -37,8 +40,8 @@ const homeLink = computed<RouteLocationRaw>(() =>
 /** 助教在教學端頁面顯示「助教」，在學生頁面顯示「學生」 */
 const roleLabel = computed(() =>
   authStore.user?.role === 'STUDENT' && route.meta.teaching
-    ? '助教'
-    : ROLE_LABELS[authStore.user?.role ?? 'STUDENT'],
+    ? t('roles.TA')
+    : labelOf(authStore.user?.role ?? 'STUDENT'),
 )
 const menuItemClass = 'cursor-pointer px-3 py-2 text-body-lg focus:bg-muted focus:text-foreground'
 </script>
@@ -51,9 +54,9 @@ const menuItemClass = 'cursor-pointer px-3 py-2 text-body-lg focus:bg-muted focu
         class="flex w-fit items-center gap-2.5 rounded-lg outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <AppLogo :size="42" class="rounded-md" />
-        <span class="whitespace-nowrap font-heading text-h1-title text-foreground max-sm:hidden"
-          >問導魷</span
-        >
+        <span class="whitespace-nowrap font-heading text-h1-title text-foreground max-sm:hidden">{{
+          t('common.appName')
+        }}</span>
       </RouterLink>
 
       <div class="flex min-w-0 flex-1 items-center justify-end gap-3">
@@ -62,7 +65,7 @@ const menuItemClass = 'cursor-pointer px-3 py-2 text-body-lg focus:bg-muted focu
         <DropdownMenu v-if="authStore.user">
           <DropdownMenuTrigger
             class="min-w-0 rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            aria-label="開啟帳號選單"
+            :aria-label="t('header.openAccountMenu')"
           >
             <AccountBadge :name="authStore.user.name" :role-label="roleLabel" />
           </DropdownMenuTrigger>
@@ -71,26 +74,30 @@ const menuItemClass = 'cursor-pointer px-3 py-2 text-body-lg focus:bg-muted focu
             class="w-44 rounded-lg border border-border bg-card p-1 shadow-elevated"
           >
             <DropdownMenuItem v-if="isTa" as-child :class="menuItemClass">
-              <RouterLink :to="{ name: 'StudentCourses' }">學生課程</RouterLink>
+              <RouterLink :to="{ name: 'StudentCourses' }">{{
+                t('header.studentCourses')
+              }}</RouterLink>
             </DropdownMenuItem>
             <DropdownMenuItem v-if="role === 'TEACHER'" as-child :class="menuItemClass">
-              <RouterLink :to="{ name: 'TeacherAiSettings' }">AI 用量與金鑰</RouterLink>
+              <RouterLink :to="{ name: 'TeacherAiSettings' }">{{
+                t('header.aiSettings')
+              }}</RouterLink>
             </DropdownMenuItem>
-            <DropdownMenuItem :class="menuItemClass" @select="passwordDialog.open()"
-              >修改密碼</DropdownMenuItem
-            >
-            <DropdownMenuItem :class="menuItemClass" @select="authStore.logout()"
-              >登出</DropdownMenuItem
-            >
+            <DropdownMenuItem :class="menuItemClass" @select="passwordDialog.open()">{{
+              t('header.password.change')
+            }}</DropdownMenuItem>
+            <DropdownMenuItem :class="menuItemClass" @select="authStore.logout()">{{
+              t('header.logout')
+            }}</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
         <div v-else class="flex items-center gap-1">
           <Button as-child variant="ghost">
-            <RouterLink :to="{ name: 'Register' }">註冊</RouterLink>
+            <RouterLink :to="{ name: 'Register' }">{{ t('header.register') }}</RouterLink>
           </Button>
           <Button as-child variant="secondary">
-            <RouterLink :to="{ name: 'Login' }">登入</RouterLink>
+            <RouterLink :to="{ name: 'Login' }">{{ t('header.login') }}</RouterLink>
           </Button>
         </div>
       </div>

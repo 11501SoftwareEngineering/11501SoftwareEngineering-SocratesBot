@@ -1,6 +1,7 @@
 import { reactive, ref, shallowRef } from 'vue'
 import { useMutation } from '@tanstack/vue-query'
 import { getApiErrorMessage } from '@/lib/utils'
+import { translate } from '@/i18n'
 
 /**
  * 「先問一次再執行」的操作（刪除、退出課程…），搭配 <ConfirmDialog> 使用。
@@ -30,7 +31,7 @@ export function useConfirmAction<T>(
       await options.onSuccess?.(item)
     },
     onError: (err) => {
-      error.value = getApiErrorMessage(err, options.errorText ?? '操作失敗，請稍後再試')
+      error.value = getApiErrorMessage(err, options.errorText ?? translate('errors.actionFailed'))
     },
   })
 

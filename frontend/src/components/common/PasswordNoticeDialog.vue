@@ -6,6 +6,9 @@
 import { computed, ref, watch } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   title: string
@@ -16,9 +19,9 @@ const props = defineProps<{
 
 const open = defineModel<boolean>('open', { default: false })
 const rows = computed(() => [
-  { label: '帳號', value: props.account },
-  { label: '教師姓名', value: props.name },
-  { label: '初始密碼', value: props.password },
+  { label: t('auth.account'), value: props.account },
+  { label: t('password.teacherName'), value: props.name },
+  { label: t('password.initial'), value: props.password },
 ])
 const copied = ref(false)
 
@@ -29,7 +32,9 @@ watch(
 
 async function handleCopy() {
   try {
-    await navigator.clipboard.writeText(`帳號：${props.account}\n初始密碼：${props.password}`)
+    await navigator.clipboard.writeText(
+      t('password.clipboard', { account: props.account, password: props.password }),
+    )
     copied.value = true
   } catch {
     copied.value = false
@@ -49,21 +54,23 @@ async function handleCopy() {
         title
       }}</DialogTitle>
       <DialogDescription class="sr-only">
-        請把帳號和初始密碼交給{{ name }}，這組密碼只會顯示這一次。
+        {{ t('password.noticeDescription', { name }) }}
       </DialogDescription>
       <dl class="mt-5 flex flex-col pt-[10px] text-h1-title text-foreground">
         <div v-for="row in rows" :key="row.label" class="flex min-h-[77px] items-center gap-2">
-          <dt class="w-[165px] shrink-0 font-bold">{{ row.label }}：</dt>
+          <dt class="w-[165px] shrink-0 font-bold">
+            {{ t('common.labelColon', { label: row.label }) }}
+          </dt>
           <dd class="min-w-0 flex-1 break-all font-normal">{{ row.value }}</dd>
         </div>
       </dl>
-      <p class="pt-1 text-right text-header text-destructive">請將帳號密碼交給老師</p>
+      <p class="pt-1 text-right text-header text-destructive">{{ t('password.giveToTeacher') }}</p>
       <p v-if="copied" role="status" class="mt-2 text-right text-body text-muted-foreground">
-        已複製帳號與密碼
+        {{ t('password.copiedNotice') }}
       </p>
       <div class="mt-5 flex justify-end gap-5 py-2">
-        <Button variant="secondary" size="lg" @click="handleCopy">複製帳號與密碼</Button>
-        <Button size="lg" @click="open = false">完成</Button>
+        <Button variant="secondary" size="lg" @click="handleCopy">{{ t('password.copy') }}</Button>
+        <Button size="lg" @click="open = false">{{ t('common.done') }}</Button>
       </div>
     </DialogContent>
   </Dialog>

@@ -25,6 +25,9 @@ import { useCourse } from '@/composables/useCourse'
 import { useUiLanguage } from '@/composables/useUiLanguage'
 import { getApiErrorMessage } from '@/lib/utils'
 import { cardClass, pageClass } from '@/lib/ui'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -65,25 +68,30 @@ const create = useMutation({
       query: { new: '1' },
     })
   },
-  onError: (err) => (formError.value = getApiErrorMessage(err, 'AI 整理失敗，請稍後再試')),
+  onError: (err) => (formError.value = getApiErrorMessage(err, t('setup.generateFailed'))),
 })
 
 function handleSubmit() {
-  descriptionError.value = form.course_description.trim() ? '' : '請輸入課程描述'
+  descriptionError.value = form.course_description.trim() ? '' : t('setup.descriptionRequired')
   formError.value = ''
   if (!descriptionError.value) create.mutate()
 }
 
-const turnOptions = MAX_TURNS.map((n) => ({ value: n, label: `${n} 回合` }))
+const turnOptions = computed(() =>
+  MAX_TURNS.map((n) => ({ value: n, label: t('common.turns', { n }) })),
+)
 </script>
 
 <template>
   <div :class="pageClass">
     <PageTitle
-      title="新增活動"
+      :title="t('setup.newTitle')"
       :breadcrumbs="[
-        { label: '我的課程', to: { name: 'TeacherCourses' } },
-        { label: course?.name ?? '課程', to: { name: 'TeacherCourse', params: { courseId } } },
+        { label: t('common.myCourses'), to: { name: 'TeacherCourses' } },
+        {
+          label: course?.name ?? t('common.course'),
+          to: { name: 'TeacherCourse', params: { courseId } },
+        },
       ]"
     />
     <form
@@ -93,36 +101,36 @@ const turnOptions = MAX_TURNS.map((n) => ({ value: n, label: `${n} 回合` }))
       <div class="grid gap-4 sm:grid-cols-2">
         <AppSelect
           v-model="form.age_band"
-          label="年齡層"
+          :label="t('common.ageBand')"
           :options="AGE_BANDS"
           :disabled="create.isPending.value"
         />
         <AppSelect
           v-model="form.max_turns"
-          label="回合數"
+          :label="t('common.turnsLabel')"
           :options="turnOptions"
           :disabled="create.isPending.value"
         />
       </div>
       <LongTextField
         v-model="form.course_description"
-        label="課程描述"
+        :label="t('setup.courseDescription')"
         :maxlength="LONG_TEXT_MAX"
         :error="descriptionError"
         :disabled="create.isPending.value"
-        placeholder="這次想讓學生探究什麼？例如課程單元、學生程度、想討論的爭議"
+        :placeholder="t('setup.descriptionPlaceholder')"
       />
       <p
         v-if="create.isPending.value"
         role="status"
         class="flex items-center gap-2 text-body text-muted-foreground"
       >
-        <SpinnerIcon class="animate-spin" /> AI 正在整理活動設定，請稍候…
+        <SpinnerIcon class="animate-spin" /> {{ t('setup.generating') }}
       </p>
       <p v-if="formError" role="alert" class="text-body text-destructive">{{ formError }}</p>
       <div class="flex justify-end">
         <Button type="submit" :disabled="create.isPending.value">
-          {{ create.isPending.value ? '處理中…' : '產生設定' }}
+          {{ create.isPending.value ? t('common.processing') : t('setup.generate') }}
         </Button>
       </div>
     </form>

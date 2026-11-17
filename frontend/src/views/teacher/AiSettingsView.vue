@@ -22,6 +22,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getApiErrorMessage } from '@/lib/utils'
 import { cardClass, pageClass } from '@/lib/ui'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const queryClient = useQueryClient()
 const usage = useQuery({ queryKey: aiKeys.usage, queryFn: aiApi.usage })
@@ -32,23 +35,25 @@ const num = (n: number | null | undefined) => (n == null ? '—' : n.toLocaleStr
 const hasUsage = computed(() => !!usage.data.value?.request_count)
 const month = computed(() => {
   const [y, m] = (usage.data.value?.month ?? '').split('-')
-  return y && m ? `${y} 年 ${Number(m)} 月` : ''
+  return y && m ? t('ai.month', { y, m: Number(m) }) : ''
 })
 const updatedAt = computed(() => {
   const at = usage.data.value?.updated_at
-  if (!at) return '尚無資料'
+  if (!at) return t('ai.noData')
   const d = new Date(at)
   const pad = (n: number) => String(n).padStart(2, '0')
-  return `更新時間 ${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  return t('ai.updatedAt', {
+    time: `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`,
+  })
 })
 const tiles = computed(() => {
   const u = hasUsage.value ? usage.data.value : undefined
   return [
-    { label: '總 Token', value: num(u?.total_tokens) },
-    { label: '輸入', value: num(u?.input_tokens) },
-    { label: '輸出', value: num(u?.output_tokens) },
-    { label: '請求次數', value: num(u?.request_count) },
-    { label: '本月花費', value: formatUsd(u?.cost_usd) },
+    { label: t('ai.totalTokens'), value: num(u?.total_tokens) },
+    { label: t('ai.input'), value: num(u?.input_tokens) },
+    { label: t('ai.output'), value: num(u?.output_tokens) },
+    { label: t('ai.requests'), value: num(u?.request_count) },
+    { label: t('ai.cost'), value: formatUsd(u?.cost_usd) },
   ]
 })
 const stages = computed(() =>
@@ -72,7 +77,7 @@ const setModel = useMutation({
     modelError.value = ''
     void queryClient.invalidateQueries({ queryKey: aiKeys.settings })
   },
-  onError: (err) => (modelError.value = getApiErrorMessage(err, '儲存失敗，請稍後再試')),
+  onError: (err) => (modelError.value = getApiErrorMessage(err, t('errors.saveFailed'))),
 })
 const defaultModelId = computed(() => settings.data.value?.default_model?.id ?? '')
 
@@ -85,7 +90,7 @@ const saveKey = useMutation({
   onSuccess: () => {
     newKey.value = ''
     keyError.value = ''
-    keyNotice.value = 'API key 已儲存'
+    keyNotice.value = t('ai.keySaved')
     void queryClient.invalidateQueries({ queryKey: aiKeys.settings })
   },
   onError: (err) => {
@@ -93,8 +98,8 @@ const saveKey = useMutation({
     const status = isAxiosError(err) ? err.response?.status : undefined
     keyError.value =
       status === 400 || status === 422
-        ? 'API key 格式不正確，OpenRouter 的 key 是 sk-or- 開頭'
-        : getApiErrorMessage(err, '儲存失敗，請稍後再試')
+        ? t('ai.keyFormat')
+        : getApiErrorMessage(err, t('errors.saveFailed'))
   },
 })
 const removeOpen = ref(false)
@@ -103,18 +108,18 @@ const removeKey = useMutation({
   onSuccess: () => {
     removeOpen.value = false
     keyError.value = ''
-    keyNotice.value = 'API key 已移除'
+    keyNotice.value = t('ai.keyRemoved')
     void queryClient.invalidateQueries({ queryKey: aiKeys.settings })
   },
   onError: (err) => {
     removeOpen.value = false
-    keyError.value = getApiErrorMessage(err, '移除失敗，請稍後再試')
+    keyError.value = getApiErrorMessage(err, t('ai.removeFailed'))
   },
 })
 watch(newKey, () => (keyError.value = ''))
 function submitKey() {
   if (!newKey.value.trim()) {
-    keyError.value = '請輸入 API key'
+    keyError.value = t('ai.keyRequired')
     return
   }
   saveKey.mutate()
@@ -124,8 +129,8 @@ function submitKey() {
 <template>
   <div :class="pageClass">
     <PageTitle
-      title="AI 用量與金鑰"
-      :breadcrumbs="[{ label: '我的課程', to: { name: 'TeacherCourses' } }]"
+      :title="t('ai.title')"
+      :breadcrumbs="[{ label: t('common.myCourses'), to: { name: 'TeacherCourses' } }]"
     />
 
     <!-- 本月用量 -->
@@ -135,19 +140,19 @@ function submitKey() {
     >
       <div class="flex flex-wrap items-center justify-between gap-3">
         <h2 id="usage-title" class="flex items-baseline gap-3 text-h2-title text-foreground">
-          本月用量 <span class="text-body text-muted-foreground">{{ month }}</span>
+          {{ t('ai.thisMonth') }} <span class="text-body text-muted-foreground">{{ month }}</span>
         </h2>
         <div class="flex items-center gap-3">
           <span class="text-body text-muted-foreground">{{ updatedAt }}</span>
           <Button variant="secondary" :disabled="usage.isFetching.value" @click="usage.refetch()">
             <SpinnerIcon v-if="usage.isFetching.value" class="animate-spin" />
             <RefreshIcon v-else />
-            更新
+            {{ t('ai.refresh') }}
           </Button>
         </div>
       </div>
       <p v-if="usage.error.value" role="alert" class="text-body text-destructive">
-        {{ getApiErrorMessage(usage.error.value, '無法取得用量') }}
+        {{ getApiErrorMessage(usage.error.value, t('ai.usageError')) }}
       </p>
       <dl class="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <div v-for="t in tiles" :key="t.label" class="rounded-lg bg-background px-4 py-3">
@@ -156,14 +161,14 @@ function submitKey() {
         </div>
       </dl>
 
-      <h3 class="text-body-lg font-medium text-foreground">各階段用量</h3>
+      <h3 class="text-body-lg font-medium text-foreground">{{ t('ai.byStage') }}</h3>
       <table class="w-full text-left text-body text-foreground">
         <thead class="text-muted-foreground">
           <tr>
-            <th scope="col" class="w-1/4 py-1 font-normal">階段</th>
-            <th scope="col" class="w-1/4 py-1 font-normal">輸入</th>
-            <th scope="col" class="w-1/4 py-1 font-normal">輸出</th>
-            <th scope="col" class="w-1/4 py-1 font-normal">次數</th>
+            <th scope="col" class="w-1/4 py-1 font-normal">{{ t('ai.stage') }}</th>
+            <th scope="col" class="w-1/4 py-1 font-normal">{{ t('ai.input') }}</th>
+            <th scope="col" class="w-1/4 py-1 font-normal">{{ t('ai.output') }}</th>
+            <th scope="col" class="w-1/4 py-1 font-normal">{{ t('ai.count') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -179,7 +184,7 @@ function submitKey() {
       <div class="flex flex-wrap items-end gap-4">
         <ModelSelect
           class="w-full max-w-[420px]"
-          label="新活動預設模型"
+          :label="t('ai.defaultModel')"
           :models="models.data.value ?? []"
           :model-value="defaultModelId"
           :disabled="setModel.isPending.value"
@@ -189,7 +194,7 @@ function submitKey() {
         <a
           href="#model-prices"
           class="mb-2 rounded text-body text-muted-foreground outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          >往下滑可查看模型價格</a
+          >{{ t('ai.scrollToPrices') }}</a
         >
       </div>
     </section>
@@ -202,17 +207,17 @@ function submitKey() {
         class="flex flex-wrap items-center gap-3 text-body text-foreground"
       >
         <template v-if="settings.data.value.configured">
-          <StatusTag>已設定</StatusTag>
+          <StatusTag>{{ t('ai.configured') }}</StatusTag>
           <span>{{ settings.data.value.masked_key }}</span>
         </template>
         <template v-else>
-          <StatusTag tone="secondary">尚未設定</StatusTag>
-          <span>設定 API key 後才能使用 AI 功能</span>
+          <StatusTag tone="secondary">{{ t('ai.notConfigured') }}</StatusTag>
+          <span>{{ t('ai.needKey') }}</span>
         </template>
       </p>
       <form class="flex flex-col gap-3" @submit.prevent="submitKey">
         <label for="api-key" class="sr-only">
-          {{ settings.data.value?.configured ? '輸入新的 API key' : '輸入 OpenRouter API key' }}
+          {{ settings.data.value?.configured ? t('ai.newKey') : t('ai.openRouterKey') }}
         </label>
         <Input
           id="api-key"
@@ -220,9 +225,7 @@ function submitKey() {
           type="password"
           autocomplete="off"
           class="h-12 text-body-lg"
-          :placeholder="
-            settings.data.value?.configured ? '輸入新的 API key' : '輸入 OpenRouter API key'
-          "
+          :placeholder="settings.data.value?.configured ? t('ai.newKey') : t('ai.openRouterKey')"
           :aria-invalid="!!keyError"
           :aria-describedby="keyError ? 'api-key-error' : undefined"
         />
@@ -239,10 +242,10 @@ function submitKey() {
             variant="destructive"
             :disabled="removeKey.isPending.value"
             @click="removeOpen = true"
-            >移除</Button
+            >{{ t('common.remove') }}</Button
           >
           <Button type="submit" :disabled="saveKey.isPending.value">
-            {{ saveKey.isPending.value ? '儲存中…' : '儲存' }}
+            {{ saveKey.isPending.value ? t('common.saving') : t('common.save') }}
           </Button>
         </div>
       </form>
@@ -254,17 +257,19 @@ function submitKey() {
       :class="[cardClass, 'mt-6 flex scroll-mt-6 flex-col gap-3 p-[30px]']"
       aria-labelledby="prices-title"
     >
-      <h2 id="prices-title" class="text-h2-title text-foreground">模型價格</h2>
-      <p class="text-body text-muted-foreground">價格為示範資料，實際費用以 OpenRouter 為準</p>
+      <h2 id="prices-title" class="text-h2-title text-foreground">{{ t('ai.prices') }}</h2>
+      <p class="text-body text-muted-foreground">{{ t('ai.pricesNote') }}</p>
       <div class="overflow-x-auto">
         <table class="w-full min-w-[640px] text-left text-body text-foreground">
           <thead class="text-muted-foreground">
             <tr>
-              <th scope="col" class="py-2 font-normal">模型</th>
-              <th scope="col" class="py-2 font-normal">說明</th>
-              <th scope="col" class="py-2 font-normal">每百萬輸入</th>
-              <th scope="col" class="py-2 font-normal">每百萬輸出</th>
-              <th scope="col" class="py-2"><span class="sr-only">預設</span></th>
+              <th scope="col" class="py-2 font-normal">{{ t('ai.model') }}</th>
+              <th scope="col" class="py-2 font-normal">{{ t('ai.description') }}</th>
+              <th scope="col" class="py-2 font-normal">{{ t('ai.perMillionInput') }}</th>
+              <th scope="col" class="py-2 font-normal">{{ t('ai.perMillionOutput') }}</th>
+              <th scope="col" class="py-2">
+                <span class="sr-only">{{ t('ai.default') }}</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -274,7 +279,9 @@ function submitKey() {
               <td class="py-2 pr-4">{{ formatUsd(m.input_price_usd) }}</td>
               <td class="py-2 pr-4">{{ formatUsd(m.output_price_usd) }}</td>
               <td class="py-2 text-right">
-                <StatusTag v-if="m.model_id === defaultModelId" size="sm">目前預設</StatusTag>
+                <StatusTag v-if="m.model_id === defaultModelId" size="sm">{{
+                  t('ai.currentDefault')
+                }}</StatusTag>
               </td>
             </tr>
           </tbody>
@@ -284,9 +291,9 @@ function submitKey() {
 
     <ConfirmDialog
       v-model:open="removeOpen"
-      title="移除 API key？"
-      description="移除之後要重新設定才能使用 AI"
-      confirm-text="移除"
+      :title="t('ai.removeTitle')"
+      :description="t('ai.removeDescription')"
+      :confirm-text="t('common.remove')"
       destructive
       :loading="removeKey.isPending.value"
       @confirm="removeKey.mutate()"

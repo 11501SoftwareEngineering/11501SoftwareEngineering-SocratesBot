@@ -38,6 +38,9 @@ import { useCourse, useCourseTopics } from '@/composables/useCourse'
 import { useSearch } from '@/composables/useSearch'
 import { getApiErrorMessage } from '@/lib/utils'
 import { UserPlus } from '@lucide/vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const queryClient = useQueryClient()
@@ -74,21 +77,21 @@ function cardFor(topic: TopicListItem) {
   const params = { courseId: courseId.value, topicId: topic.topic_id }
   if (topic.topic_status === 'setup') {
     return {
-      status: { label: '草稿', tone: 'secondary' as const },
+      status: { label: t('activity.status.draft'), tone: 'secondary' as const },
       link: can('edit_topics')
-        ? { label: '繼續編輯', to: { name: 'TeacherActivitySetup', params } }
+        ? { label: t('activity.continueEditing'), to: { name: 'TeacherActivitySetup', params } }
         : undefined,
-      note: can('edit_topics') ? undefined : '草稿待老師確認',
+      note: can('edit_topics') ? undefined : t('activity.awaitingTeacher'),
     }
   }
   return {
     status:
       topic.topic_status === 'summary'
-        ? { label: '整理摘要中', tone: 'primary' as const }
-        : { label: '已發布', tone: 'primary' as const },
+        ? { label: t('activity.status.summarizing'), tone: 'primary' as const }
+        : { label: t('activity.status.published'), tone: 'primary' as const },
     link:
       can('view_reports') || can('edit_summary')
-        ? { label: '檢視觀點', to: { name: 'TeacherPerspective', params } }
+        ? { label: t('activity.viewPerspective'), to: { name: 'TeacherPerspective', params } }
         : undefined,
     progress: { done: topic.answered_count ?? 0, total: topic.student_count ?? 0 },
   }
@@ -96,7 +99,7 @@ function cardFor(topic: TopicListItem) {
 
 const removeTopic = useConfirmAction((topic: TopicListItem) => topicsApi.remove(topic.topic_id), {
   onSuccess: () => queryClient.invalidateQueries({ queryKey: courseKeys.topics(courseId.value) }),
-  errorText: '刪除失敗，請稍後再試',
+  errorText: t('errors.deleteFailed'),
 })
 
 // ---------- 課程成員／助教管理 ----------
@@ -116,9 +119,15 @@ const tas = useQuery({
 
 const panelTabs = computed(() => [
   ...(can('view_members')
-    ? [{ key: 'students' as const, label: '課程成員', count: students.data.value?.length ?? 0 }]
+    ? [
+        {
+          key: 'students' as const,
+          label: t('course.members'),
+          count: students.data.value?.length ?? 0,
+        },
+      ]
     : []),
-  ...(isTeacher.value ? [{ key: 'tas' as const, label: '助教管理' }] : []),
+  ...(isTeacher.value ? [{ key: 'tas' as const, label: t('course.tas') }] : []),
 ])
 
 function refreshMembers() {
@@ -128,13 +137,13 @@ function refreshMembers() {
 
 const removeStudent = useConfirmAction(
   (m: CourseMember) => coursesApi.removeStudent(courseId.value, m.user_id),
-  { onSuccess: refreshMembers, errorText: '移除失敗，請稍後再試' },
+  { onSuccess: refreshMembers, errorText: t('errors.removeFailed') },
 )
 const removeTa = useConfirmAction(
   (m: CourseMember) => coursesApi.removeTa(courseId.value, m.user_id),
   {
     onSuccess: refreshMembers,
-    errorText: '移除失敗，請稍後再試',
+    errorText: t('errors.removeFailed'),
   },
 )
 
@@ -152,7 +161,7 @@ const confirmTaOpen = ref(false)
 // 照 Figma 沒有權限設定畫面：新增助教時四個權限全開
 const DEFAULT_TA_PERMISSIONS = TA_PERMISSIONS.map((p) => p.value)
 function askAddTa() {
-  taError.value = taAccount.value.trim() ? '' : '請輸入帳號'
+  taError.value = taAccount.value.trim() ? '' : t('course.accountRequired')
   if (!taError.value) confirmTaOpen.value = true
 }
 const addTa = useMutation({
@@ -163,12 +172,12 @@ const addTa = useMutation({
     taAccount.value = ''
     refreshMembers()
   },
-  onError: (err) => (taError.value = getApiErrorMessage(err, '新增失敗，請確認帳號是否正確')),
+  onError: (err) => (taError.value = getApiErrorMessage(err, t('course.addTaFailed'))),
 })
 
 const breadcrumbs = computed(() => [
   {
-    label: '我的課程',
+    label: t('common.myCourses'),
     to: { name: 'TeacherCourses' },
   },
 ])
@@ -178,22 +187,28 @@ const breadcrumbs = computed(() => [
   <div class="mx-auto w-full max-w-[1237px] px-4 pt-[30px] pb-12">
     <PageTitle
       class="lg:px-5"
-      :title="course?.name ?? topicsQuery.data.value?.name ?? '課程'"
+      :title="course?.name ?? topicsQuery.data.value?.name ?? t('common.course')"
       :breadcrumbs="breadcrumbs"
       :description="course?.description"
     >
       <template #after-title>
         <span class="flex items-center gap-2 text-header text-foreground">
-          課程代碼：{{ course?.invite_code ?? topicsQuery.data.value?.invite_code }}
+          {{
+            t('courses.inviteCodeLabel', {
+              code: course?.invite_code ?? topicsQuery.data.value?.invite_code ?? '',
+            })
+          }}
           <Button
             variant="ghost"
             size="icon-sm"
-            :aria-label="copied ? '已複製課程代碼' : '複製課程代碼'"
+            :aria-label="copied ? t('course.codeCopied') : t('course.copyCode')"
             @click="copyCode"
           >
             <CopyIcon />
           </Button>
-          <span v-if="copied" role="status" class="text-body text-muted-foreground">已複製</span>
+          <span v-if="copied" role="status" class="text-body text-muted-foreground">{{
+            t('common.copied')
+          }}</span>
         </span>
       </template>
     </PageTitle>
@@ -203,29 +218,33 @@ const breadcrumbs = computed(() => [
     >
       <!-- 探究活動 -->
       <section class="flex min-w-0 flex-col gap-2 lg:px-5 lg:py-2">
-        <SectionHeading title="探究活動" :count="topicsQuery.data.value?.topics.length ?? 0">
+        <SectionHeading
+          :title="t('activity.title')"
+          :count="topicsQuery.data.value?.topics.length ?? 0"
+        >
           <template v-if="can('edit_topics')" #actions>
             <Button as-child>
               <RouterLink :to="{ name: 'TeacherNewActivity', params: { courseId } }">
-                <AddRingIcon /> 新增活動
+                <AddRingIcon /> {{ t('activity.add') }}
               </RouterLink>
             </Button>
           </template>
         </SectionHeading>
-        <SearchInput v-model="keyword" label="搜尋探究活動" />
+        <SearchInput v-model="keyword" :label="t('activity.search')" />
         <QueryState
           :loading="topicsQuery.isPending.value"
           :error="topicsQuery.error.value"
           :empty="topics.length === 0"
-          empty-text="找不到探究活動"
-          error-text="無法取得探究活動"
+          :empty-text="t('activity.notFound')"
+          :error-text="t('activity.loadError')"
           @retry="topicsQuery.refetch()"
         >
           <template v-if="can('edit_topics')" #empty-action>
-            試試<RouterLink
+            {{ t('common.tryPrefix')
+            }}<RouterLink
               :to="{ name: 'TeacherNewActivity', params: { courseId } }"
               class="rounded underline underline-offset-4 outline-none hover:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              >新增活動</RouterLink
+              >{{ t('activity.add') }}</RouterLink
             >
           </template>
           <div class="flex flex-col gap-2">
@@ -242,7 +261,7 @@ const breadcrumbs = computed(() => [
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  :aria-label="`刪除 ${topic.title}`"
+                  :aria-label="t('activity.deleteAria', { title: topic.title })"
                   @click="removeTopic.ask(topic)"
                 >
                   <TrashIcon />
@@ -257,17 +276,17 @@ const breadcrumbs = computed(() => [
       <section
         v-if="panelTabs.length"
         class="flex min-w-0 flex-col gap-[22px] px-4 py-2"
-        aria-label="課程成員與助教"
+        :aria-label="t('course.membersAndTas')"
       >
-        <TabNav v-model="panel" :items="panelTabs" label="課程成員與助教" size="lg" />
+        <TabNav v-model="panel" :items="panelTabs" :label="t('course.membersAndTas')" size="lg" />
 
         <QueryState
           v-if="panel === 'students' && can('view_members')"
           :loading="students.isPending.value"
           :error="students.error.value"
           :empty="(students.data.value?.length ?? 0) === 0"
-          empty-text="還沒有學生"
-          error-text="無法取得課程成員"
+          :empty-text="t('course.noStudents')"
+          :error-text="t('course.membersError')"
           @retry="students.refetch()"
         >
           <div class="flex flex-col gap-2">
@@ -281,7 +300,7 @@ const breadcrumbs = computed(() => [
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  :aria-label="`移除學生 ${m.name}`"
+                  :aria-label="t('course.removeStudentAria', { name: m.name })"
                   @click="removeStudent.ask(m)"
                 >
                   <UserDeleteIcon />
@@ -294,16 +313,18 @@ const breadcrumbs = computed(() => [
         <template v-if="panel === 'tas' && isTeacher">
           <form class="flex flex-col gap-1" @submit.prevent="askAddTa">
             <div class="flex items-center gap-3">
-              <label for="ta-account" class="sr-only">助教帳號</label>
+              <label for="ta-account" class="sr-only">{{ t('course.taAccount') }}</label>
               <Input
                 id="ta-account"
                 v-model="taAccount"
-                placeholder="輸入帳號"
+                :placeholder="t('course.accountPlaceholder')"
                 autocomplete="off"
                 class="h-9 flex-1 rounded-2xl bg-card"
                 :aria-invalid="!!taError"
               />
-              <Button type="submit"><UserPlus class="size-6" aria-hidden="true" /> 助教</Button>
+              <Button type="submit"
+                ><UserPlus class="size-6" aria-hidden="true" /> {{ t('course.addTa') }}</Button
+              >
             </div>
             <p v-if="taError" role="alert" class="text-body text-destructive">{{ taError }}</p>
           </form>
@@ -311,8 +332,8 @@ const breadcrumbs = computed(() => [
             :loading="tas.isPending.value"
             :error="tas.error.value"
             :empty="(tas.data.value?.length ?? 0) === 0"
-            empty-text="還沒有助教"
-            error-text="無法取得助教名單"
+            :empty-text="t('course.noTas')"
+            :error-text="t('course.tasError')"
             @retry="tas.refetch()"
           >
             <div class="flex flex-col gap-2">
@@ -326,7 +347,7 @@ const breadcrumbs = computed(() => [
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    :aria-label="`移除助教 ${m.name}`"
+                    :aria-label="t('course.removeTaAria', { name: m.name })"
                     @click="removeTa.ask(m)"
                   >
                     <UserDeleteIcon />
@@ -341,9 +362,9 @@ const breadcrumbs = computed(() => [
 
     <ConfirmDialog
       v-model:open="removeTopic.open"
-      title="確認刪除?"
-      :description="`刪除「${removeTopic.target?.title}」後，學生的對話、報告和全班摘要都會一起刪除，這個動作無法復原。`"
-      confirm-text="確認"
+      :title="t('courses.deleteTitle')"
+      :description="t('activity.deleteDescription', { title: removeTopic.target?.title ?? '' })"
+      :confirm-text="t('common.ok')"
       destructive
       :loading="removeTopic.isPending"
       :error="removeTopic.error"
@@ -351,9 +372,11 @@ const breadcrumbs = computed(() => [
     />
     <ConfirmDialog
       v-model:open="removeStudent.open"
-      title="移除學生？"
-      :description="`把「${removeStudent.target?.name}」移出這門課，他就看不到課程內容了。`"
-      confirm-text="移除"
+      :title="t('course.removeStudentTitle')"
+      :description="
+        t('course.removeStudentDescription', { name: removeStudent.target?.name ?? '' })
+      "
+      :confirm-text="t('common.remove')"
       destructive
       :loading="removeStudent.isPending"
       :error="removeStudent.error"
@@ -361,9 +384,9 @@ const breadcrumbs = computed(() => [
     />
     <ConfirmDialog
       v-model:open="removeTa.open"
-      title="移除助教？"
-      :description="`「${removeTa.target?.name}」之後就不能協助管理這門課。`"
-      confirm-text="移除"
+      :title="t('course.removeTaTitle')"
+      :description="t('course.removeTaDescription', { name: removeTa.target?.name ?? '' })"
+      :confirm-text="t('common.remove')"
       destructive
       :loading="removeTa.isPending"
       :error="removeTa.error"
@@ -371,14 +394,14 @@ const breadcrumbs = computed(() => [
     />
     <ConfirmDialog
       v-model:open="confirmTaOpen"
-      title="確定要新增助教？"
-      confirm-text="新增"
+      :title="t('course.addTaTitle')"
+      :confirm-text="t('common.add')"
       :loading="addTa.isPending.value"
       :error="taError"
       @confirm="addTa.mutate()"
     >
-      <p>帳號：{{ taAccount.trim() }}</p>
-      <p>姓名：{{ taName }}</p>
+      <p>{{ t('course.accountLine', { account: taAccount.trim() }) }}</p>
+      <p>{{ t('course.nameLine', { name: taName }) }}</p>
     </ConfirmDialog>
   </div>
 </template>

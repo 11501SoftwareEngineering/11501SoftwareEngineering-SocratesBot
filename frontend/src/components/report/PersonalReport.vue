@@ -11,6 +11,9 @@
 import { computed, ref } from 'vue'
 import type { EvidenceQuote, PersonalReport, TimelineEntry } from '@/api/sessions'
 import StatusTag from '@/components/common/StatusTag.vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   report: PersonalReport
@@ -23,8 +26,8 @@ const props = defineProps<{
 const meta = computed(() =>
   [
     props.report.anonymous_id,
-    `${props.report.completed_turns} 回合`,
-    `版本 ${props.report.version}`,
+    t('report.turns', { n: props.report.completed_turns }),
+    t('report.version', { n: props.report.version }),
   ]
     .filter(Boolean)
     .join(' · '),
@@ -50,27 +53,28 @@ function quotesOf(entry: TimelineEntry): string[] {
 const open = ref<Record<number, boolean>>({})
 
 const sections = computed(() => [
-  { title: '目前立場', body: props.report.final_viewpoint },
-  { title: '最強理由', body: props.report.strongest_reason },
+  { title: t('report.currentStance'), body: props.report.final_viewpoint },
+  { title: t('report.strongestReason'), body: props.report.strongest_reason },
   {
-    title: '已檢驗的挑戰',
+    title: t('report.challenges'),
     list: (props.report.challenges ?? []).map(
-      (c) => `${c.challenge}${c.responded ? '' : '（還沒回應）'}`,
+      (c) => `${c.challenge}${c.responded ? '' : t('report.notResponded')}`,
     ),
   },
-  { title: '修正或辯護', body: props.report.revision_or_defense },
-  { title: '與探究重點的連結', body: props.report.focus_connection },
-  { title: '尚待追問', list: props.report.open_questions ?? [] },
+  { title: t('report.revision'), body: props.report.revision_or_defense },
+  { title: t('report.focusConnection'), body: props.report.focus_connection },
+  { title: t('report.openQuestions'), list: props.report.open_questions ?? [] },
 ])
 
 const EVIDENCE_TEXT = {
   sufficient: '',
-  partial: '證據部分不足。',
-  insufficient: '證據不足。',
+  partial: 'report.evidencePartial',
+  insufficient: 'report.evidenceInsufficient',
 } as const
 const gaps = computed(() => {
   const status = props.report.evidence_status
-  const lead = status ? EVIDENCE_TEXT[status] : ''
+  const key = status ? EVIDENCE_TEXT[status] : ''
+  const lead = key ? t(key) : ''
   return [lead, props.report.limitations].filter(Boolean).join('')
 })
 </script>
@@ -105,13 +109,15 @@ const gaps = computed(() => {
       class="rounded-lg bg-border px-3 py-3 shadow-elevated"
       aria-labelledby="report-summary"
     >
-      <h3 id="report-summary" class="text-h1-title text-foreground">觀點總結</h3>
+      <h3 id="report-summary" class="text-h1-title text-foreground">
+        {{ t('report.viewpointSummary') }}
+      </h3>
       <p class="text-body-lg text-foreground">{{ report.viewpoint_summary || '—' }}</p>
     </section>
 
     <section v-if="report.timeline?.length" aria-labelledby="report-timeline">
       <h3 id="report-timeline" class="mb-4 font-heading text-[28px] font-medium text-foreground">
-        觀點變化時間軸
+        {{ t('report.timeline') }}
       </h3>
       <ol class="flex flex-col gap-4 border-l-2 border-muted-foreground/60 pl-6">
         <li
@@ -143,7 +149,7 @@ const gaps = computed(() => {
             :aria-expanded="!!open[entry.turn]"
             @click="open[entry.turn] = !open[entry.turn]"
           >
-            {{ open[entry.turn] ? '▼' : '▶' }} 學生回覆
+            {{ open[entry.turn] ? '▼' : '▶' }} {{ t('report.studentReply') }}
           </button>
           <p v-if="open[entry.turn]" class="text-body text-muted-foreground">
             {{ quotesOf(entry).join('　') }}
@@ -174,7 +180,7 @@ const gaps = computed(() => {
       class="rounded-lg border border-destructive bg-card px-3 py-2"
       aria-labelledby="report-gaps"
     >
-      <h3 id="report-gaps" class="text-header text-foreground">未完成或證據不足</h3>
+      <h3 id="report-gaps" class="text-header text-foreground">{{ t('report.gaps') }}</h3>
       <p class="mt-1 text-body text-muted-foreground">{{ gaps }}</p>
     </section>
   </article>

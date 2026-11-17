@@ -12,6 +12,9 @@ import FormField from '@/components/common/FormField.vue'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/utils'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   course?: Pick<CourseSummary, 'course_id' | 'name' | 'description'> | null
@@ -41,12 +44,16 @@ const mutation = useMutation({
     open.value = false
     void queryClient.invalidateQueries({ queryKey: courseKeys.all })
   },
-  onError: (error) => (formError.value = getApiErrorMessage(error, '儲存失敗，請稍後再試')),
+  onError: (error) => (formError.value = getApiErrorMessage(error, t('errors.saveFailed'))),
 })
 
 function handleSubmit() {
   const name = form.name.trim()
-  nameError.value = !name ? '請輸入課程名稱' : name.length > 255 ? '課程名稱最多 255 個字' : ''
+  nameError.value = !name
+    ? t('courses.nameRequired')
+    : name.length > 255
+      ? t('courses.nameTooLong')
+      : ''
   formError.value = ''
   if (!nameError.value) mutation.mutate()
 }
@@ -55,16 +62,16 @@ function handleSubmit() {
 <template>
   <FormDialog
     v-model:open="open"
-    :title="course ? '編輯課程' : '新增課程'"
-    :submit-text="course ? '儲存' : '新增'"
+    :title="course ? t('courses.editCourse') : t('courses.addCourse')"
+    :submit-text="course ? t('common.save') : t('common.add')"
     :loading="mutation.isPending.value"
     :error="formError"
     @submit="handleSubmit"
   >
-    <FormField v-slot="field" label="課程名稱" :error="nameError">
+    <FormField v-slot="field" :label="t('courses.courseName')" :error="nameError">
       <Input v-model="form.name" v-bind="field" :id="field.id" autocomplete="off" />
     </FormField>
-    <FormField v-slot="field" label="課程描述" align-top>
+    <FormField v-slot="field" :label="t('courses.courseDescription')" align-top>
       <Textarea v-model="form.description" v-bind="field" :id="field.id" :rows="6" />
     </FormField>
   </FormDialog>

@@ -12,6 +12,9 @@
  */
 import { computed } from 'vue'
 import { MicIcon, SendIcon } from '@/components/icons'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -28,7 +31,6 @@ const props = withDefaults(
   {
     sending: false,
     disabled: false,
-    placeholder: '輸入回答...',
     recording: false,
     showMic: true,
   },
@@ -58,7 +60,7 @@ function handleSend() {
         <button
           v-if="showMic"
           type="button"
-          :aria-label="recording ? '停止語音輸入' : '語音輸入'"
+          :aria-label="recording ? t('chat.stopVoice') : t('chat.voice')"
           :aria-pressed="recording"
           :disabled="disabled || outOfRounds"
           class="flex size-8 shrink-0 items-center justify-center rounded-full outline-none hover:bg-muted focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
@@ -69,9 +71,13 @@ function handleSend() {
         </button>
         <input
           v-model="draft"
-          aria-label="輸入回答"
+          :aria-label="t('chat.inputLabel')"
           :placeholder="
-            outOfRounds ? '回合數已用完' : recording ? '請說話…再按一次麥克風結束' : placeholder
+            outOfRounds
+              ? t('chat.outOfTurns')
+              : recording
+                ? t('chat.listening')
+                : (placeholder ?? t('chat.placeholder'))
           "
           :disabled="disabled || outOfRounds"
           :readonly="recording"
@@ -79,7 +85,7 @@ function handleSend() {
         />
         <button
           type="submit"
-          aria-label="送出"
+          :aria-label="t('chat.send')"
           :disabled="!canSend"
           class="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary outline-none hover:brightness-[0.8] focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
         >
@@ -92,7 +98,8 @@ function handleSend() {
         class="shrink-0 rounded-2xl border border-secondary bg-secondary px-3 py-2 text-h2-title text-foreground/50"
         aria-live="polite"
       >
-        <span class="sr-only sm:not-sr-only">剩餘回合數：</span>{{ remaining }}/{{ total }}
+        <span class="sr-only sm:not-sr-only">{{ t('chat.remaining') }}</span
+        >{{ remaining }}/{{ total }}
       </div>
     </div>
   </div>

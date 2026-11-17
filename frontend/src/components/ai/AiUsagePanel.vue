@@ -14,6 +14,9 @@ import { Button } from '@/components/ui/button'
 import ModelSelect from '@/components/ai/ModelSelect.vue'
 import { getApiErrorMessage } from '@/lib/utils'
 import { cardClass } from '@/lib/ui'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const queryClient = useQueryClient()
 const usage = useQuery({ queryKey: aiKeys.usage, queryFn: aiApi.usage })
@@ -24,10 +27,10 @@ const number = (n: number | undefined) => (n === undefined ? '—' : n.toLocaleS
 const tiles = computed(() => {
   const u = usage.data.value
   return [
-    { label: '總 Token', value: number(u?.total_tokens) },
-    { label: '請求次數', value: number(u?.request_count) },
-    { label: '輸入', value: number(u?.input_tokens) },
-    { label: '輸出', value: number(u?.output_tokens) },
+    { label: t('ai.totalTokens'), value: number(u?.total_tokens) },
+    { label: t('ai.requests'), value: number(u?.request_count) },
+    { label: t('ai.input'), value: number(u?.input_tokens) },
+    { label: t('ai.output'), value: number(u?.output_tokens) },
   ]
 })
 
@@ -38,25 +41,27 @@ const setModel = useMutation({
     error.value = ''
     void queryClient.invalidateQueries({ queryKey: aiKeys.settings })
   },
-  onError: (err) => (error.value = getApiErrorMessage(err, '儲存失敗，請稍後再試')),
+  onError: (err) => (error.value = getApiErrorMessage(err, t('errors.saveFailed'))),
 })
 </script>
 
 <template>
   <section class="flex flex-col gap-2" aria-labelledby="ai-usage-title">
-    <h2 id="ai-usage-title" class="text-h1-title text-foreground">AI 模型與用量</h2>
+    <h2 id="ai-usage-title" class="text-h1-title text-foreground">{{ t('ai.panelTitle') }}</h2>
     <div :class="[cardClass, 'flex flex-col gap-3 p-6']">
       <div class="flex items-center justify-between">
-        <h3 class="text-header text-foreground">本月用量</h3>
+        <h3 class="text-header text-foreground">{{ t('ai.thisMonth') }}</h3>
         <Button as-child variant="secondary">
-          <RouterLink :to="{ name: 'TeacherAiSettings' }"><SettingIcon /> API 設定</RouterLink>
+          <RouterLink :to="{ name: 'TeacherAiSettings' }"
+            ><SettingIcon /> {{ t('ai.apiSettings') }}</RouterLink
+          >
         </Button>
       </div>
       <p
         v-if="settings.data.value && !settings.data.value.configured"
         class="text-body text-destructive"
       >
-        還沒設定 API key，設定後才能使用 AI 功能。
+        {{ t('ai.noKey') }}
       </p>
       <dl class="grid grid-cols-2 gap-3">
         <div v-for="tile in tiles" :key="tile.label" class="rounded-lg bg-background px-3 py-2">
@@ -64,12 +69,12 @@ const setModel = useMutation({
           <dd class="text-h2-title text-foreground">{{ tile.value }}</dd>
         </div>
         <div class="col-span-2 rounded-lg bg-background px-3 py-2">
-          <dt class="text-body text-muted-foreground">本月花費</dt>
+          <dt class="text-body text-muted-foreground">{{ t('ai.cost') }}</dt>
           <dd class="text-h2-title text-foreground">{{ formatUsd(usage.data.value?.cost_usd) }}</dd>
         </div>
       </dl>
       <ModelSelect
-        label="新活動預設模型"
+        :label="t('ai.defaultModel')"
         :models="models.data.value ?? []"
         :model-value="settings.data.value?.default_model?.id ?? ''"
         :disabled="setModel.isPending.value"
@@ -79,7 +84,7 @@ const setModel = useMutation({
       <RouterLink
         :to="{ name: 'TeacherAiSettings', hash: '#model-prices' }"
         class="flex w-fit items-center gap-1 rounded text-body text-primary-dark outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >查看模型價格 <ExternalIcon class="size-5" aria-hidden="true"
+        >{{ t('ai.viewPrices') }} <ExternalIcon class="size-5" aria-hidden="true"
       /></RouterLink>
     </div>
   </section>

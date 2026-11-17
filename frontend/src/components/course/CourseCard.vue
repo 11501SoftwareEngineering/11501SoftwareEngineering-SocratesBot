@@ -11,6 +11,9 @@ import type { CourseSummary } from '@/api/courses'
 import CardLink from '@/components/common/CardLink.vue'
 import { ChatIcon, GroupIcon } from '@/components/icons'
 import { cardClass } from '@/lib/ui'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{
   course: CourseSummary
@@ -29,19 +32,23 @@ defineProps<{
         </h3>
         <span class="shrink-0 text-body text-muted-foreground">{{ course.invite_code }}</span>
       </div>
-      <CardLink :to="to" stretched :aria-label="`進入課程 ${course.name}`">進入課程</CardLink>
+      <CardLink :to="to" stretched :aria-label="t('courses.enterAria', { name: course.name })">{{
+        t('courses.enter')
+      }}</CardLink>
     </div>
     <p class="truncate text-body-lg text-muted-foreground" :title="course.description ?? ''">
-      {{ course.description || '沒有課程描述' }}
+      {{ course.description || t('courses.noDescription') }}
     </p>
     <div class="flex items-center justify-between gap-3">
       <ul class="flex items-center gap-4 text-body-lg text-foreground">
         <li v-if="showTeacher">{{ course.teacher_name }}</li>
         <li v-if="course.student_count != null" class="flex items-center gap-1">
-          <GroupIcon /><span class="sr-only">學生</span>{{ course.student_count }}
+          <GroupIcon /><span class="sr-only">{{ t('courses.students') }}</span
+          >{{ course.student_count }}
         </li>
         <li class="flex items-center gap-1">
-          <ChatIcon /><span class="sr-only">探究活動</span>{{ course.topic_count }}
+          <ChatIcon /><span class="sr-only">{{ t('courses.activities') }}</span
+          >{{ course.topic_count }}
         </li>
       </ul>
       <div v-if="$slots.actions" class="relative z-10 flex items-center gap-1">

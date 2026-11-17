@@ -28,6 +28,9 @@ import { useCourseTopics } from '@/composables/useCourse'
 import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
 import { getApiErrorMessage } from '@/lib/utils'
 import { cardClass, pageClass } from '@/lib/ui'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const router = useRouter()
@@ -78,11 +81,11 @@ const save = useMutation({
     queryClient.setQueryData(topicKeys.setup(topicId.value), result)
     void queryClient.invalidateQueries({ queryKey: courseKeys.topics(courseId.value) })
     actionError.value = ''
-    notice.value = '已儲存'
+    notice.value = t('setup.saved')
     // 照 Prototype：新增活動第一次儲存後，網址換成既有活動設定（P12）
     if (route.query.new) void router.replace({ name: 'TeacherActivitySetup', params: route.params })
   },
-  onError: fail('儲存失敗，請稍後再試'),
+  onError: fail(t('errors.saveFailed')),
 })
 
 // 重新產生開場訊息（不存檔）
@@ -91,9 +94,9 @@ const opening = useMutation({
   onSuccess: (message) => {
     if (form.value) form.value.opening_message = message
     actionError.value = ''
-    notice.value = '已重新產生開場訊息，記得儲存'
+    notice.value = t('setup.openingRegenerated')
   },
-  onError: fail('重新產生失敗，請稍後再試'),
+  onError: fail(t('errors.regenerateFailed')),
 })
 
 // 依回饋重新產生（不存檔）
@@ -105,12 +108,12 @@ const refine = useMutation({
     form.value = { ...result.setup }
     feedback.value = ''
     actionError.value = ''
-    notice.value = '已依回饋重新產生，確認沒問題再儲存或發布'
+    notice.value = t('setup.refined')
   },
-  onError: fail('重新產生失敗，請稍後再試'),
+  onError: fail(t('errors.regenerateFailed')),
 })
 function handleRefine() {
-  feedbackError.value = feedback.value.trim() ? '' : '請先寫下想請 AI 怎麼修改'
+  feedbackError.value = feedback.value.trim() ? '' : t('setup.feedbackRequired')
   if (!feedbackError.value) refine.mutate()
 }
 
@@ -128,7 +131,7 @@ const publish = useMutation({
   },
   onError: (err) => {
     publishOpen.value = false
-    fail('發布失敗，請確認每個欄位都填好了')(err)
+    fail(t('setup.publishFailed'))(err)
   },
 })
 
@@ -139,9 +142,13 @@ const busy = computed(
     refine.isPending.value ||
     publish.isPending.value,
 )
-const turnOptions = MAX_TURNS.map((n) => ({ value: n, label: `${n} 回合` }))
+const turnOptions = computed(() =>
+  MAX_TURNS.map((n) => ({ value: n, label: t('common.turns', { n }) })),
+)
 const textFields = SETUP_FIELDS.filter((f) => f.key !== 'opening_message')
-const title = computed(() => (isNew.value && editable.value ? '確認活動設定' : '活動設定'))
+const title = computed(() =>
+  isNew.value && editable.value ? t('setup.confirmTitle') : t('setup.title'),
+)
 </script>
 
 <template>
@@ -149,18 +156,21 @@ const title = computed(() => (isNew.value && editable.value ? '確認活動設�
     <PageTitle
       :title="title"
       :breadcrumbs="[
-        { label: '我的課程', to: { name: 'TeacherCourses' } },
-        { label: course?.name ?? '課程', to: { name: 'TeacherCourse', params: { courseId } } },
+        { label: t('common.myCourses'), to: { name: 'TeacherCourses' } },
+        {
+          label: course?.name ?? t('common.course'),
+          to: { name: 'TeacherCourse', params: { courseId } },
+        },
       ]"
     >
       <template v-if="data && !isNew" #after-title>
         <StatusTag :tone="editable ? 'secondary' : 'primary'">{{
-          editable ? '草稿' : '已發布'
+          editable ? t('activity.status.draft') : t('activity.status.published')
         }}</StatusTag>
         <Button v-if="!editable" as-child class="ml-auto">
-          <RouterLink :to="{ name: 'TeacherPerspective', params: { courseId, topicId } }"
-            >檢視觀點</RouterLink
-          >
+          <RouterLink :to="{ name: 'TeacherPerspective', params: { courseId, topicId } }">{{
+            t('activity.viewPerspective')
+          }}</RouterLink>
         </Button>
       </template>
     </PageTitle>
@@ -169,7 +179,7 @@ const title = computed(() => (isNew.value && editable.value ? '確認活動設�
       class="mt-4"
       :loading="isPending"
       :error="error"
-      error-text="無法取得活動設定"
+      :error-text="t('setup.loadError')"
       @retry="refetch()"
     >
       <form
@@ -181,18 +191,18 @@ const title = computed(() => (isNew.value && editable.value ? '確認活動設�
         @submit.prevent="save.mutate()"
       >
         <p v-if="!editable" class="text-body text-destructive">
-          已發布的設定已鎖定，以下內容無法修改
+          {{ t('setup.locked') }}
         </p>
         <div class="grid gap-4 sm:grid-cols-2">
           <AppSelect
             v-model="form.age_band"
-            label="年齡層"
+            :label="t('common.ageBand')"
             :options="AGE_BANDS"
             :disabled="!editable || busy"
           />
           <AppSelect
             v-model="form.max_turns"
-            label="回合數"
+            :label="t('common.turnsLabel')"
             :options="turnOptions"
             :disabled="!editable || busy"
           />
@@ -207,7 +217,7 @@ const title = computed(() => (isNew.value && editable.value ? '確認活動設�
         />
         <LongTextField
           v-model="form.opening_message"
-          label="開場訊息"
+          :label="t('setupFields.opening_message')"
           :readonly="!editable"
           :disabled="busy"
         >
@@ -216,12 +226,12 @@ const title = computed(() => (isNew.value && editable.value ? '確認活動設�
               type="button"
               class="flex items-center gap-1 rounded text-body text-primary-dark outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
               :disabled="busy"
-              aria-label="重新產生開場訊息"
+              :aria-label="t('setup.regenerateOpeningAria')"
               @click="opening.mutate()"
             >
               <SpinnerIcon v-if="opening.isPending.value" class="size-4 animate-spin" />
               <RefreshIcon v-else class="size-4" />
-              重新產生
+              {{ t('setup.regenerate') }}
             </button>
           </template>
         </LongTextField>
@@ -230,8 +240,8 @@ const title = computed(() => (isNew.value && editable.value ? '確認活動設�
           <LongTextField
             v-model="feedback"
             class="flex-1"
-            label="給 AI 的回饋"
-            placeholder="例如：背景資訊太長了，精簡一點；核心問題改得更貼近國中生"
+            :label="t('setup.feedback')"
+            :placeholder="t('setup.feedbackPlaceholder')"
             :error="feedbackError"
             :disabled="busy"
           />
@@ -240,11 +250,11 @@ const title = computed(() => (isNew.value && editable.value ? '確認活動設�
             variant="secondary"
             class="sm:mb-[2px]"
             :disabled="busy"
-            aria-label="依回饋重新產生"
+            :aria-label="t('setup.regenerateFeedbackAria')"
             @click="handleRefine"
           >
             <SpinnerIcon v-if="refine.isPending.value" class="animate-spin" />
-            {{ refine.isPending.value ? '產生中…' : '重新產生' }}
+            {{ refine.isPending.value ? t('setup.regenerating') : t('setup.regenerate') }}
           </Button>
         </div>
 
@@ -253,36 +263,42 @@ const title = computed(() => (isNew.value && editable.value ? '確認活動設�
           role="status"
           class="flex items-center gap-2 text-body text-muted-foreground"
         >
-          <SpinnerIcon class="animate-spin" /> AI 正在依回饋修改，請稍候…
+          <SpinnerIcon class="animate-spin" /> {{ t('setup.refining') }}
         </p>
         <p v-if="actionError" role="alert" class="text-body text-destructive">{{ actionError }}</p>
         <p v-else-if="notice" role="status" class="text-body text-muted-foreground">{{ notice }}</p>
 
         <div v-if="editable" class="flex justify-end gap-3">
           <Button type="submit" variant="secondary" :disabled="busy">
-            {{ save.isPending.value ? '儲存中…' : isNew ? '儲存草稿' : '儲存' }}
+            {{
+              save.isPending.value
+                ? t('common.saving')
+                : isNew
+                  ? t('setup.saveDraft')
+                  : t('common.save')
+            }}
           </Button>
-          <Button v-if="isTeacher" type="button" :disabled="busy" @click="publishOpen = true"
-            >發布活動</Button
-          >
+          <Button v-if="isTeacher" type="button" :disabled="busy" @click="publishOpen = true">{{
+            t('setup.publish')
+          }}</Button>
         </div>
       </form>
     </QueryState>
 
     <ConfirmDialog
       v-model:open="publishOpen"
-      title="確定要發布嗎？"
-      description="發布之後就不能再修改設定了"
-      confirm-text="發布"
+      :title="t('setup.publishTitle')"
+      :description="t('setup.publishDescription')"
+      :confirm-text="t('setup.publishConfirm')"
       :loading="publish.isPending.value"
       @confirm="publish.mutate()"
     />
     <ConfirmDialog
       v-model:open="guard.open.value"
-      title="還沒儲存，確定要離開？"
-      description="修改的內容會不見"
-      confirm-text="離開"
-      cancel-text="留下"
+      :title="t('setup.leaveTitle')"
+      :description="t('setup.leaveDescription')"
+      :confirm-text="t('setup.leave')"
+      :cancel-text="t('setup.stay')"
       destructive
       confirm-first
       @confirm="guard.leave()"
