@@ -113,6 +113,13 @@ def test_student_promoted_to_ta_then_revoked_leaves_course_without_sessions() ->
             my_row = next(row for row in my_rows if row[0].id == course_id)
             assert my_row[4] == "TA"
             assert sorted(my_row[5]) == ["edit_topics", "view_members"]
+            member_permissions = await course_crud.list_ta_permissions(
+                db, course_id=course_id, user_ids=[student_id]
+            )
+            assert sorted(member_permissions[student_id]) == [
+                "edit_topics",
+                "view_members",
+            ]
             assert (
                 await course_crud.get_course_role(
                     db, course_id=course_id, user_id=student.id

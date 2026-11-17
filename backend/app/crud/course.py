@@ -228,9 +228,10 @@ async def add_student_membership(
     return existing
 
 
-async def list_course_students(
-    db: AsyncSession, course_id: UUID
+async def list_course_members(
+    db: AsyncSession, course_id: UUID, *, roles: tuple[str, ...]
 ) -> list[tuple[User, CourseMembership]]:
+    """Active STUDENT/TA members (``roles`` are DB values), by account."""
     statement = (
         select(User, CourseMembership)
         .join(
@@ -239,7 +240,8 @@ async def list_course_students(
         )
         .where(
             CourseMembership.course_id == course_id,
-            *_active_student_filters(),
+            CourseMembership.role.in_(roles),
+            CourseMembership.left_at.is_(None),
         )
         .order_by(User.account_id.asc())
     )
@@ -327,6 +329,29 @@ async def get_ta_permissions(
         )
     )
     return list((await db.scalars(statement)).all())
+
+
+async def list_ta_permissions(
+    db: AsyncSession, *, course_id: UUID, user_ids: list[UUID]
+) -> dict[UUID, list[str]]:
+    """Map user id -> permissions held as a TA in ``course_id`` (unordered)."""
+    if not user_ids:
+        return {}
+    rows = await db.execute(
+        select(CourseMembership.user_id, CourseTaPermission.permission)
+        .join(
+            CourseMembership,
+            CourseMembership.id == CourseTaPermission.course_membership_id,
+        )
+        .where(
+            CourseMembership.course_id == course_id,
+            CourseMembership.user_id.in_(user_ids),
+        )
+    )
+    permissions: dict[UUID, list[str]] = {}
+    for user_id, permission in rows.all():
+        permissions.setdefault(user_id, []).append(permission)
+    return permissions
 
 
 def _add_ta_permission(
