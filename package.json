@@ -1,0 +1,15 @@
+{
+  "name": "socrates-pr205-chat-only",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "node scripts/chat.mjs setup",
+    "install:ci": "node scripts/chat.mjs install",
+    "dev": "node scripts/chat.mjs dev",
+    "dev:mock": "node scripts/chat.mjs mock",
+    "check": "node scripts/chat.mjs check"
+  },
+  "engines": {
+    "node": ">=24.12.0"
+  }
+}

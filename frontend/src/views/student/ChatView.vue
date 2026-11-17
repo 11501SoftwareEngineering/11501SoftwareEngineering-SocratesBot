@@ -1,19 +1,10 @@
 ﻿<script setup lang="ts">
-/**
- * 學生：和導魷對話。對應 Figma「Student_Question」（node 171:280）。
- * API：POST /student/topics/{id}/sessions（建立或進入對話）
- *      ⚠️ GET /student/sessions/{id}/messages（拿歷史訊息，前端假設）
- *      POST /student/sessions/{id}/messages/stream（SSE 逐字回覆）
- *      POST /student/audio/transcribe（語音轉文字）
- * 回合數用完後對話結束，顯示「查看結果」。
- *
- * features.chat 關閉時（後端 AI 還沒接）：一樣建立 Session，畫面顯示題目說明
- * （GET /student/topics/{id}/explanation）和「尚未開放」，輸入框停用。
- */
+/** PR205 聊天頁：啟用 VITE_CHAT_API_ENABLED 時，只有對話改走獨立 AI API。 */
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
 import { studentApi, studentKeys, type ChatMessage } from '@/api/student'
+import { CHAT_API_ENABLED, chatApi } from '@/api/chat'
 import ChatBubble from '@/components/common/ChatBubble.vue'
 import ChatInput from '@/components/common/ChatInput.vue'
 import ComingSoon from '@/components/common/ComingSoon.vue'
@@ -36,13 +27,25 @@ const queryClient = useQueryClient()
 const courseId = computed(() => String(route.params.courseId ?? ''))
 const topicId = computed(() => String(route.params.topicId ?? ''))
 
-const { data: course } = useStudentCourse(courseId)
+const courseQuery = useStudentCourse(courseId)
+const course = courseQuery.data
 const topic = computed(() => course.value?.topics.find((t) => t.topic_id === topicId.value))
 
 // 1. 建立或進入對話（後端同一個學生同一題只會有一個 Session）
 const sessionQuery = useQuery({
-  queryKey: computed(() => ['student', 'topic', topicId.value, 'session']),
-  queryFn: () => studentApi.createSession(topicId.value),
+  queryKey: computed(() => [
+    'student',
+    'topic',
+    topicId.value,
+    'session',
+    authStore.user?.account,
+    CHAT_API_ENABLED,
+  ]),
+  queryFn: () =>
+    CHAT_API_ENABLED
+      ? chatApi.createOrResume(topic.value!, authStore.user?.account ?? 'demo')
+      : studentApi.createSession(topicId.value),
+  enabled: () => !CHAT_API_ENABLED || !!topic.value,
   staleTime: Infinity,
   retry: false,
 })
@@ -51,7 +54,10 @@ const sessionId = computed(() => sessionQuery.data.value?.session_id ?? '')
 // 2. 拿歷史訊息
 const messagesQuery = useQuery({
   queryKey: computed(() => studentKeys.messages(sessionId.value)),
-  queryFn: () => studentApi.getSessionMessages(sessionId.value),
+  queryFn: () =>
+    CHAT_API_ENABLED
+      ? chatApi.getMessages(sessionId.value)
+      : studentApi.getSessionMessages(sessionId.value),
   enabled: () => features.chat && !!sessionId.value,
   retry: false,
   // 串流進行中不要被重新整理的資料蓋掉
@@ -83,11 +89,24 @@ const explanationQuery = useQuery({
 })
 
 const loading = computed(
-  () => sessionQuery.isPending.value || (features.chat && messagesQuery.isPending.value),
+  () =>
+    !loadError.value &&
+    (sessionQuery.isPending.value || (features.chat && messagesQuery.isPending.value)),
 )
-const loadError = computed(() => sessionQuery.error.value ?? messagesQuery.error.value)
+const loadError = computed(
+  () =>
+    (CHAT_API_ENABLED && courseQuery.error.value) ||
+    (CHAT_API_ENABLED && courseQuery.isSuccess.value && !topic.value
+      ? new Error('找不到題目')
+      : null) ||
+    sessionQuery.error.value ||
+    messagesQuery.error.value,
+)
 function retryLoad() {
-  if (sessionQuery.isError.value) void sessionQuery.refetch()
+  if (CHAT_API_ENABLED && courseQuery.isError.value) void courseQuery.refetch()
+  else if (CHAT_API_ENABLED) {
+    void sessionQuery.refetch().then(() => messagesQuery.refetch())
+  } else if (sessionQuery.isError.value) void sessionQuery.refetch()
   else void messagesQuery.refetch()
 }
 
@@ -105,6 +124,10 @@ watch(() => messages.value.length, scrollToBottom)
 async function handleSend(text: string) {
   if (!sessionId.value || isStreaming.value) return
   sendError.value = ''
+  if (CHAT_API_ENABLED && text.length > 2000) {
+    sendError.value = '回答最多 2000 字，請縮短後再送出。'
+    return
+  }
   draft.value = ''
   const stamp = Date.now()
   const userId = `local-${stamp}`
@@ -137,6 +160,9 @@ async function handleSend(text: string) {
     )
     draft.value = text
     sendError.value = getApiErrorMessage(err, '導魷沒有回應，請再送一次')
+  } finally {
+    // Reconcile against committed history after success or a dropped connection.
+    if (CHAT_API_ENABLED) await messagesQuery.refetch()
   }
 }
 
@@ -220,11 +246,20 @@ const studentName = computed(() => authStore.user?.name ?? '學生')
         >
           <p class="text-h2-title leading-normal text-foreground">這次的對話結束了！</p>
           <p class="text-body-lg text-muted-foreground">
-            看看你的想法被歸到哪一類，還有其他同學怎麼想。
+            {{
+              CHAT_API_ENABLED
+                ? '本版只測試對話串接，可返回問題列表。'
+                : '看看你的想法被歸到哪一類，還有其他同學怎麼想。'
+            }}
           </p>
           <Button as-child size="lg">
-            <RouterLink :to="{ name: 'StudentResult', params: { courseId, sessionId } }"
-              >查看結果</RouterLink
+            <RouterLink
+              :to="
+                CHAT_API_ENABLED
+                  ? { name: 'StudentCourse', params: { courseId } }
+                  : { name: 'StudentResult', params: { courseId, sessionId } }
+              "
+              >{{ CHAT_API_ENABLED ? '返回問題列表' : '查看結果' }}</RouterLink
             >
           </Button>
         </div>
@@ -248,7 +283,7 @@ const studentName = computed(() => authStore.user?.name ?? '學生')
         :sending="isStreaming"
         :disabled="!features.chat || loading || !!loadError"
         :placeholder="features.chat ? undefined : '對話功能尚未開放'"
-        :show-mic="features.voiceInput"
+        :show-mic="!CHAT_API_ENABLED && features.voiceInput"
         :recording="voice.isRecording.value"
         :transcribing="voice.isTranscribing.value"
         @send="handleSend"

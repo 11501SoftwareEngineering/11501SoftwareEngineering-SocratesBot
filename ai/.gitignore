@@ -1,0 +1,6 @@
+node_modules/
+.env*
+!.env.example
+# The repository root ignores lib/ for Python. Track the AI TypeScript source here.
+!lib/
+!lib/**
