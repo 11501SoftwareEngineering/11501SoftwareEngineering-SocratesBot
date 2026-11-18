@@ -76,29 +76,28 @@ class CourseMemberListItem(BaseModel):
     name: str = Field(examples=["Alice"])
     role: CourseRole = Field(examples=[CourseRole.STUDENT])
     joined_at: datetime = Field(examples=[_EXAMPLE_JOINED_AT])
-    permissions: list[TaPermission] = Field(
-        default_factory=list,
-        description="TA permissions; empty for students",
-    )
 
 
 _EXAMPLE_TA_PERMISSIONS = [TaPermission.EDIT_TOPICS, TaPermission.VIEW_MEMBERS]
 
 
+class TaCandidateResponse(BaseModel):
+    """The account a teacher is about to assign, shown in the confirm dialog."""
+
+    account_id: str = Field(examples=["alice"])
+    name: str = Field(examples=["Alice"])
+
+
 class TaAssignRequest(BaseModel):
+    """A new TA always gets every permission."""
+
     account_id: str = Field(min_length=1, max_length=64, examples=["alice"])
-    permissions: list[TaPermission] = Field(
-        default_factory=list,
-        examples=[_EXAMPLE_TA_PERMISSIONS],
-        description="Granted TA permissions; duplicates are ignored",
-    )
 
 
 class TaAssignResponse(BaseModel):
     user_id: UUID = Field(examples=[_EXAMPLE_USER_ID])
     account_id: str = Field(examples=["alice"])
     name: str = Field(examples=["Alice"])
-    permissions: list[TaPermission] = Field(examples=[_EXAMPLE_TA_PERMISSIONS])
     message: str = Field(default="TA assigned", examples=["TA assigned"])
 
 

@@ -697,7 +697,6 @@ def test_list_members_role_filter(
             "name": "Alice",
             "role": "student",
             "joined_at": "2026-10-01T00:00:00Z",
-            "permissions": [],
         }
     ]
     list_mock.assert_awaited_once_with(course_route_db, course.id, roles=db_roles)
@@ -738,7 +737,7 @@ def test_list_members_errors(
     assert response.status_code == expected
 
 
-def test_list_members_teacher_sees_ta_permissions(
+def test_list_members_lists_tas_without_permissions(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -750,17 +749,11 @@ def test_list_members_teacher_sees_ta_permissions(
     monkeypatch.setattr(
         course_crud, "is_course_instructor", AsyncMock(return_value=True)
     )
-    student_row = _member_row("alice")
-    ta_row = _member_row("bob", "TA")
     monkeypatch.setattr(
         course_crud,
         "list_course_members",
-        AsyncMock(return_value=[student_row, ta_row]),
+        AsyncMock(return_value=[_member_row("alice"), _member_row("bob", "TA")]),
     )
-    permissions_mock = AsyncMock(
-        return_value={ta_row[0].id: ["view_members", "edit_topics"]}
-    )
-    monkeypatch.setattr(course_crud, "list_ta_permissions", permissions_mock)
 
     response = auth_client.get(
         f"/api/v1/courses/{course.id}/members", headers={"Authorization": bearer}
@@ -768,13 +761,8 @@ def test_list_members_teacher_sees_ta_permissions(
 
     assert response.status_code == 200
     body = response.json()
-    assert [(row["role"], row["permissions"]) for row in body] == [
-        ("student", []),
-        ("ta", ["edit_topics", "view_members"]),
-    ]
-    permissions_mock.assert_awaited_once_with(
-        course_route_db, course_id=course.id, user_ids=[ta_row[0].id]
-    )
+    assert [row["role"] for row in body] == ["student", "ta"]
+    assert all("permissions" not in row for row in body)
 
 
 @pytest.mark.parametrize(
@@ -947,7 +935,10 @@ def _membership(role: str, left_at: datetime | None = None) -> SimpleNamespace:
     return SimpleNamespace(role=role, left_at=left_at)
 
 
-def test_assign_ta_promotes_student_with_sorted_permissions(
+_ALL_PERMISSIONS = ["edit_topics", "view_reports", "edit_summary", "view_members"]
+
+
+def test_assign_ta_promotes_student_with_every_permission(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -961,10 +952,7 @@ def test_assign_ta_promotes_student_with_sorted_permissions(
     response = auth_client.post(
         f"/api/v1/courses/{mocks.course.id}/tas",
         headers={"Authorization": bearer},
-        json={
-            "account_id": "alice",
-            "permissions": ["view_members", "edit_topics", "view_members"],
-        },
+        json={"account_id": "alice"},
     )
 
     assert response.status_code == 200
@@ -972,19 +960,18 @@ def test_assign_ta_promotes_student_with_sorted_permissions(
         "user_id": str(alice.id),
         "account_id": "alice",
         "name": "Alice",
-        "permissions": ["edit_topics", "view_members"],
         "message": "TA assigned",
     }
     mocks.lookup.assert_awaited_once_with(
         course_route_db, course_id=mocks.course.id, user_id=alice.id, for_update=True
     )
     mocks.promote.assert_awaited_once_with(
-        course_route_db, membership, ["edit_topics", "view_members"]
+        course_route_db, membership, _ALL_PERMISSIONS
     )
     course_route_db.commit.assert_awaited_once()
 
 
-def test_assign_ta_defaults_to_no_permissions(
+def test_assign_ta_ignores_permissions_in_the_body(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -998,12 +985,14 @@ def test_assign_ta_defaults_to_no_permissions(
     response = auth_client.post(
         f"/api/v1/courses/{mocks.course.id}/tas",
         headers={"Authorization": bearer},
-        json={"account_id": "alice"},
+        json={"account_id": "alice", "permissions": ["view_members"]},
     )
 
     assert response.status_code == 200
-    assert response.json()["permissions"] == []
-    mocks.promote.assert_awaited_once_with(course_route_db, membership, [])
+    assert "permissions" not in response.json()
+    mocks.promote.assert_awaited_once_with(
+        course_route_db, membership, _ALL_PERMISSIONS
+    )
 
 
 def test_assign_ta_adds_account_outside_the_course(
@@ -1019,7 +1008,7 @@ def test_assign_ta_adds_account_outside_the_course(
     response = auth_client.post(
         f"/api/v1/courses/{mocks.course.id}/tas",
         headers={"Authorization": bearer},
-        json={"account_id": "bob", "permissions": ["view_members"]},
+        json={"account_id": "bob"},
     )
 
     assert response.status_code == 200
@@ -1028,7 +1017,7 @@ def test_assign_ta_adds_account_outside_the_course(
         course_route_db,
         course_id=mocks.course.id,
         user_id=bob.id,
-        permissions=["view_members"],
+        permissions=_ALL_PERMISSIONS,
     )
     mocks.promote.assert_not_awaited()
     course_route_db.commit.assert_awaited_once()
@@ -1054,7 +1043,9 @@ def test_assign_ta_reactivates_a_left_membership(
     )
 
     assert response.status_code == 200
-    mocks.promote.assert_awaited_once_with(course_route_db, membership, [])
+    mocks.promote.assert_awaited_once_with(
+        course_route_db, membership, _ALL_PERMISSIONS
+    )
     mocks.add.assert_not_awaited()
 
 
@@ -1087,7 +1078,7 @@ def test_assign_ta_rejected(
     response = auth_client.post(
         f"/api/v1/courses/{mocks.course.id}/tas",
         headers={"Authorization": bearer},
-        json={"account_id": "alice", "permissions": ["edit_topics"]},
+        json={"account_id": "alice"},
     )
 
     assert response.status_code == 400
@@ -1133,7 +1124,7 @@ def test_assign_ta_concurrent_write_is_400(
     response = auth_client.post(
         f"/api/v1/courses/{mocks.course.id}/tas",
         headers={"Authorization": bearer},
-        json={"account_id": "alice", "permissions": ["edit_topics"]},
+        json={"account_id": "alice"},
     )
 
     assert response.status_code == 400
@@ -1192,13 +1183,104 @@ def test_assign_ta_requires_course_teacher(
     mocks.promote.assert_not_awaited()
 
 
+@pytest.mark.parametrize("membership", [None, _membership("STUDENT")])
+def test_ta_candidate_returns_account_and_name(
+    membership: object | None,
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
+    alice = seed_user(store, account_id="alice", name="Alice")
+    mocks = _patch_ta_course(monkeypatch, membership=membership)
+
+    response = auth_client.get(
+        f"/api/v1/courses/{mocks.course.id}/ta-candidate",
+        headers={"Authorization": bearer},
+        params={"account_id": "alice"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"account_id": "alice", "name": "Alice"}
+    mocks.lookup.assert_awaited_once_with(
+        course_route_db, course_id=mocks.course.id, user_id=alice.id
+    )
+    course_route_db.commit.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("membership", "admin", "target_teaches", "detail"),
+    [
+        (_membership("TA"), False, False, "Already a TA of this course"),
+        (None, True, False, "Admins cannot be TAs"),
+        (None, False, True, "Teachers of this course cannot be TAs"),
+    ],
+)
+def test_ta_candidate_rejected(
+    membership: object | None,
+    admin: bool,
+    target_teaches: bool,
+    detail: str,
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
+    seed_user(store, account_id="alice", name="Alice")
+    if admin:
+        monkeypatch.setattr(yaml_config, "SUPER_ADMIN_ACCOUNTS", ["alice"])
+    mocks = _patch_ta_course(
+        monkeypatch, membership=membership, target_teaches=target_teaches
+    )
+
+    response = auth_client.get(
+        f"/api/v1/courses/{mocks.course.id}/ta-candidate",
+        headers={"Authorization": bearer},
+        params={"account_id": "alice"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == detail
+
+
+@pytest.mark.parametrize(
+    ("account_id", "instructor", "exists", "expected"),
+    [
+        ("nobody", True, True, 404),
+        ("alice", False, True, 403),
+        ("alice", True, False, 404),
+        ("", True, True, 422),
+    ],
+)
+def test_ta_candidate_errors(
+    account_id: str,
+    instructor: bool,
+    exists: bool,
+    expected: int,
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
+    seed_user(store, account_id="alice", name="Alice")
+    _patch_ta_course(monkeypatch, instructor=instructor, exists=exists)
+
+    response = auth_client.get(
+        f"/api/v1/courses/{uuid4()}/ta-candidate",
+        headers={"Authorization": bearer},
+        params={"account_id": account_id},
+    )
+
+    assert response.status_code == expected
+    assert "Alice" not in response.text
+
+
 @pytest.mark.parametrize(
     "body",
-    [
-        {"permissions": ["edit_topics"]},
-        {"account_id": "", "permissions": []},
-        {"account_id": "alice", "permissions": ["delete_course"]},
-    ],
+    [{}, {"account_id": ""}],
 )
 def test_assign_ta_validation_errors(
     body: dict,

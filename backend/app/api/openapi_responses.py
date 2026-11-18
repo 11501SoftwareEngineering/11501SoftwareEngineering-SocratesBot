@@ -443,17 +443,47 @@ _UNKNOWN_TA_PERMISSION_422 = json_detail_example(
     ],
 )
 
-COURSE_TA_ASSIGN_RESPONSES: dict[int | str, dict[str, Any]] = {
+
+def _blank_account_id_422(location: str) -> dict[str, Any]:
+    return json_detail_example(
+        "Request validation failed",
+        [
+            {
+                "type": "string_too_short",
+                "loc": [location, "account_id"],
+                "msg": "String should have at least 1 character",
+            }
+        ],
+    )
+
+
+_TA_ASSIGN_400 = json_detail_examples(
+    (
+        "The account is already a TA of this course, teaches it, or is "
+        "an admin; or its membership changed concurrently (retry)"
+    ),
+    {
+        "already_ta": "Already a TA of this course",
+        "course_teacher": "Teachers of this course cannot be TAs",
+        "admin": "Admins cannot be TAs",
+        "concurrent": "Course membership changed concurrently; retry",
+    },
+)
+_TA_ASSIGN_404 = json_detail_examples(
+    "Course or account not found",
+    {
+        "course_not_found": "Course not found",
+        "account_not_found": "Account not found",
+    },
+)
+
+COURSE_TA_CANDIDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: json_detail_examples(
-        (
-            "The account is already a TA of this course, teaches it, or is "
-            "an admin; or its membership changed concurrently (retry)"
-        ),
+        "The account is already a TA of this course, teaches it, or is an admin",
         {
             "already_ta": "Already a TA of this course",
             "course_teacher": "Teachers of this course cannot be TAs",
             "admin": "Admins cannot be TAs",
-            "concurrent": "Course membership changed concurrently; retry",
         },
     ),
     401: json_detail_example(
@@ -461,14 +491,19 @@ COURSE_TA_ASSIGN_RESPONSES: dict[int | str, dict[str, Any]] = {
         AUTH_UNAUTHORIZED_DETAIL,
     ),
     403: _COURSE_TEACHER_403,
-    404: json_detail_examples(
-        "Course or account not found",
-        {
-            "course_not_found": "Course not found",
-            "account_not_found": "Account not found",
-        },
+    404: _TA_ASSIGN_404,
+    422: _blank_account_id_422("query"),
+}
+
+COURSE_TA_ASSIGN_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: _TA_ASSIGN_400,
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
     ),
-    422: _UNKNOWN_TA_PERMISSION_422,
+    403: _COURSE_TEACHER_403,
+    404: _TA_ASSIGN_404,
+    422: _blank_account_id_422("body"),
 }
 
 COURSE_TA_UPDATE_RESPONSES: dict[int | str, dict[str, Any]] = {

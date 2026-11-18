@@ -16,6 +16,7 @@ from app.api.openapi_responses import (
     COURSE_MEMBER_LIST_RESPONSES,
     COURSE_STUDENT_REMOVE_RESPONSES,
     COURSE_TA_ASSIGN_RESPONSES,
+    COURSE_TA_CANDIDATE_RESPONSES,
     COURSE_TA_REVOKE_RESPONSES,
     COURSE_TA_UPDATE_RESPONSES,
 )
@@ -29,6 +30,7 @@ from app.schemas.course import (
     CourseMemberListItem,
     TaAssignRequest,
     TaAssignResponse,
+    TaCandidateResponse,
     TaPermissionsUpdateRequest,
     TaPermissionsUpdateResponse,
 )
@@ -142,6 +144,26 @@ async def remove_student(
     await courses_service.remove_course_student(db, current_user, courseId, userId)
 
 
+@router.get(
+    "/{courseId}/ta-candidate",
+    response_model=TaCandidateResponse,
+    responses=COURSE_TA_CANDIDATE_RESPONSES,
+)
+async def get_ta_candidate(
+    courseId: UUID,
+    current_user: ActiveUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    account_id: Annotated[
+        str,
+        Query(min_length=1, max_length=64, description="Exact account id"),
+    ],
+) -> TaCandidateResponse:
+    """Look up an account's name before assigning it as a TA (teacher only)."""
+    return await courses_service.get_ta_candidate(
+        db, current_user, courseId, account_id
+    )
+
+
 @router.post(
     "/{courseId}/tas",
     response_model=TaAssignResponse,
@@ -153,7 +175,7 @@ async def assign_ta(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TaAssignResponse:
-    """Make any registered account a TA of the course (course teacher only)."""
+    """Make any registered account a TA with every permission (teacher only)."""
     return await courses_service.assign_course_ta(db, current_user, courseId, payload)
 
 
