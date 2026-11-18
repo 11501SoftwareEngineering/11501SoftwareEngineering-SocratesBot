@@ -8,6 +8,7 @@ from app.api.v1.routes import (
     inquiry,
     reports,
     student_sessions,
+    summaries,
     topics,
     users,
 )
@@ -22,3 +23,4 @@ api_router.include_router(student_sessions.router)
 api_router.include_router(topics.router)
 api_router.include_router(inquiry.router)
 api_router.include_router(reports.router)
+api_router.include_router(summaries.router)
