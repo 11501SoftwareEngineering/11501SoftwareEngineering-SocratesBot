@@ -9,8 +9,11 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.enums import TaPermission, TopicStage
+from app.core.enums import TaPermission, TopicStage, UserRole
+from app.crud import course as course_crud
+from app.crud import inquiry_model as inquiry_model_crud
 from app.crud import topic as topic_crud
+from app.models.inquiry_model import InquiryModel
 from app.models.topic import Topic
 from app.models.user import User
 from app.schemas.inquiry import (
@@ -43,6 +46,22 @@ _OPENING_INSTRUCTIONS = (
     "Return it in opening_message and keep the other fields unchanged. "
     "The opening message may be empty. Do not name a student."
 )
+
+
+async def list_inquiry_models(db: AsyncSession, user: User) -> list[InquiryModel]:
+    """List the model catalog for a global teacher or an active TA of any course.
+
+    Raises:
+        HTTPException: 403 for anyone else.
+    """
+    if user.role != UserRole.TEACHER.value and not (
+        await course_crud.is_active_ta_anywhere(db, user.id)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Teacher or TA privileges required",
+        )
+    return await inquiry_model_crud.list_inquiry_models(db)
 
 
 def _fields_of(topic: Topic) -> InquiryFields:
