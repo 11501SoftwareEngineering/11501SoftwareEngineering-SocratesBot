@@ -15,6 +15,7 @@ from app.api.openapi_responses import (
     INQUIRY_SETUP_WRITE_RESPONSES,
 )
 from app.schemas.inquiry import (
+    GenerateInquiryRequest,
     InquiryModelResponse,
     InquirySetupResponse,
     InquirySetupWriteResponse,
@@ -73,6 +74,22 @@ async def save_inquiry_setup(
 
 
 @router.post(
+    "/topics/{topicId}/setup/generate",
+    response_model=InquirySetupResponse,
+    response_model_exclude_none=True,
+    responses=INQUIRY_GENERATE_RESPONSES,
+)
+async def generate_inquiry(
+    topicId: UUID,
+    payload: GenerateInquiryRequest,
+    current_user: TeacherUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> InquirySetupResponse:
+    """Suggest eight fields from the course description. This does not save them."""
+    return await inquiry_service.generate_inquiry(db, current_user, topicId, payload)
+
+
+@router.post(
     "/topics/{topicId}/setup/refine",
     response_model=InquirySetupResponse,
     response_model_exclude_none=True,
@@ -84,7 +101,7 @@ async def refine_inquiry(
     current_user: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InquirySetupResponse:
-    """Regenerate the eight fields from the setup on screen and the feedback."""
+    """Suggest eight fields from the setup on screen and the feedback. This does not save them."""
     return await inquiry_service.refine_inquiry(db, current_user, topicId, payload)
 
 
