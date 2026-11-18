@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-_SENSITIVE_FIELDS = frozenset({"password", "old_password", "new_password"})
+_SENSITIVE_FIELDS = frozenset({"password", "old_password", "new_password", "api_key"})
 
 
 def _redact_sensitive_input(value: Any) -> Any:
