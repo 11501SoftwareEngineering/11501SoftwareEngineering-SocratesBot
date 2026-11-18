@@ -315,15 +315,16 @@ def test_service_creates_and_reuses_session_with_database() -> None:
                 topic_id=topic.id,
                 store=store,
             )
-            second = await create_or_enter_session(
+            again = await create_or_enter_session(
                 user_id=student.id,
                 topic_id=topic.id,
                 store=store,
             )
 
             assert first.topic_id == topic.id
-            assert second.topic_id == topic.id
-            assert second.session_id == first.session_id
+            assert first.session_status == "open"
+            assert again.session_id == first.session_id
+            assert again.session_status == "open"
 
             created = await db.get(Session, first.session_id)
             assert created is not None
@@ -504,7 +505,6 @@ def test_student_list_keeps_existing_session_on_setup_topic() -> None:
             session = Session(
                 user_id=student_a.id,
                 topic_id=entered.id,
-                is_anonymous=False,
             )
             db.add(session)
             await db.flush()
