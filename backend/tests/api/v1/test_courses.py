@@ -897,7 +897,6 @@ def _patch_ta_course(
     instructor: bool = True,
     exists: bool = True,
     membership: object | None = None,
-    target_teaches: bool = False,
 ) -> SimpleNamespace:
     """Patch course lookups and TA write helpers; return the mocks."""
     course = _course()
@@ -906,11 +905,8 @@ def _patch_ta_course(
         "get_course_by_id",
         AsyncMock(return_value=course if exists else None),
     )
-    # Assign asks twice: first about the caller, then about the account.
     monkeypatch.setattr(
-        course_crud,
-        "is_course_instructor",
-        AsyncMock(side_effect=[instructor, target_teaches]),
+        course_crud, "is_course_instructor", AsyncMock(return_value=instructor)
     )
     # Assign reads the row in any state; update / revoke read the active one.
     lookup = AsyncMock(return_value=membership)
@@ -1002,7 +998,7 @@ def test_assign_ta_adds_account_outside_the_course(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
-    bob = seed_user(store, account_id="bob", name="Bob", role=UserRole.TEACHER)
+    bob = seed_user(store, account_id="bob", name="Bob")
     mocks = _patch_ta_course(monkeypatch, membership=None)
 
     response = auth_client.post(
@@ -1050,17 +1046,17 @@ def test_assign_ta_reactivates_a_left_membership(
 
 
 @pytest.mark.parametrize(
-    ("membership", "admin", "target_teaches", "detail"),
+    ("membership", "admin", "teacher_account", "detail"),
     [
         (_membership("TA"), False, False, "Already a TA of this course"),
         (_membership("STUDENT"), True, False, "Admins cannot be TAs"),
-        (None, False, True, "Teachers of this course cannot be TAs"),
+        (None, False, True, "Teacher accounts cannot be TAs"),
     ],
 )
 def test_assign_ta_rejected(
     membership: object | None,
     admin: bool,
-    target_teaches: bool,
+    teacher_account: bool,
     detail: str,
     auth_client: TestClient,
     store: FakeStore,
@@ -1068,12 +1064,15 @@ def test_assign_ta_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
-    seed_user(store, account_id="alice", name="Alice")
+    seed_user(
+        store,
+        account_id="alice",
+        name="Alice",
+        role=UserRole.TEACHER if teacher_account else UserRole.USER,
+    )
     if admin:
         monkeypatch.setattr(yaml_config, "SUPER_ADMIN_ACCOUNTS", ["alice"])
-    mocks = _patch_ta_course(
-        monkeypatch, membership=membership, target_teaches=target_teaches
-    )
+    mocks = _patch_ta_course(monkeypatch, membership=membership)
 
     response = auth_client.post(
         f"/api/v1/courses/{mocks.course.id}/tas",
@@ -1210,17 +1209,17 @@ def test_ta_candidate_returns_account_and_name(
 
 
 @pytest.mark.parametrize(
-    ("membership", "admin", "target_teaches", "detail"),
+    ("membership", "admin", "teacher_account", "detail"),
     [
         (_membership("TA"), False, False, "Already a TA of this course"),
         (None, True, False, "Admins cannot be TAs"),
-        (None, False, True, "Teachers of this course cannot be TAs"),
+        (None, False, True, "Teacher accounts cannot be TAs"),
     ],
 )
 def test_ta_candidate_rejected(
     membership: object | None,
     admin: bool,
-    target_teaches: bool,
+    teacher_account: bool,
     detail: str,
     auth_client: TestClient,
     store: FakeStore,
@@ -1228,12 +1227,15 @@ def test_ta_candidate_rejected(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
-    seed_user(store, account_id="alice", name="Alice")
+    seed_user(
+        store,
+        account_id="alice",
+        name="Alice",
+        role=UserRole.TEACHER if teacher_account else UserRole.USER,
+    )
     if admin:
         monkeypatch.setattr(yaml_config, "SUPER_ADMIN_ACCOUNTS", ["alice"])
-    mocks = _patch_ta_course(
-        monkeypatch, membership=membership, target_teaches=target_teaches
-    )
+    mocks = _patch_ta_course(monkeypatch, membership=membership)
 
     response = auth_client.get(
         f"/api/v1/courses/{mocks.course.id}/ta-candidate",

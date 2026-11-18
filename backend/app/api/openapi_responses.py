@@ -459,12 +459,12 @@ def _blank_account_id_422(location: str) -> dict[str, Any]:
 
 _TA_ASSIGN_400 = json_detail_examples(
     (
-        "The account is already a TA of this course, teaches it, or is "
+        "The account is already a TA of this course, is a teacher account, or is "
         "an admin; or its membership changed concurrently (retry)"
     ),
     {
         "already_ta": "Already a TA of this course",
-        "course_teacher": "Teachers of this course cannot be TAs",
+        "teacher_account": "Teacher accounts cannot be TAs",
         "admin": "Admins cannot be TAs",
         "concurrent": "Course membership changed concurrently; retry",
     },
@@ -479,10 +479,10 @@ _TA_ASSIGN_404 = json_detail_examples(
 
 COURSE_TA_CANDIDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: json_detail_examples(
-        "The account is already a TA of this course, teaches it, or is an admin",
+        "The account is already a TA of this course, is a teacher account, or is an admin",
         {
             "already_ta": "Already a TA of this course",
-            "course_teacher": "Teachers of this course cannot be TAs",
+            "teacher_account": "Teacher accounts cannot be TAs",
             "admin": "Admins cannot be TAs",
         },
     ),

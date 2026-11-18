@@ -233,7 +233,7 @@ def test_revoked_ta_can_be_assigned_again() -> None:
 
 
 @pytest.mark.integration
-def test_any_account_can_be_assigned_and_course_delete_cascades() -> None:
+def test_outside_student_account_can_be_assigned_and_course_delete_cascades() -> None:
     async def _run() -> None:
         await engine.dispose()
         await run_migrations()
@@ -249,7 +249,7 @@ def test_any_account_can_be_assigned_and_course_delete_cascades() -> None:
             )
             await db.commit()
 
-            # The course's own teacher cannot be a TA of it.
+            # A teacher account (here the course's own teacher) cannot be a TA.
             with pytest.raises(HTTPException) as exc_info:
                 await courses_service.assign_course_ta(
                     db,

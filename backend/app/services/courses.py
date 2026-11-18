@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authz import is_super_admin
-from app.core.enums import CourseRole, TaPermission
+from app.core.enums import CourseRole, TaPermission, UserRole
 from app.crud import course as course_crud
 from app.crud import user as user_crud
 from app.models.course import Course, CourseMembership
@@ -431,14 +431,11 @@ async def _require_active_ta(
 _ALL_TA_PERMISSIONS = sort_permissions(TaPermission)
 
 
-async def _require_assignable_account(
-    db: AsyncSession, course_id: UUID, account_id: str
-) -> User:
-    """Return the account behind ``account_id`` if it may become a TA here.
+async def _require_assignable_account(db: AsyncSession, account_id: str) -> User:
+    """Return the account behind ``account_id`` if it may become a TA.
 
     Raises:
-        HTTPException: 404 account missing; 400 an admin or a teacher of
-            this course.
+        HTTPException: 404 account missing; 400 an admin or a teacher account.
     """
     target = await user_crud.get_user_by_account(db, account_id)
     if target is None:
@@ -448,10 +445,9 @@ async def _require_assignable_account(
         )
     if is_super_admin(target):
         raise _ta_assign_rejected("Admins cannot be TAs")
-    if await course_crud.is_course_instructor(
-        db, course_id=course_id, teacher_id=target.id
-    ):
-        raise _ta_assign_rejected("Teachers of this course cannot be TAs")
+    # Only student (USER) accounts; this also covers the course's own teacher.
+    if target.role != UserRole.USER.value:
+        raise _ta_assign_rejected("Teacher accounts cannot be TAs")
     return target
 
 
@@ -465,11 +461,10 @@ async def get_ta_candidate(
 
     Raises:
         HTTPException: 404 course / account missing; 403 not the course
-            teacher; 400 already a TA here, a teacher of this course, or an
-            admin.
+            teacher; 400 already a TA here, a teacher account, or an admin.
     """
     await require_course_teacher(db, teacher, course_id)
-    target = await _require_assignable_account(db, course_id, account_id)
+    target = await _require_assignable_account(db, account_id)
     membership = await course_crud.get_active_membership(
         db, course_id=course_id, user_id=target.id
     )
@@ -481,18 +476,17 @@ async def get_ta_candidate(
 async def assign_course_ta(
     db: AsyncSession, teacher: User, course_id: UUID, payload: TaAssignRequest
 ) -> TaAssignResponse:
-    """Make any registered account a TA of the course with every permission.
+    """Make a student (USER) account a TA of the course with every permission.
 
     A student of the course is promoted in place (sessions are kept); someone
     who left or was removed rejoins as a TA; anyone else is added as a TA.
 
     Raises:
         HTTPException: 404 course / account missing; 403 not the course
-            teacher; 400 already a TA here, a teacher of this course, or an
-            admin.
+            teacher; 400 already a TA here, a teacher account, or an admin.
     """
     await require_course_teacher(db, teacher, course_id)
-    target = await _require_assignable_account(db, course_id, payload.account_id)
+    target = await _require_assignable_account(db, payload.account_id)
     # Lock the row (active or soft-left) so a concurrent removal, leave or
     # revoke cannot slip in between this check and the write.
     membership = await course_crud.get_membership(
