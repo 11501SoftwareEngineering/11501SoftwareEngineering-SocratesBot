@@ -24,7 +24,8 @@ def upgrade() -> None:
     op.create_table(
         "teacher_ai_settings",
         sa.Column("user_id", sa.UUID(), nullable=False),
-        sa.Column("api_key", sa.Text(), nullable=True),
+        sa.Column("api_key_hash", sa.String(length=64), nullable=True),
+        sa.Column("masked_key", sa.String(length=16), nullable=True),
         sa.Column("key_updated_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("default_model_id", sa.Text(), nullable=True),
         sa.ForeignKeyConstraint(

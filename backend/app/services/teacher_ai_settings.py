@@ -3,6 +3,7 @@
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import hash_token
 from app.crud import teacher_ai_settings as settings_crud
 from app.models.inquiry_model import InquiryModel
 from app.models.teacher_ai_settings import TeacherAiSettings
@@ -43,10 +44,10 @@ async def _loaded_default(
 
 async def read_settings(db: AsyncSession, current_user: User) -> AiSettingsResponse:
     row = await settings_crud.get_settings(db, current_user.id)
-    api_key = None if row is None else row.api_key
+    stored = row is not None and row.api_key_hash is not None
     return AiSettingsResponse(
-        configured=api_key is not None,
-        masked_key=None if api_key is None else mask_api_key(api_key),
+        configured=stored,
+        masked_key=row.masked_key if stored and row is not None else None,
         updated_at=None if row is None else row.key_updated_at,
         default_model=await _loaded_default(db, row),
     )
@@ -55,12 +56,17 @@ async def read_settings(db: AsyncSession, current_user: User) -> AiSettingsRespo
 async def save_api_key(
     db: AsyncSession, current_user: User, payload: ApiKeyRequest
 ) -> ApiKeyResponse:
-    row = await settings_crud.save_api_key(db, current_user.id, payload.api_key)
-    if row.api_key is None or row.key_updated_at is None:
+    row = await settings_crud.save_api_key(
+        db,
+        current_user.id,
+        hash_token(payload.api_key),
+        mask_api_key(payload.api_key),
+    )
+    if row.api_key_hash is None or row.masked_key is None or row.key_updated_at is None:
         raise RuntimeError("failed to store teacher ai settings")
     return ApiKeyResponse(
         configured=True,
-        masked_key=mask_api_key(row.api_key),
+        masked_key=row.masked_key,
         updated_at=row.key_updated_at,
     )
 

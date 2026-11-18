@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.core.enums import UserRole
+from app.core.security import hash_token
 from tests.api.v1.conftest import bearer_from, seed_user
 
 _KNOWN_MODEL = "openai/gpt-6-luna"
@@ -17,7 +18,8 @@ _KNOWN_NAME = "GPT-6 Luna"
 
 @dataclass
 class _Row:
-    api_key: str | None = None
+    api_key_hash: str | None = None
+    masked_key: str | None = None
     key_updated_at: datetime | None = None
     default_model_id: str | None = None
 
@@ -42,16 +44,20 @@ def _install(monkeypatch: pytest.MonkeyPatch, memory: _Memory) -> None:
     async def get_inquiry_model(_db, model_id: str) -> _Model | None:
         return catalog.get(model_id)
 
-    async def save_api_key(_db, user_id: uuid.UUID, api_key: str) -> _Row:
+    async def save_api_key(
+        _db, user_id: uuid.UUID, api_key_hash: str, masked_key: str
+    ) -> _Row:
         row = memory.rows.setdefault(user_id, _Row())
-        row.api_key = api_key
+        row.api_key_hash = api_key_hash
+        row.masked_key = masked_key
         row.key_updated_at = datetime.now(UTC)
         return row
 
     async def clear_api_key(_db, user_id: uuid.UUID) -> None:
         row = memory.rows.get(user_id)
         if row is not None:
-            row.api_key = None
+            row.api_key_hash = None
+            row.masked_key = None
 
     async def set_default_model(_db, user_id: uuid.UUID, model_id: str) -> None:
         row = memory.rows.setdefault(user_id, _Row())
@@ -108,6 +114,9 @@ def test_teacher_saves_reads_and_removes_key_and_keeps_default_model(
     assert saved_body["masked_key"] == "aaa...aaaa"
     assert saved_body["updated_at"]
     assert "api_key" not in saved_body
+    stored = next(iter(memory.rows.values()))
+    assert stored.api_key_hash == hash_token(secret)
+    assert secret not in (stored.api_key_hash or "")
 
     chosen = auth_client.patch(
         "/api/v1/users/me/ai/model",

@@ -26,16 +26,25 @@ async def get_inquiry_model(db: AsyncSession, model_id: str) -> InquiryModel | N
 
 
 async def save_api_key(
-    db: AsyncSession, user_id: uuid.UUID, api_key: str
+    db: AsyncSession, user_id: uuid.UUID, api_key_hash: str, masked_key: str
 ) -> TeacherAiSettings:
-    """Store the key. A second save replaces the previous key on the same row."""
+    """Store the digest and mask. A second save replaces both on the same row."""
     now = datetime.now(UTC)
     stmt = (
         insert(TeacherAiSettings)
-        .values(user_id=user_id, api_key=api_key, key_updated_at=now)
+        .values(
+            user_id=user_id,
+            api_key_hash=api_key_hash,
+            masked_key=masked_key,
+            key_updated_at=now,
+        )
         .on_conflict_do_update(
             index_elements=[TeacherAiSettings.user_id],
-            set_={"api_key": api_key, "key_updated_at": now},
+            set_={
+                "api_key_hash": api_key_hash,
+                "masked_key": masked_key,
+                "key_updated_at": now,
+            },
         )
     )
     try:
@@ -45,17 +54,17 @@ async def save_api_key(
         await db.rollback()
         raise RuntimeError(_STORE_FAILED) from None
     row = await get_settings(db, user_id)
-    if row is None or row.api_key is None:
+    if row is None or row.api_key_hash is None or row.masked_key is None:
         raise RuntimeError(_STORE_FAILED)
     return row
 
 
 async def clear_api_key(db: AsyncSession, user_id: uuid.UUID) -> None:
-    """Remove the stored key. Leave the default model and the row otherwise."""
+    """Remove the digest and mask. Leave the default model and the row otherwise."""
     await db.execute(
         update(TeacherAiSettings)
         .where(TeacherAiSettings.user_id == user_id)
-        .values(api_key=None)
+        .values(api_key_hash=None, masked_key=None)
     )
     await db.commit()
 

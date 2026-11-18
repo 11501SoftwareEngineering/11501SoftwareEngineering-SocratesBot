@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Text
+from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,7 +18,8 @@ class TeacherAiSettings(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    api_key_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    masked_key: Mapped[str | None] = mapped_column(String(16), nullable=True)
     key_updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
