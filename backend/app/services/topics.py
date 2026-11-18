@@ -148,18 +148,24 @@ async def get_topic_explanation(
 ) -> TopicExplanationResponse:
     """Return the topic's title and background (``key_terms`` not stored yet).
 
+    Teachers and TAs can read a topic in any stage; students only once it is
+    in ``conversation`` or ``summary``.
+
     Raises:
-        HTTPException: 404 if the topic is missing or ``user`` is not a member
-            of its course.
+        HTTPException: 404 if the topic is missing, ``user`` is not a member
+            of its course, or a student asks for a setup topic.
     """
     topic = await topic_crud.get_topic_by_id(db, topic_id)
     if topic is None:
         raise _topic_not_found()
-    if await courses_service.get_my_course_role(db, user, topic.course_id) is None:
+    role = await courses_service.get_my_course_role(db, user, topic.course_id)
+    if role is None:
+        raise _topic_not_found()
+    if role is CourseRole.STUDENT and topic.stage not in _STUDENT_VISIBLE_STAGES:
         raise _topic_not_found()
     return TopicExplanationResponse(
         topic_id=topic.id,
         title=topic.title,
-        background=topic.description,
+        background=topic.background_info,
         key_terms=[],
     )

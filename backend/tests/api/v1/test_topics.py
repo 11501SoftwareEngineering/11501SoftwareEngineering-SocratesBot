@@ -43,6 +43,7 @@ def _topic(course_id, **overrides):
         "title": "T1",
         "description": "Background",
         "stage": "conversation",
+        "background_info": "A published case",
         "age_band": "16-18",
         "max_turns": 10,
     }
@@ -508,9 +509,41 @@ def test_explanation_open_to_all_members(
     assert response.json() == {
         "topic_id": str(topic.id),
         "title": "T1",
-        "background": "Background",
+        "background": "A published case",
         "key_terms": [],
     }
+
+
+@pytest.mark.parametrize(
+    ("db_role", "stage", "expected"),
+    [
+        ("STUDENT", "setup", 404),
+        ("STUDENT", "conversation", 200),
+        ("STUDENT", "summary", 200),
+        ("TEACHER", "setup", 200),
+        ("TA", "setup", 200),
+    ],
+)
+def test_explanation_hides_setup_topics_from_students(
+    db_role: str,
+    stage: str,
+    expected: int,
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store)
+    course = _course()
+    topic = _topic(course.id, stage=stage)
+    _patch_role(monkeypatch, db_role, course)
+    monkeypatch.setattr(topic_crud, "get_topic_by_id", AsyncMock(return_value=topic))
+
+    response = auth_client.get(
+        f"/api/v1/topics/{topic.id}/explanation", headers={"Authorization": bearer}
+    )
+
+    assert response.status_code == expected
 
 
 @pytest.mark.parametrize("topic_exists", [True, False])

@@ -400,7 +400,7 @@ TOPIC_EXPLANATION_RESPONSES: dict[int | str, dict[str, Any]] = {
         AUTH_UNAUTHORIZED_DETAIL,
     ),
     404: json_detail_example(
-        "Not a course member or topic not found",
+        "Not a course member, topic not found, or a student asking for a setup topic",
         "Topic not found",
     ),
 }
