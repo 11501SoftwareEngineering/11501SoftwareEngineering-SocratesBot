@@ -47,6 +47,8 @@ def _topic(course_id, **overrides):
         "title": "T1",
         "description": "Background",
         "stage": "conversation",
+        "age_band": "16-18",
+        "max_turns": 10,
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -97,6 +99,9 @@ def test_student_topic_list_has_session_fields(
                 "topic_id": str(started.id),
                 "title": "Started",
                 "description": "Background",
+                "topic_status": "conversation",
+                "age_band": "16-18",
+                "max_turns": 10,
                 "session_status": "IN_PROGRESS",
                 "session_id": str(session_id),
             },
@@ -104,6 +109,9 @@ def test_student_topic_list_has_session_fields(
                 "topic_id": str(fresh.id),
                 "title": "Fresh",
                 "description": None,
+                "topic_status": "conversation",
+                "age_band": "16-18",
+                "max_turns": 10,
                 "session_status": None,
                 "session_id": None,
             },
@@ -114,58 +122,40 @@ def test_student_topic_list_has_session_fields(
     )
 
 
-def test_list_hides_setup_without_session_and_keeps_entered_topic(
+def test_student_topic_list_shows_only_conversation_and_summary(
     auth_client: TestClient,
     store: FakeStore,
+    course_route_db: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    bearer, student = _login(auth_client, store)
-    other_bearer, other = _login(auth_client, store, "student2")
+    bearer, _ = _login(auth_client, store)
     course = _course()
     _patch_role(monkeypatch, "STUDENT", course)
-    hidden = _topic(course.id, title="Hidden", stage="setup")
-    entered = _topic(course.id, title="Entered", stage="setup")
-    open_topic = _topic(course.id, title="Open", stage="conversation")
-    own_session = uuid4()
-    other_session = uuid4()
-    rows = {
-        student.id: [
-            (hidden, None, None),
-            (entered, SessionStatus.IN_PROGRESS.value, own_session),
-            (open_topic, None, None),
-        ],
-        other.id: [
-            (hidden, None, None),
-            (entered, None, None),
-            (open_topic, None, other_session),
-        ],
-    }
-
-    async def list_topics(_db, *, course_id, user_id):
-        assert course_id == course.id
-        return rows[user_id]
-
-    monkeypatch.setattr(topic_crud, "list_topics_with_user_session", list_topics)
-
-    own = auth_client.get(
-        f"/api/v1/courses/{course.id}/topics",
-        headers={"Authorization": bearer},
-    )
-    theirs = auth_client.get(
-        f"/api/v1/courses/{course.id}/topics",
-        headers={"Authorization": other_bearer},
+    setup = _topic(course.id, title="Setup", stage="setup")
+    talking = _topic(course.id, title="Talking", stage="conversation")
+    summing = _topic(course.id, title="Summing", stage="summary")
+    monkeypatch.setattr(
+        topic_crud,
+        "list_topics_with_user_session",
+        AsyncMock(
+            return_value=[
+                (setup, None, None),
+                (talking, None, None),
+                (summing, SessionStatus.COMPLETED.value, uuid4()),
+            ]
+        ),
     )
 
-    assert own.status_code == 200
-    own_topics = own.json()["topics"]
-    assert [item["title"] for item in own_topics] == ["Entered", "Open"]
-    assert own_topics[0]["session_id"] == str(own_session)
-    assert str(other_session) not in own.text
-    assert theirs.status_code == 200
-    assert [item["topic_id"] for item in theirs.json()["topics"]] == [
-        str(open_topic.id)
+    response = auth_client.get(
+        f"/api/v1/courses/{course.id}/topics", headers={"Authorization": bearer}
+    )
+
+    assert response.status_code == 200
+    topics = response.json()["topics"]
+    assert [(t["title"], t["topic_status"]) for t in topics] == [
+        ("Talking", "conversation"),
+        ("Summing", "summary"),
     ]
-    assert str(own_session) not in theirs.text
 
 
 def test_teacher_topic_list_has_counts(
@@ -197,6 +187,9 @@ def test_teacher_topic_list_has_counts(
             "topic_id": str(topic.id),
             "title": "T1",
             "description": "Background",
+            "topic_status": "conversation",
+            "age_band": "16-18",
+            "max_turns": 10,
             "answered_count": 3,
             "student_count": 8,
         }
@@ -215,7 +208,7 @@ def test_ta_topic_list_has_counts(
     monkeypatch.setattr(
         topic_crud,
         "list_topics_with_completed_count",
-        AsyncMock(return_value=[(_topic(course.id), 1)]),
+        AsyncMock(return_value=[(_topic(course.id, stage="setup"), 1)]),
     )
     monkeypatch.setattr(course_crud, "count_active_students", AsyncMock(return_value=4))
 
@@ -229,6 +222,8 @@ def test_ta_topic_list_has_counts(
     assert "my_permissions" not in body
     assert body["topics"][0]["answered_count"] == 1
     assert body["topics"][0]["student_count"] == 4
+    # Staff see setup topics too.
+    assert body["topics"][0]["topic_status"] == "setup"
 
 
 @pytest.mark.parametrize("exists", [True, False])

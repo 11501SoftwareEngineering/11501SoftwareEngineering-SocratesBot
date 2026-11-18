@@ -101,41 +101,46 @@ async def delete_topic(db: AsyncSession, user: User, topic_id: UUID) -> None:
         raise
 
 
+_STUDENT_VISIBLE_STAGES = frozenset({TopicStage.CONVERSATION, TopicStage.SUMMARY})
+
+
+def _topic_fields(topic: Topic) -> dict:
+    """Fields every caller sees; set explicitly so exclude_unset keeps them."""
+    return {
+        "topic_id": topic.id,
+        "title": topic.title,
+        "description": topic.description,
+        "topic_status": TopicStage(topic.stage),
+        "age_band": topic.age_band,
+        "max_turns": topic.max_turns,
+    }
+
+
 async def _student_topics(
     db: AsyncSession, user: User, course_id: UUID
 ) -> list[TopicListItem]:
-    """Topics with the student's own session state."""
+    """Conversation and summary topics with the student's own session state."""
     session_rows = await topic_crud.list_topics_with_user_session(
         db, course_id=course_id, user_id=user.id
     )
-    topics: list[TopicListItem] = []
-    for topic, session_status, session_id in session_rows:
-        # A setup topic stays hidden until this student already has a session.
-        if session_id is None and topic.stage == TopicStage.SETUP.value:
-            continue
-        topics.append(
-            TopicListItem(
-                topic_id=topic.id,
-                title=topic.title,
-                description=topic.description,
-                session_status=(
-                    SessionStatus(session_status) if session_status else None
-                ),
-                session_id=session_id,
-            )
+    return [
+        TopicListItem(
+            **_topic_fields(topic),
+            session_status=SessionStatus(session_status) if session_status else None,
+            session_id=session_id,
         )
-    return topics
+        for topic, session_status, session_id in session_rows
+        if topic.stage in _STUDENT_VISIBLE_STAGES
+    ]
 
 
 async def _staff_topics(db: AsyncSession, course_id: UUID) -> list[TopicListItem]:
-    """Topics with answered (completed-session) and active-student counts."""
+    """Topics in every stage with answered and active-student counts."""
     student_count = await course_crud.count_active_students(db, course_id)
     count_rows = await topic_crud.list_topics_with_completed_count(db, course_id)
     return [
         TopicListItem(
-            topic_id=topic.id,
-            title=topic.title,
-            description=topic.description,
+            **_topic_fields(topic),
             answered_count=answered_count,
             student_count=student_count,
         )

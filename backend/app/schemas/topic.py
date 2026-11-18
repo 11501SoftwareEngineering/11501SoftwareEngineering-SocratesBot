@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.core.enums import CourseRole, SessionStatus
+from app.core.enums import AgeBand, CourseRole, SessionStatus, TopicStage
 
 _EXAMPLE_COURSE_ID = UUID("11111111-1111-1111-1111-111111111111")
 _EXAMPLE_TOPIC_ID = UUID("33333333-3333-3333-3333-333333333333")
@@ -31,7 +31,8 @@ class TopicWriteResponse(BaseModel):
 class TopicListItem(BaseModel):
     """Topic row; which optional fields appear depends on the caller's role.
 
-    Students get ``session_status`` / ``session_id`` (null until they enter);
+    Students see only ``conversation`` and ``summary`` topics and get
+    ``session_status`` / ``session_id`` (null until they enter);
     teachers and TAs get ``answered_count`` / ``student_count``. Unused fields
     are omitted from the response (``response_model_exclude_unset``).
     """
@@ -39,6 +40,9 @@ class TopicListItem(BaseModel):
     topic_id: UUID = Field(examples=[_EXAMPLE_TOPIC_ID])
     title: str = Field(examples=[_EXAMPLE_TITLE])
     description: str | None = Field(default=None, examples=[_EXAMPLE_DESCRIPTION])
+    topic_status: TopicStage = Field(examples=[TopicStage.CONVERSATION])
+    age_band: AgeBand | None = Field(default=None, examples=[AgeBand.AGE_16_18])
+    max_turns: int | None = Field(default=None, examples=[10])
     session_status: SessionStatus | None = Field(
         default=None,
         examples=[SessionStatus.IN_PROGRESS],
