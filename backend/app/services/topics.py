@@ -185,7 +185,7 @@ async def list_course_topics(
 async def get_topic_explanation(
     db: AsyncSession, user: User, topic_id: UUID
 ) -> TopicExplanationResponse:
-    """Return the topic's title and background (``key_terms`` not stored yet).
+    """Return the topic's title and inquiry background (``key_terms`` not stored yet).
 
     Raises:
         HTTPException: 404 if the topic is missing; 403 if not a member.
@@ -203,6 +203,6 @@ async def get_topic_explanation(
     return TopicExplanationResponse(
         topic_id=topic.id,
         title=topic.title,
-        background=topic.description,
+        background=topic.background_info or topic.description,
         key_terms=[],
     )

@@ -46,6 +46,7 @@ def _topic(course_id, **overrides):
         "course_id": course_id,
         "title": "T1",
         "description": "Background",
+        "background_info": None,
         "stage": "conversation",
     }
     base.update(overrides)
@@ -514,6 +515,26 @@ def test_explanation_for_course_member(
         "background": "Background",
         "key_terms": [],
     }
+
+
+def test_explanation_returns_inquiry_background(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store)
+    topic = _topic(_course().id, background_info="Inquiry background")
+    monkeypatch.setattr(topic_crud, "get_topic_by_id", AsyncMock(return_value=topic))
+    monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=True))
+
+    response = auth_client.get(
+        f"/api/v1/topics/{topic.id}/explanation", headers={"Authorization": bearer}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["background"] == "Inquiry background"
+    assert response.json()["key_terms"] == []
 
 
 @pytest.mark.parametrize(("topic_exists", "expected"), [(True, 403), (False, 404)])
