@@ -79,6 +79,27 @@ async def test_provider_error_logs_status_only(
     assert "502" in caplog.text
 
 
+async def test_passed_api_key_is_the_openrouter_bearer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    teacher_key = "sk-teacher-openrouter-key"
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr(KEY))
+    monkeypatch.setattr(settings, "OPENAI_MODEL", "gpt-test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == f"Bearer {teacher_key}"
+        assert KEY.encode() not in request.content
+        return _completion({"topic": "kept"})
+
+    parsed = await _client(handler).complete_json(
+        instructions="Write JSON",
+        material="notes",
+        api_key=teacher_key,
+    )
+
+    assert parsed == {"topic": "kept"}
+
+
 async def test_refusal_is_not_logged(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

@@ -32,6 +32,7 @@ from app.schemas.inquiry import (
 )
 from app.services import courses as courses_service
 from app.services.model_client import ModelCallError, OpenAIChatClient
+from app.services.teacher_ai_settings import openrouter_api_key
 from app.services.topics import get_instructed_topic
 
 _INSTRUCTIONS = (
@@ -142,12 +143,15 @@ def _model_failure(exc: ModelCallError) -> HTTPException:
     return HTTPException(status_code=code, detail="Inquiry generation failed")
 
 
-async def _model_json(model_id: str, instructions: str, material: str) -> dict:
+async def _model_json(
+    model_id: str, instructions: str, material: str, api_key: str
+) -> dict:
     try:
         return await OpenAIChatClient().complete_json(
             instructions=instructions,
             material=material,
             model=model_id,
+            api_key=api_key,
         )
     except ModelCallError as exc:
         raise _model_failure(exc) from None
@@ -164,9 +168,9 @@ def _validated(raw: dict, schema: type[GeneratedInquiry] | type[OpeningMessageDr
 
 
 async def _complete(
-    model_id: str, instructions: str, material: str
+    model_id: str, instructions: str, material: str, api_key: str
 ) -> GeneratedInquiry:
-    raw = await _model_json(model_id, instructions, material)
+    raw = await _model_json(model_id, instructions, material, api_key)
     return _validated(raw, GeneratedInquiry)
 
 
@@ -230,6 +234,7 @@ async def create_inquiry_topic(
     )
     language = settings.DEFAULT_LANGUAGE_CODE
     model_id = settings.OPENAI_MODEL
+    api_key = await openrouter_api_key(db, user.id)
     generated = await _complete(
         model_id,
         _INSTRUCTIONS,
@@ -239,6 +244,7 @@ async def create_inquiry_topic(
             f"max_turns: {payload.max_turns}\n"
             f"course_description:\n{payload.course_description}"
         ),
+        api_key,
     )
     try:
         topic = await topic_crud.create_topic(
@@ -357,6 +363,7 @@ async def generate_inquiry(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Invalid model id",
         )
+    api_key = await openrouter_api_key(db, teacher.id)
     generated = await _complete(
         catalog.model_id,
         _INSTRUCTIONS,
@@ -366,6 +373,7 @@ async def generate_inquiry(
             f"max_turns: {payload.max_turns}\n"
             f"course_description:\n{payload.course_description}"
         ),
+        api_key,
     )
     return _suggestion(topic, generated, catalog.model_id)
 
@@ -383,10 +391,12 @@ async def refine_inquiry(
     await _require_setup(topic)
     model_id = topic.model_id or settings.OPENAI_MODEL
     language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
+    api_key = await openrouter_api_key(db, teacher.id)
     generated = await _complete(
         model_id,
         _INSTRUCTIONS,
         _material(payload.setup, content_language=language, feedback=payload.feedback),
+        api_key,
     )
     return _suggestion(topic, generated, topic.model_id)
 
@@ -406,6 +416,7 @@ async def opening_message(
     topic_id = topic.id
     model_id = topic.model_id or settings.OPENAI_MODEL
     draft = payload.setup
+    api_key = await openrouter_api_key(db, teacher.id)
     await db.commit()
     raw = await _model_json(
         model_id,
@@ -420,6 +431,7 @@ async def opening_message(
             f"exclusions: {draft.exclusions}\n"
             f"opening_message: {draft.opening_message}"
         ),
+        api_key,
     )
     generated = _validated(raw, OpeningMessageDraft)
     try:

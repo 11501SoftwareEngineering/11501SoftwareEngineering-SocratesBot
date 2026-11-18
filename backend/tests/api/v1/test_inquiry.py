@@ -262,7 +262,7 @@ def test_refine_uses_the_screen_setup(
     seen: dict[str, str] = {}
 
     async def complete(
-        self, *, instructions: str, material: str, model: str | None = None
+        self, *, instructions: str, material: str, model: str | None = None, **_extra
     ):
         seen["material"] = material
         return GENERATED
@@ -320,7 +320,9 @@ def test_failed_regeneration_keeps_the_saved_inquiry(
     topic = _topic(inquiry_topic="saved topic", core_question="saved question")
     recorded = _ready(monkeypatch, topic)
 
-    async def fail(self, *, instructions: str, material: str, model: str | None = None):
+    async def fail(
+        self, *, instructions: str, material: str, model: str | None = None, **_extra
+    ):
         raise ModelCallError(503)
 
     monkeypatch.setattr(OpenAIChatClient, "complete_json", fail)
@@ -353,7 +355,7 @@ def test_opening_message_is_stored(
     recorded = _ready(monkeypatch, topic)
 
     async def complete(
-        self, *, instructions: str, material: str, model: str | None = None
+        self, *, instructions: str, material: str, model: str | None = None, **_extra
     ):
         return {**GENERATED, "topic": "  ", "core_question": ""}
 
@@ -413,7 +415,7 @@ def test_overlong_model_text_is_not_stored(
     recorded = _ready(monkeypatch, topic)
 
     async def complete(
-        self, *, instructions: str, material: str, model: str | None = None
+        self, *, instructions: str, material: str, model: str | None = None, **_extra
     ):
         return {**GENERATED, "background_info": "x" * 8001}
 
@@ -445,7 +447,7 @@ def test_generate_returns_a_suggestion_and_leaves_the_topic(
     )
 
     async def complete(
-        self, *, instructions: str, material: str, model: str | None = None
+        self, *, instructions: str, material: str, model: str | None = None, **_extra
     ):
         assert model == "openai/gpt-6-luna"
         assert "content_language: zh-TW\n" in material
@@ -652,7 +654,9 @@ def test_generate_maps_a_model_failure_and_leaves_the_topic(
         AsyncMock(return_value=SimpleNamespace(model_id="openai/gpt-6-luna")),
     )
 
-    async def fail(self, *, instructions: str, material: str, model: str | None = None):
+    async def fail(
+        self, *, instructions: str, material: str, model: str | None = None, **_extra
+    ):
         if status_code == 502:
             return {**GENERATED, "background_info": "x" * 8001}
         raise ModelCallError(503)

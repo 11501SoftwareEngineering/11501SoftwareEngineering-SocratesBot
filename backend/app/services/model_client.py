@@ -91,7 +91,12 @@ class OpenAIChatClient:
         self._transport = transport
 
     async def complete_json(
-        self, *, instructions: str, material: str, model: str | None = None
+        self,
+        *,
+        instructions: str,
+        material: str,
+        model: str | None = None,
+        api_key: str | None = None,
     ) -> dict:
         return await self._post(
             name="inquiry_setup",
@@ -99,6 +104,7 @@ class OpenAIChatClient:
             instructions=instructions,
             material=material,
             model=model,
+            api_key=api_key,
         )
 
     async def complete_object(
@@ -139,8 +145,13 @@ class OpenAIChatClient:
         instructions: str,
         material: str,
         model: str | None = None,
+        api_key: str | None = None,
     ) -> dict:
-        key = settings.OPENAI_API_KEY.get_secret_value()
+        key = (
+            api_key
+            if api_key is not None
+            else settings.OPENAI_API_KEY.get_secret_value()
+        )
         system, user = _outbound(instructions, material)
         payload = {
             "model": model or settings.OPENAI_MODEL,

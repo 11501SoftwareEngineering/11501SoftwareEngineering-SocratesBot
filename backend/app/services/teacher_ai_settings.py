@@ -1,9 +1,12 @@
 """Read and update a teacher's provider key and default model."""
 
+import uuid
+
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import hash_token
+from app.core.config import settings
+from app.core.security import decrypt_api_key, encrypt_api_key
 from app.crud import teacher_ai_settings as settings_crud
 from app.models.inquiry_model import InquiryModel
 from app.models.teacher_ai_settings import TeacherAiSettings
@@ -44,7 +47,7 @@ async def _loaded_default(
 
 async def read_settings(db: AsyncSession, current_user: User) -> AiSettingsResponse:
     row = await settings_crud.get_settings(db, current_user.id)
-    stored = row is not None and row.api_key_hash is not None
+    stored = row is not None and row.api_key_ciphertext is not None
     return AiSettingsResponse(
         configured=stored,
         masked_key=row.masked_key if stored and row is not None else None,
@@ -59,16 +62,35 @@ async def save_api_key(
     row = await settings_crud.save_api_key(
         db,
         current_user.id,
-        hash_token(payload.api_key),
+        encrypt_api_key(payload.api_key),
         mask_api_key(payload.api_key),
     )
-    if row.api_key_hash is None or row.masked_key is None or row.key_updated_at is None:
+    if (
+        row.api_key_ciphertext is None
+        or row.masked_key is None
+        or row.key_updated_at is None
+    ):
         raise RuntimeError("failed to store teacher ai settings")
     return ApiKeyResponse(
         configured=True,
         masked_key=row.masked_key,
         updated_at=row.key_updated_at,
     )
+
+
+async def openrouter_api_key(db: AsyncSession, user_id: uuid.UUID) -> str:
+    """Return the teacher's OpenRouter key, or the server key when none is stored."""
+    row = await settings_crud.get_settings(db, user_id)
+    stored = None if row is None else row.api_key_ciphertext
+    if not isinstance(stored, str) or stored == "":
+        return settings.OPENAI_API_KEY.get_secret_value()
+    try:
+        return decrypt_api_key(stored)
+    except RuntimeError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Teacher API key cannot be read",
+        ) from None
 
 
 async def clear_api_key(db: AsyncSession, current_user: User) -> None:
