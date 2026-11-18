@@ -297,20 +297,39 @@ _TOPIC_TITLE_TOO_SHORT_422 = json_detail_example(
     ],
 )
 
+_TOPIC_CREATE_INVALID_422 = json_detail_example(
+    "Request validation failed",
+    [
+        {
+            "type": "string_too_short",
+            "loc": ["body", "course_description"],
+            "msg": "String should have at least 1 character",
+        }
+    ],
+)
+
 TOPIC_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
     ),
     403: json_detail_example(
-        "Course teacher required",
-        "Course teacher required",
+        "Course teacher or TA with edit_topics permission required",
+        "Course teacher or TA with edit_topics permission required",
     ),
     404: json_detail_example(
         "Course not found",
         "Course not found",
     ),
-    422: _TOPIC_TITLE_TOO_SHORT_422,
+    422: _TOPIC_CREATE_INVALID_422,
+    502: json_detail_example(
+        "Inquiry generation failed",
+        "Inquiry generation failed",
+    ),
+    503: json_detail_example(
+        "Inquiry generation failed",
+        "Inquiry generation failed",
+    ),
 }
 
 TEACHER_TOPIC_UPDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
@@ -464,6 +483,70 @@ COURSE_TA_REVOKE_RESPONSES: dict[int | str, dict[str, Any]] = {
         {
             "course_not_found": "Course not found",
             "ta_not_found": "TA not found",
+        },
+    ),
+}
+
+_INQUIRY_DENIED = json_detail_examples(
+    "Inquiry access denied",
+    {
+        "not_teacher": "Teacher privileges required",
+        "not_instructor": "Course teacher required",
+    },
+)
+_INQUIRY_MISSING = json_detail_example("Topic not found", "Topic not found")
+_INQUIRY_UNAUTHORIZED = json_detail_example(
+    AUTH_UNAUTHORIZED_DETAIL,
+    AUTH_UNAUTHORIZED_DETAIL,
+)
+
+INQUIRY_SETUP_READ_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: _INQUIRY_UNAUTHORIZED,
+    403: _INQUIRY_DENIED,
+    404: _INQUIRY_MISSING,
+}
+
+INQUIRY_SETUP_WRITE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_examples(
+        "Inquiry was not saved",
+        {
+            "not_in_setup": "Topic is not in setup",
+        },
+    ),
+    401: _INQUIRY_UNAUTHORIZED,
+    403: _INQUIRY_DENIED,
+    404: _INQUIRY_MISSING,
+    422: json_detail_example(
+        "Request validation failed",
+        "Request validation failed",
+    ),
+}
+
+_INQUIRY_GENERATION_FAILED = json_detail_example(
+    "Inquiry generation failed",
+    "Inquiry generation failed",
+)
+
+INQUIRY_GENERATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    **INQUIRY_SETUP_WRITE_RESPONSES,
+    409: json_detail_example("Inquiry was updated", "Inquiry was updated"),
+    502: _INQUIRY_GENERATION_FAILED,
+    503: _INQUIRY_GENERATION_FAILED,
+}
+
+INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_example(
+        "Topic is not in setup",
+        "Topic is not in setup",
+    ),
+    401: _INQUIRY_UNAUTHORIZED,
+    403: _INQUIRY_DENIED,
+    404: _INQUIRY_MISSING,
+    422: json_detail_examples(
+        "Inquiry was not published",
+        {
+            "incomplete": "Incomplete setup: topic",
+            "invalid": "Request validation failed",
         },
     ),
 }

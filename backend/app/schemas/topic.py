@@ -6,18 +6,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.core.enums import SessionStatus
+from app.core.enums import SessionStatus, TopicStage
 
 _EXAMPLE_COURSE_ID = UUID("11111111-1111-1111-1111-111111111111")
 _EXAMPLE_TOPIC_ID = UUID("33333333-3333-3333-3333-333333333333")
 _EXAMPLE_SESSION_ID = UUID("44444444-4444-4444-4444-444444444444")
 _EXAMPLE_TITLE = "Should AI replace teachers?"
 _EXAMPLE_DESCRIPTION = "Discuss the role of AI in education"
-
-
-class TopicCreateRequest(BaseModel):
-    title: str = Field(min_length=1, max_length=255, examples=[_EXAMPLE_TITLE])
-    description: str | None = Field(default=None, examples=[_EXAMPLE_DESCRIPTION])
 
 
 class TopicUpdateRequest(BaseModel):
@@ -52,6 +47,7 @@ class StudentTopicListItem(BaseModel):
     topic_id: UUID = Field(examples=[_EXAMPLE_TOPIC_ID])
     title: str = Field(examples=[_EXAMPLE_TITLE])
     description: str | None = Field(default=None, examples=[_EXAMPLE_DESCRIPTION])
+    stage: TopicStage = Field(examples=[TopicStage.CONVERSATION])
     # Both null until the student enters the topic for the first time.
     status: SessionStatus | None = Field(
         default=None, examples=[SessionStatus.IN_PROGRESS]

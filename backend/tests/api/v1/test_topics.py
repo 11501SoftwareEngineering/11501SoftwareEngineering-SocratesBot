@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from app.core.enums import UserRole
+from app.core.enums import SessionStatus, UserRole
 from app.crud import course as course_crud
 from app.crud import session as session_crud
 from app.crud import topic as topic_crud
@@ -46,6 +46,7 @@ def _topic(course_id, **overrides):
         "course_id": course_id,
         "title": "T1",
         "description": "Background",
+        "stage": "conversation",
     }
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -95,6 +96,7 @@ def test_student_topic_list_has_session_fields(
                 "topic_id": str(started.id),
                 "title": "Started",
                 "description": "Background",
+                "stage": "conversation",
                 "status": "IN_PROGRESS",
                 "session_id": str(session_id),
             },
@@ -102,6 +104,7 @@ def test_student_topic_list_has_session_fields(
                 "topic_id": str(fresh.id),
                 "title": "Fresh",
                 "description": None,
+                "stage": "conversation",
                 "status": None,
                 "session_id": None,
             },
@@ -110,6 +113,60 @@ def test_student_topic_list_has_session_fields(
     list_mock.assert_awaited_once_with(
         course_route_db, course_id=course.id, user_id=user.id
     )
+
+
+def test_list_hides_setup_without_session_and_keeps_entered_topic(
+    auth_client: TestClient,
+    store: FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, student = _login(auth_client, store)
+    other_bearer, other = _login(auth_client, store, "student2")
+    course = _course()
+    _patch_role(monkeypatch, "STUDENT", course)
+    hidden = _topic(course.id, title="Hidden", stage="setup")
+    entered = _topic(course.id, title="Entered", stage="setup")
+    open_topic = _topic(course.id, title="Open", stage="conversation")
+    own_session = uuid4()
+    other_session = uuid4()
+    rows = {
+        student.id: [
+            (hidden, None, None),
+            (entered, SessionStatus.IN_PROGRESS.value, own_session),
+            (open_topic, None, None),
+        ],
+        other.id: [
+            (hidden, None, None),
+            (entered, None, None),
+            (open_topic, None, other_session),
+        ],
+    }
+
+    async def list_topics(_db, *, course_id, user_id):
+        assert course_id == course.id
+        return rows[user_id]
+
+    monkeypatch.setattr(topic_crud, "list_topics_with_user_session", list_topics)
+
+    own = auth_client.get(
+        f"/api/v1/courses/{course.id}/topics",
+        headers={"Authorization": bearer},
+    )
+    theirs = auth_client.get(
+        f"/api/v1/courses/{course.id}/topics",
+        headers={"Authorization": other_bearer},
+    )
+
+    assert own.status_code == 200
+    own_topics = own.json()["topics"]
+    assert [item["title"] for item in own_topics] == ["Entered", "Open"]
+    assert own_topics[0]["session_id"] == str(own_session)
+    assert str(other_session) not in own.text
+    assert theirs.status_code == 200
+    assert [item["topic_id"] for item in theirs.json()["topics"]] == [
+        str(open_topic.id)
+    ]
+    assert str(own_session) not in theirs.text
 
 
 @pytest.mark.parametrize("db_role", ["TEACHER", "TA"])
@@ -167,7 +224,24 @@ def test_topic_list_non_member_or_missing(
     assert response.status_code == expected
 
 
-def test_create_topic_in_path_course(
+_CREATE_BODY = {
+    "age_band": "16-18",
+    "max_turns": 10,
+    "course_description": "Compare two accounts of who should decide.",
+}
+_GENERATED = {
+    "age_band": "16-18",
+    "max_turns": 10,
+    "topic": "generated topic",
+    "core_question": "generated question",
+    "inquiry_focus": "compare the two accounts",
+    "background_info": "a published case",
+    "exclusions": "unspecified",
+    "opening_message": "Where should we start?",
+}
+
+
+def test_create_topic_fills_eight_fields_from_the_description(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -176,46 +250,128 @@ def test_create_topic_in_path_course(
     bearer, user = _login(auth_client, store, "teach", UserRole.TEACHER)
     course = _course()
     _patch_role(monkeypatch, "TEACHER", course)
-    topic = _topic(course.id, title="New")
-    create_mock = AsyncMock(return_value=topic)
+    created = _topic(course.id, title="", description=None, stage="setup")
+    create_mock = AsyncMock(return_value=created)
     monkeypatch.setattr(topic_crud, "create_topic", create_mock)
+    monkeypatch.setattr(topic_crud, "record_inquiry_change", AsyncMock())
+
+    async def complete(self, *, instructions, material, model=None):
+        assert "course_description" in material
+        return _GENERATED
+
+    monkeypatch.setattr(
+        "app.services.model_client.OpenAIChatClient.complete_json", complete
+    )
 
     response = auth_client.post(
         f"/api/v1/courses/{course.id}/topics",
         headers={"Authorization": bearer},
-        json={"title": "New", "description": "Background"},
+        json=_CREATE_BODY,
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "topic_id": str(topic.id),
-        "course_id": str(course.id),
-        "title": "New",
-        "description": "Background",
-        "message": "Topic created",
-    }
+    body = response.json()
+    assert body["topic_id"] == str(created.id)
+    assert body["course_id"] == str(course.id)
+    assert body["topic_status"] == "setup"
+    assert body["setup"]["topic"] == "generated topic"
+    assert body["setup"]["core_question"] == "generated question"
     create_mock.assert_awaited_once_with(
         course_route_db,
         course_id=course.id,
         created_by=user.id,
-        title="New",
-        description="Background",
+        title="generated topic",
+        description=_CREATE_BODY["course_description"],
     )
     course_route_db.commit.assert_awaited_once()
 
 
+def test_ta_with_edit_topics_can_create_a_topic(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "assist", UserRole.TEACHER)
+    course = _course()
+    _patch_role(monkeypatch, "TA", course)
+    monkeypatch.setattr(
+        course_crud, "get_ta_permissions", AsyncMock(return_value=["edit_topics"])
+    )
+    created = _topic(course.id, stage="setup")
+    monkeypatch.setattr(topic_crud, "create_topic", AsyncMock(return_value=created))
+    monkeypatch.setattr(topic_crud, "record_inquiry_change", AsyncMock())
+
+    async def complete(self, *, instructions, material, model=None):
+        return _GENERATED
+
+    monkeypatch.setattr(
+        "app.services.model_client.OpenAIChatClient.complete_json", complete
+    )
+
+    response = auth_client.post(
+        f"/api/v1/courses/{course.id}/topics",
+        headers={"Authorization": bearer},
+        json=_CREATE_BODY,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["topic_status"] == "setup"
+
+
+def test_create_topic_does_not_store_a_row_when_the_model_fails(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
+    _patch_role(monkeypatch, "TEACHER", _course())
+    create_mock = AsyncMock()
+    monkeypatch.setattr(topic_crud, "create_topic", create_mock)
+
+    async def fail(self, *, instructions, material, model=None):
+        from app.services.model_client import ModelCallError
+
+        raise ModelCallError(503)
+
+    monkeypatch.setattr(
+        "app.services.model_client.OpenAIChatClient.complete_json", fail
+    )
+
+    response = auth_client.post(
+        f"/api/v1/courses/{uuid4()}/topics",
+        headers={"Authorization": bearer},
+        json=_CREATE_BODY,
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Inquiry generation failed"
+    create_mock.assert_not_awaited()
+
+
 @pytest.mark.parametrize(
-    ("db_role", "exists", "body", "expected"),
+    ("db_role", "exists", "permissions", "body", "expected"),
     [
-        ("STUDENT", True, {"title": "x"}, 403),
-        (None, True, {"title": "x"}, 403),
-        ("TEACHER", False, {"title": "x"}, 404),
-        ("TEACHER", True, {"title": ""}, 422),
+        ("STUDENT", True, [], _CREATE_BODY, 403),
+        ("TA", True, ["view_members"], _CREATE_BODY, 403),
+        (None, True, [], _CREATE_BODY, 403),
+        ("TEACHER", False, [], _CREATE_BODY, 404),
+        ("TEACHER", True, [], {"age_band": "16-18", "max_turns": 10}, 422),
+        (
+            "TEACHER",
+            True,
+            [],
+            {**_CREATE_BODY, "course_description": "   "},
+            422,
+        ),
+        ("TEACHER", True, [], {**_CREATE_BODY, "age_band": "adults"}, 422),
     ],
 )
 def test_create_topic_errors(
     db_role: str | None,
     exists: bool,
+    permissions: list[str],
     body: dict,
     expected: int,
     auth_client: TestClient,
@@ -225,6 +381,9 @@ def test_create_topic_errors(
 ) -> None:
     bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
     _patch_role(monkeypatch, db_role, _course() if exists else None)
+    monkeypatch.setattr(
+        course_crud, "get_ta_permissions", AsyncMock(return_value=permissions)
+    )
     create_mock = AsyncMock()
     monkeypatch.setattr(topic_crud, "create_topic", create_mock)
     response = auth_client.post(

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from app.core.database import Base
 from app.core.enums import SessionStatus, UserRole
 from app.crud import session as session_crud
+from app.crud import topic as topic_crud
 from app.crud.user import delete_teacher
 from app.models.course import Course, CourseMembership
 from app.models.session import Session
@@ -63,7 +64,9 @@ def test_missing_topic_returns_none() -> None:
     asyncio.run(run())
 
 
-async def create_course_and_topic(db: AsyncSession) -> tuple[Course, Topic]:
+async def create_course_and_topic(
+    db: AsyncSession, *, stage: str = "setup"
+) -> tuple[Course, Topic]:
     teacher = User(
         account_id=f"teacher-{uuid4().hex}",
         name="Test Teacher",
@@ -84,6 +87,7 @@ async def create_course_and_topic(db: AsyncSession) -> tuple[Course, Topic]:
         course_id=course.id,
         created_by=teacher.id,
         title="Test Topic",
+        stage=stage,
     )
     db.add(topic)
     await db.flush()
@@ -292,7 +296,7 @@ def test_sessions_are_separate_for_each_user_and_topic() -> None:
 def test_service_creates_and_reuses_session_with_database() -> None:
     async def run() -> None:
         async with session_test_db() as db:
-            course, topic = await create_course_and_topic(db)
+            course, topic = await create_course_and_topic(db, stage="conversation")
             student = await create_student(db)
 
             db.add(
@@ -473,5 +477,52 @@ def test_topic_rejects_missing_creator() -> None:
                 )
 
             await db.rollback()
+
+    asyncio.run(run())
+
+
+def test_student_list_keeps_existing_session_on_setup_topic() -> None:
+    async def run() -> None:
+        async with session_test_db() as db:
+            course, hidden = await create_course_and_topic(db, stage="setup")
+            entered = Topic(
+                course_id=course.id,
+                created_by=course.created_by,
+                title="Entered",
+                stage="setup",
+            )
+            visible = Topic(
+                course_id=course.id,
+                created_by=course.created_by,
+                title="Open",
+                stage="conversation",
+            )
+            db.add_all([entered, visible])
+            await db.flush()
+            student_a = await create_student(db)
+            student_b = await create_student(db)
+            session = Session(
+                user_id=student_a.id,
+                topic_id=entered.id,
+                is_anonymous=False,
+            )
+            db.add(session)
+            await db.flush()
+
+            own = await topic_crud.list_topics_with_user_session(
+                db, course_id=course.id, user_id=student_a.id
+            )
+            theirs = await topic_crud.list_topics_with_user_session(
+                db, course_id=course.id, user_id=student_b.id
+            )
+
+            own_sessions = {topic.id: session_id for topic, _, session_id in own}
+            their_topics = {topic.id for topic, _, _ in theirs}
+            their_sessions = {session_id for _, _, session_id in theirs}
+            assert hidden.id not in own_sessions
+            assert own_sessions[entered.id] == session.id
+            assert visible.id in own_sessions
+            assert their_topics == {visible.id}
+            assert session.id not in their_sessions
 
     asyncio.run(run())
