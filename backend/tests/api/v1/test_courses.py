@@ -367,8 +367,8 @@ def test_list_courses_merges_teaching_and_studying(
     # The query returns rows already ordered by course name.
     rows_mock = AsyncMock(
         return_value=[
-            (studied, "Other Teacher", 4, 30, "STUDENT", []),
-            (taught, "Me", 2, 5, "TEACHER", []),
+            (studied, "Other Teacher", 4, 30, "STUDENT"),
+            (taught, "Me", 2, 5, "TEACHER"),
         ]
     )
     monkeypatch.setattr(course_crud, "list_my_course_rows", rows_mock)
@@ -385,7 +385,6 @@ def test_list_courses_merges_teaching_and_studying(
             "teacher_name": "Other Teacher",
             "topic_count": 4,
             "my_role": "student",
-            "my_permissions": [],
             "invite_code": "ABCD2345",
         },
         {
@@ -395,7 +394,6 @@ def test_list_courses_merges_teaching_and_studying(
             "teacher_name": "Me",
             "topic_count": 2,
             "my_role": "teacher",
-            "my_permissions": [],
             "invite_code": "ABCD2345",
             "student_count": 5,
         },
@@ -412,28 +410,17 @@ def test_list_courses_student_has_no_student_count(
     monkeypatch.setattr(
         course_crud,
         "list_my_course_rows",
-        AsyncMock(return_value=[(_course(), "T", 1, 9, "STUDENT", [])]),
+        AsyncMock(return_value=[(_course(), "T", 1, 9, "STUDENT")]),
     )
     body = auth_client.get("/api/v1/courses", headers={"Authorization": bearer}).json()
     assert "student_count" not in body[0]
 
 
-@pytest.mark.parametrize(
-    ("granted", "expected_permissions", "expected_count"),
-    [
-        (["view_members", "edit_topics"], ["edit_topics", "view_members"], 9),
-        (["edit_topics"], ["edit_topics"], None),
-        ([], [], None),
-    ],
-)
-def test_list_courses_ta_permissions_and_student_count(
+def test_list_courses_ta_has_student_count(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
     monkeypatch: pytest.MonkeyPatch,
-    granted: list[str],
-    expected_permissions: list[str],
-    expected_count: int | None,
 ) -> None:
     bearer, _ = _login(auth_client, store, "assist")
     assisted = _course(name="Assisted")
@@ -443,8 +430,8 @@ def test_list_courses_ta_permissions_and_student_count(
         "list_my_course_rows",
         AsyncMock(
             return_value=[
-                (assisted, "T", 1, 9, "TA", granted),
-                (studied, "T", 1, 7, "STUDENT", []),
+                (assisted, "T", 1, 9, "TA"),
+                (studied, "T", 1, 7, "STUDENT"),
             ]
         ),
     )
@@ -453,10 +440,9 @@ def test_list_courses_ta_permissions_and_student_count(
 
     ta_row, student_row = body
     assert ta_row["my_role"] == "ta"
-    assert ta_row["my_permissions"] == expected_permissions
-    assert ta_row.get("student_count") == expected_count
-    assert student_row["my_permissions"] == []
+    assert ta_row["student_count"] == 9
     assert "student_count" not in student_row
+    assert all("my_permissions" not in row for row in body)
 
 
 def test_old_role_prefixed_paths_are_gone(

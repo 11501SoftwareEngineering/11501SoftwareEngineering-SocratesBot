@@ -201,16 +201,11 @@ async def list_my_courses(db: AsyncSession, user: User) -> list[CourseListItem]:
         topic_count,
         student_count,
         db_role,
-        ta_permissions,
     ) in await course_crud.list_my_course_rows(db, user.id):
         role = _ROLE_BY_DB_VALUE[db_role]
-        permissions: list[str] = []
-        if role is CourseRole.TA:
-            permissions = sort_permissions(ta_permissions)
-        # ``student_count`` stays unset (omitted) for students and for TAs
-        # without view_members.
+        # ``student_count`` stays unset (omitted) for students.
         extra: dict[str, int] = {}
-        if role is CourseRole.TEACHER or TaPermission.VIEW_MEMBERS in permissions:
+        if role is not CourseRole.STUDENT:
             extra["student_count"] = student_count
         items.append(
             CourseListItem(
@@ -220,7 +215,6 @@ async def list_my_courses(db: AsyncSession, user: User) -> list[CourseListItem]:
                 teacher_name=teacher_name,
                 topic_count=topic_count,
                 my_role=role,
-                my_permissions=permissions,
                 invite_code=course.invitation_code,
                 **extra,
             )

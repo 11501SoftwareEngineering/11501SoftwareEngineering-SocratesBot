@@ -107,7 +107,9 @@ def test_student_promoted_to_ta_then_revoked_leaves_course_without_sessions() ->
             my_row = next(row for row in my_rows if row[0].id == course_id)
             assert my_row[4] == "TA"
             # A new TA holds every permission.
-            assert sorted(my_row[5]) == sorted(p.value for p in TaPermission)
+            assert await _permission_rows(
+                db, course_id=course_id, user_id=student_id
+            ) == len(TaPermission)
             assert (
                 await course_crud.get_course_role(
                     db, course_id=course_id, user_id=student.id
@@ -457,15 +459,14 @@ def test_course_list_query_prefers_teacher_role_over_membership() -> None:
             teacher_rows = await course_crud.list_my_course_rows(db, teacher_id)
             matching = [row for row in teacher_rows if row[0].id == course_id]
             assert len(matching) == 1
-            _, _, topics, students, db_role, grants = matching[0]
+            _, _, topics, students, db_role = matching[0]
             assert db_role == "TEACHER"
             assert topics == 0
             assert students == 2
-            assert grants == []
 
             student_rows = await course_crud.list_my_course_rows(db, student_id)
-            assert [(row[0].id, row[4], row[5]) for row in student_rows] == [
-                (course_id, "STUDENT", [])
+            assert [(row[0].id, row[4]) for row in student_rows] == [
+                (course_id, "STUDENT")
             ]
 
             await course_crud.soft_delete_student_membership_by_ids(

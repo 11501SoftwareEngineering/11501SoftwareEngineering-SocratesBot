@@ -26,7 +26,7 @@ MEMBERSHIP_TA = "TA"
 # (course, teacher_name, topic_count, student_count, db_role, ta_permissions)
 # topic_count is the total topics in the course; student_count is active students;
 # db_role is "TEACHER" / "TA" / "STUDENT"; ta_permissions is unordered.
-MyCourseRow = tuple[Course, str, int, int, str, list[str]]
+MyCourseRow = tuple[Course, str, int, int, str]
 
 
 def _active_student_filters():
@@ -115,7 +115,7 @@ async def list_my_course_rows(db: AsyncSession, user_id: UUID) -> list[MyCourseR
     """Courses ``user_id`` instructs or is an active STUDENT/TA of, in one query.
 
     A course the user instructs is ``"TEACHER"`` even if a membership row also
-    exists. ``permissions`` holds the TA grants of the user's membership.
+    exists.
     """
     creator = aliased(User)
     membership = aliased(CourseMembership)
@@ -129,11 +129,6 @@ async def list_my_course_rows(db: AsyncSession, user_id: UUID) -> list[MyCourseR
         .exists()
     )
     role = case((is_instructor, "TEACHER"), else_=membership.role)
-    permissions = (
-        select(func.array_agg(CourseTaPermission.permission))
-        .where(CourseTaPermission.course_membership_id == membership.id)
-        .scalar_subquery()
-    )
     statement = (
         select(
             Course,
@@ -141,7 +136,6 @@ async def list_my_course_rows(db: AsyncSession, user_id: UUID) -> list[MyCourseR
             topic_count,
             student_count,
             role,
-            permissions,
         )
         .join(creator, creator.id == Course.created_by)
         .outerjoin(
@@ -156,19 +150,10 @@ async def list_my_course_rows(db: AsyncSession, user_id: UUID) -> list[MyCourseR
         .order_by(Course.name.asc(), Course.id.asc())
     )
     result = await db.execute(statement)
-    rows: list[MyCourseRow] = []
-    for course, teacher_name, topics, students, db_role, grants in result.all():
-        rows.append(
-            (
-                course,
-                teacher_name or "",
-                int(topics or 0),
-                int(students or 0),
-                db_role,
-                list(grants or []),
-            )
-        )
-    return rows
+    return [
+        (course, teacher_name or "", int(topics or 0), int(students or 0), db_role)
+        for course, teacher_name, topics, students, db_role in result.all()
+    ]
 
 
 async def get_course_role(
