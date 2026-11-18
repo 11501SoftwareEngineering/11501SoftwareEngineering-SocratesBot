@@ -21,19 +21,6 @@ _EXAMPLE_TITLE = "Should AI replace teachers?"
 _EXAMPLE_DESCRIPTION = "Discuss the role of AI in education"
 
 
-class TopicUpdateRequest(BaseModel):
-    title: str = Field(min_length=1, max_length=255, examples=[_EXAMPLE_TITLE])
-    description: str | None = Field(default=None, examples=[_EXAMPLE_DESCRIPTION])
-
-
-class TopicWriteResponse(BaseModel):
-    topic_id: UUID = Field(examples=[_EXAMPLE_TOPIC_ID])
-    course_id: UUID = Field(examples=[_EXAMPLE_COURSE_ID])
-    title: str = Field(examples=[_EXAMPLE_TITLE])
-    description: str | None = Field(default=None, examples=[_EXAMPLE_DESCRIPTION])
-    message: str = Field(examples=["Topic created"])
-
-
 class TopicListItem(BaseModel):
     """Topic row; which optional fields appear depends on the caller's role.
 

@@ -54,19 +54,6 @@ async def lock_topic(db: AsyncSession, topic_id: UUID) -> Topic | None:
     return (await db.execute(statement)).scalar_one_or_none()
 
 
-async def update_topic(
-    db: AsyncSession,
-    topic: Topic,
-    *,
-    title: str,
-    description: str | None,
-) -> Topic:
-    topic.title = title
-    topic.description = description
-    await db.flush()
-    return topic
-
-
 async def save_inquiry(
     db: AsyncSession,
     topic: Topic,
