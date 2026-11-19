@@ -105,6 +105,21 @@ TEACHER_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     ),
 }
 
+TEACHER_PASSWORD_RESET_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_examples(
+        "Teacher password reset forbidden",
+        {
+            "admin_privileges_required": "Admin privileges required",
+            "elevated_admin_account": "Cannot reset elevated admin account password",
+        },
+    ),
+    404: json_detail_example("Teacher not found", "Teacher not found"),
+}
+
 PASSWORD_CHANGE_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: json_detail_examples(
         "Password change rejected",
