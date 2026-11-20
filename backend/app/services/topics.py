@@ -175,6 +175,9 @@ async def list_course_topics(
         name=course.name,
         invite_code=course.invitation_code,
         my_role=role,
+        my_permissions=await courses_service.get_my_ta_permissions(
+            db, user, course.id, role
+        ),
         topics=topics,
     )
 

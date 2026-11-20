@@ -94,6 +94,7 @@ def test_student_topic_list_has_session_fields(
         "name": "SE",
         "invite_code": "ABCD2345",
         "my_role": "student",
+        "my_permissions": [],
         "topics": [
             {
                 "topic_id": str(started.id),
@@ -196,7 +197,7 @@ def test_teacher_topic_list_has_counts(
     ]
 
 
-def test_ta_topic_list_has_counts(
+def test_ta_topic_list_has_counts_and_own_permissions(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -205,6 +206,11 @@ def test_ta_topic_list_has_counts(
     bearer, _ = _login(auth_client, store, "assist")
     course = _course()
     _patch_role(monkeypatch, "TA", course)
+    monkeypatch.setattr(
+        course_crud,
+        "get_ta_permissions",
+        AsyncMock(return_value=["view_members", "edit_topics"]),
+    )
     monkeypatch.setattr(
         topic_crud,
         "list_topics_with_completed_count",
@@ -219,7 +225,7 @@ def test_ta_topic_list_has_counts(
     assert response.status_code == 200
     body = response.json()
     assert body["my_role"] == "ta"
-    assert "my_permissions" not in body
+    assert body["my_permissions"] == ["edit_topics", "view_members"]
     assert body["topics"][0]["answered_count"] == 1
     assert body["topics"][0]["student_count"] == 4
     # Staff see setup topics too.

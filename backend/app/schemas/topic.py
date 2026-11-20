@@ -6,7 +6,13 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from app.core.enums import AgeBand, CourseRole, SessionStatus, TopicStage
+from app.core.enums import (
+    AgeBand,
+    CourseRole,
+    SessionStatus,
+    TaPermission,
+    TopicStage,
+)
 
 _EXAMPLE_COURSE_ID = UUID("11111111-1111-1111-1111-111111111111")
 _EXAMPLE_TOPIC_ID = UUID("33333333-3333-3333-3333-333333333333")
@@ -70,6 +76,10 @@ class CourseTopicsResponse(BaseModel):
     name: str = Field(examples=["Software Engineering"])
     invite_code: str = Field(examples=["ABCD2345"])
     my_role: CourseRole = Field(examples=[CourseRole.STUDENT])
+    my_permissions: list[TaPermission] = Field(
+        default_factory=list,
+        description="The caller's TA permissions; empty unless my_role is ta",
+    )
     topics: list[TopicListItem]
 
 
