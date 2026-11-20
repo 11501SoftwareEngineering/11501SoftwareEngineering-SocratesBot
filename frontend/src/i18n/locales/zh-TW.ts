@@ -427,6 +427,8 @@ export default {
     failedTitle: '報告產生失敗',
     failedDescription: '可能是 AI 服務暫時有問題，請再試一次。',
     retry: '重新產生報告',
+    retryFailed: '重新產生失敗，請稍後再試',
+    backToCourse: '回到課程',
     preparingTitle: '導魷正在整理你的報告…',
     preparingDescription: '通常不到一分鐘，這個頁面會自動更新。',
     noSummaryTitle: '老師還沒有發布全班摘要',

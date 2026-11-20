@@ -431,6 +431,8 @@ export default {
     failedTitle: 'レポートを作成できませんでした',
     failedDescription: 'AI サービスに一時的な問題がある可能性があります。もう一度お試しください。',
     retry: 'レポートを再作成',
+    retryFailed: 'レポートを再作成できませんでした。しばらくしてからお試しください',
+    backToCourse: '授業に戻る',
     preparingTitle: 'SocratesBot がレポートを作っています…',
     preparingDescription: '通常 1 分以内に終わります。ページは自動で更新されます。',
     noSummaryTitle: 'クラスのまとめはまだ公開されていません',

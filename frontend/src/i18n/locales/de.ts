@@ -440,6 +440,8 @@ export default {
     failedDescription:
       'Der KI-Dienst hat möglicherweise ein vorübergehendes Problem. Bitte erneut versuchen.',
     retry: 'Bericht neu erstellen',
+    retryFailed: 'Der Bericht konnte nicht neu gestartet werden. Bitte später erneut versuchen.',
+    backToCourse: 'Zurück zum Kurs',
     preparingTitle: 'SocratesBot erstellt den Bericht…',
     preparingDescription:
       'Das dauert meist weniger als eine Minute. Die Seite aktualisiert sich automatisch.',

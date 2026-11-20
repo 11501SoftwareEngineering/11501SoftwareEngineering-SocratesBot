@@ -434,6 +434,8 @@ export default {
     failedTitle: 'No se pudo generar el informe',
     failedDescription: 'Puede que el servicio de IA tenga problemas. Inténtalo de nuevo.',
     retry: 'Volver a generar el informe',
+    retryFailed: 'No se pudo volver a generar el informe. Inténtalo más tarde.',
+    backToCourse: 'Volver al curso',
     preparingTitle: 'SocratesBot está preparando tu informe…',
     preparingDescription: 'Suele tardar menos de un minuto. La página se actualiza sola.',
     noSummaryTitle: 'El docente aún no ha publicado el resumen de la clase',

@@ -422,6 +422,8 @@ export default {
     failedTitle: '报告产生失败',
     failedDescription: '可能是 AI 服务暂时有问题，请再试一次。',
     retry: '重新产生报告',
+    retryFailed: '重新生成失败，请稍后再试',
+    backToCourse: '回到课程',
     preparingTitle: '导鱿正在整理你的报告…',
     preparingDescription: '通常不到一分钟，这个页面会自动更新。',
     noSummaryTitle: '老师还没有发布全班摘要',

@@ -432,6 +432,8 @@ export default {
     failedTitle: 'Report generation failed',
     failedDescription: 'The AI service may be having trouble. Please try again.',
     retry: 'Generate report again',
+    retryFailed: "Couldn't restart the report. Please try again later.",
+    backToCourse: 'Back to course',
     preparingTitle: 'SocratesBot is preparing your report…',
     preparingDescription: 'This usually takes less than a minute. The page updates automatically.',
     noSummaryTitle: 'The class summary is not published yet',

@@ -432,6 +432,8 @@ export default {
     failedTitle: '보고서를 만들지 못했습니다',
     failedDescription: 'AI 서비스에 일시적인 문제가 있을 수 있습니다. 다시 시도해 주세요.',
     retry: '보고서 다시 만들기',
+    retryFailed: '보고서를 다시 만들지 못했습니다. 잠시 후 다시 시도해 주세요',
+    backToCourse: '수업으로 돌아가기',
     preparingTitle: 'SocratesBot이 보고서를 만들고 있습니다…',
     preparingDescription: '보통 1분 안에 끝납니다. 페이지가 자동으로 새로 고쳐집니다.',
     noSummaryTitle: '학급 정리가 아직 공개되지 않았습니다',

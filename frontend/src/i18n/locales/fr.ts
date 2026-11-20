@@ -434,6 +434,8 @@ export default {
     failedTitle: 'Le rapport n’a pas pu être créé',
     failedDescription: 'Le service d’IA rencontre peut-être un problème temporaire. Réessayez.',
     retry: 'Recréer le rapport',
+    retryFailed: 'Impossible de relancer le rapport. Réessayez plus tard.',
+    backToCourse: 'Retour au cours',
     preparingTitle: 'SocratesBot prépare le rapport…',
     preparingDescription:
       'Cela prend généralement moins d’une minute. La page se met à jour automatiquement.',
