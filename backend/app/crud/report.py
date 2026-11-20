@@ -36,10 +36,14 @@ async def list_for_sessions(
     return list(await db.scalars(statement))
 
 
-async def insert_pending(db: AsyncSession, session_id: UUID) -> ReportAttempt:
+async def insert_pending(
+    db: AsyncSession, session_id: UUID, progress: dict | None = None
+) -> ReportAttempt:
+    """Create a pending attempt. ``progress`` is the snapshot the report uses."""
     attempt = ReportAttempt(
         session_id=session_id,
         status=GenerationStatus.PENDING.value,
+        generation_meta=None if progress is None else {"progress": progress},
         lease_expires_at=datetime.now(UTC) + LEASE,
     )
     db.add(attempt)
