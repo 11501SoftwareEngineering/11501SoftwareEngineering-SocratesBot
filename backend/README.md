@@ -175,3 +175,12 @@ Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 tr
 ## 已知限制（部署前需處理）
 
 - **tokenizer 對照不完整**：`app/services/token_budget.py` 的 `MODEL_ENCODINGS` 只有 `gpt-4o` 系列與 `gpt-6.2-sol`。預設模型 `openai/gpt-6-luna` 以及模型目錄中的其他模型都沒有對照，對話的上下文預算計算會拋出 `UnsupportedModelTokenizerError`，回 503。部署前需要補上這些模型的對照，並以實際 tokenizer 驗證，不能直接沿用其他模型的對照。
+
+## 課程設定（Stage 1）
+
+- 建立 topic 時，課程描述在模型呼叫前經過守門（`app/services/teacher_input.py`）：長度 20 到 6000 字；拒絕鍵盤序列、重複填充、沒有字母的文字，以及單一字母佔比過高的內容。不通過回 422，不呼叫模型。
+- 模型輸出的 topic、core_question、inquiry_focus 若為占位值（未指定、N/A 等），回 503，不儲存。
+- 背景或排除事項未指定時，回應的 `warnings` 會提醒教師在核准前確認。
+- 課程設定超過 45 秒，回 504，教師的輸入保留在前端。
+- 客戶端中止回 499 尚未實作。FastAPI 不會因為客戶端斷線而取消 handler，需要另外設計。
+- 課程設定的回應尚未包含 assessments、澄清問題與建議欄位。

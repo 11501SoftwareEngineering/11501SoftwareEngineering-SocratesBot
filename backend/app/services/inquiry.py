@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -18,6 +19,7 @@ from app.models.inquiry_model import InquiryModel
 from app.models.topic import Topic
 from app.models.user import User
 from app.schemas.inquiry import (
+    CreatedInquiryResponse,
     CreateInquiryTopicRequest,
     GeneratedInquiry,
     GenerateInquiryRequest,
@@ -32,8 +34,13 @@ from app.schemas.inquiry import (
     first_incomplete_field,
 )
 from app.services import courses as courses_service
-from app.services.model_client import ModelCallError, OpenAIChatClient
+from app.services.model_client import (
+    ModelCallError,
+    ModelTimeoutError,
+    OpenAIChatClient,
+)
 from app.services.teacher_ai_settings import openrouter_api_key
+from app.services.teacher_input import topic_issue, topic_issue_message
 from app.services.topics import get_instructed_topic
 
 
@@ -121,7 +128,24 @@ def _reject_if_stale(topic: Topic, seen_at: object) -> None:
         )
 
 
+_PLACEHOLDER = re.compile(
+    r"^(未指定|尚未指定|待補|待補充|不適用|n/?a|not specified|unspecified|tbd|none|null)[.!\u3002\uff01]?$",
+    re.IGNORECASE,
+)
+_SETUP_WARNING = (
+    "Background or exclusions were not specified. Confirm them before publishing."
+)
+
+
 def _model_failure(exc: ModelCallError) -> HTTPException:
+    if isinstance(exc, ModelTimeoutError):
+        return HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=(
+                "Course setup took longer than 45 seconds and was stopped. "
+                "Your input was kept; try again or shorten the description."
+            ),
+        )
     code = (
         status.HTTP_503_SERVICE_UNAVAILABLE
         if exc.status_code in {429, 503}
@@ -220,6 +244,12 @@ async def create_inquiry_topic(
     course, _role = await courses_service.require_course_teacher_or_ta(
         db, user, course_id, TaPermission.EDIT_TOPICS
     )
+    issue = topic_issue(payload.course_description)
+    if issue is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=topic_issue_message(issue, len(payload.course_description.strip())),
+        )
     language = settings.DEFAULT_LANGUAGE_CODE
     model_id = settings.OPENAI_MODEL
     api_key = await openrouter_api_key(db, user.id)
@@ -235,6 +265,8 @@ async def create_inquiry_topic(
         ),
         api_key,
     )
+    _check_complete(generated)
+    warnings = _setup_warnings(generated)
     try:
         topic = await topic_crud.create_topic(
             db,
@@ -258,7 +290,33 @@ async def create_inquiry_topic(
     except Exception:
         await db.rollback()
         raise
-    return _response(topic)
+    return CreatedInquiryResponse(**_response(topic).model_dump(), warnings=warnings)
+
+
+def _check_complete(generated: GeneratedInquiry) -> None:
+    """Refuse output whose substantive fields are placeholders, not content."""
+    for value in (generated.topic, generated.core_question, generated.inquiry_focus):
+        text = value.strip()
+        if not text or _PLACEHOLDER.match(text):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Inquiry generation was incomplete. "
+                    "Refine the course description and try again."
+                ),
+            )
+
+
+def _setup_warnings(generated: GeneratedInquiry) -> list[str]:
+    unspecified = not generated.background_info.strip() or bool(
+        _PLACEHOLDER.match(generated.background_info.strip())
+    )
+    unspecified = (
+        unspecified
+        or not generated.exclusions.strip()
+        or bool(_PLACEHOLDER.match(generated.exclusions.strip()))
+    )
+    return [_SETUP_WARNING] if unspecified else []
 
 
 async def _store_setup(db: AsyncSession, topic: Topic, setup: InquiryFields) -> Topic:
