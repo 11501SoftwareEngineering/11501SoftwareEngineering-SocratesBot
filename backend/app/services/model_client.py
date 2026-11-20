@@ -59,8 +59,14 @@ def _strict(properties: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-_TEXT_FIELD = {"type": "string"}
-_TEXT_LIST = {"type": "array", "items": _TEXT_FIELD}
+def _text() -> dict[str, Any]:
+    return {"type": "string"}
+
+
+def _text_list() -> dict[str, Any]:
+    return {"type": "array", "items": _text()}
+
+
 _ASSESSED = [
     "theme",
     "inquiryQuestion",
@@ -76,7 +82,7 @@ _DESIGN_SCHEMA: dict[str, Any] = _strict(
         "inputCheck": _strict(
             {
                 "status": {"type": "string", "enum": ["usable", "needs_revision"]},
-                "message": _TEXT_FIELD,
+                "message": _text(),
             }
         ),
         "design": {
@@ -93,7 +99,7 @@ _DESIGN_SCHEMA: dict[str, Any] = _strict(
                                     "type": "integer",
                                     "enum": [5, 10, 15],
                                 },
-                                **dict.fromkeys(_ASSESSED, _TEXT_FIELD),
+                                **{name: _text() for name in _ASSESSED},
                             }
                         ),
                         "assessments": {
@@ -110,13 +116,13 @@ _DESIGN_SCHEMA: dict[str, Any] = _strict(
                                             "conflicted",
                                         ],
                                     },
-                                    "note": _TEXT_FIELD,
+                                    "note": _text(),
                                 }
                             ),
                         },
-                        "clarificationQuestions": _TEXT_LIST,
-                        "suggestions": _TEXT_LIST,
-                        "warnings": _TEXT_LIST,
+                        "clarificationQuestions": _text_list(),
+                        "suggestions": _text_list(),
+                        "warnings": _text_list(),
                     }
                 ),
                 {"type": "null"},
