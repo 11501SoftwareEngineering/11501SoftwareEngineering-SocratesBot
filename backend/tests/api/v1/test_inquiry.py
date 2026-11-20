@@ -298,7 +298,7 @@ def test_refine_uses_the_screen_setup(
     assert topic.inquiry_topic == "saved topic"
     assert topic.core_question == "saved question"
     recorded.assert_not_awaited()
-    course_route_db.commit.assert_not_awaited()
+    course_route_db.add.assert_not_called()
 
     saved = auth_client.get(
         f"/api/v1/topics/{topic.id}/setup",
@@ -480,7 +480,7 @@ def test_generate_returns_a_suggestion_and_leaves_the_topic(
     assert topic.model_id == "openai/gpt-4o-mini"
     assert topic.content_language is None
     recorded.assert_not_awaited()
-    course_route_db.commit.assert_not_awaited()
+    course_route_db.add.assert_not_called()
 
     saved = auth_client.get(
         f"/api/v1/topics/{topic.id}/setup",
@@ -672,7 +672,7 @@ def test_generate_maps_a_model_failure_and_leaves_the_topic(
     assert response.json()["detail"] == "Inquiry generation failed"
     assert topic.inquiry_topic == "saved topic"
     recorded.assert_not_awaited()
-    course_route_db.commit.assert_not_awaited()
+    course_route_db.add.assert_not_called()
 
 
 def _catalog(monkeypatch: pytest.MonkeyPatch, *, is_ta: bool) -> None:

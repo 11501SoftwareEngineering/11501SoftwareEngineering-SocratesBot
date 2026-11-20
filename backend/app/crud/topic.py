@@ -117,16 +117,38 @@ def next_revision_version(
     return previous_version + 1
 
 
-async def record_inquiry_change(db: AsyncSession, topic: Topic) -> None:
+async def record_inquiry_change(
+    db: AsyncSession,
+    topic: Topic,
+    *,
+    prompt_stage: str | None = None,
+    prompt_version: str | None = None,
+    force: bool = False,
+) -> None:
     """Append a revision when the inquiry changed. The number stays off the API."""
+    if (prompt_stage is None) != (prompt_version is None):
+        raise ValueError("prompt stage and version must be provided together")
     current = inquiry_snapshot(topic)
     latest = await _latest_revision(db, topic.id)
     previous = None if latest is None else latest.body
     previous_version = None if latest is None else latest.version
     version = next_revision_version(previous, previous_version, current)
+    if version is None and force:
+        version = 1 if previous_version is None else previous_version + 1
     if version is None:
         return
-    db.add(InquiryRevision(topic_id=topic.id, version=version, body=current))
+    db.add(
+        InquiryRevision(
+            topic_id=topic.id,
+            version=version,
+            body=current,
+            generation_meta=(
+                None
+                if prompt_stage is None
+                else {"prompt_stage": prompt_stage, "prompt_version": prompt_version}
+            ),
+        )
+    )
     await db.flush()
 
 
