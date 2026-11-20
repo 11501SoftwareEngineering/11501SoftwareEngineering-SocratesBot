@@ -6,17 +6,18 @@ import json
 
 import tiktoken
 
+from app.core.model_catalog import INQUIRY_CATALOG_MODELS
 from app.services.model_client import _outbound
 
 # Keep this explicit: an unknown configured model must not fall back to a
-# character-count guess. Add an entry when the runtime model catalog changes.
+# character-count guess. tiktoken has no GPT-6 entries, so the catalog models use
+# o200k_base, the newest OpenAI encoding (GPT-4o, GPT-5, and the o-series). The
+# count is an estimate; the safety margin below absorbs small differences.
+_OPENAI_MODELS = ("openai/gpt-4o-mini", "openai/gpt-4o", *INQUIRY_CATALOG_MODELS)
 MODEL_ENCODINGS = {
-    "gpt-4o-mini": "o200k_base",
-    "openai/gpt-4o-mini": "o200k_base",
-    "gpt-4o": "o200k_base",
-    "openai/gpt-4o": "o200k_base",
-    "gpt-6.2-sol": "o200k_base",
-    "openai/gpt-6.2-sol": "o200k_base",
+    name: "o200k_base"
+    for model_id in _OPENAI_MODELS
+    for name in (model_id, model_id.removeprefix("openai/"))
 }
 
 _CHAT_MESSAGE_OVERHEAD = 4
