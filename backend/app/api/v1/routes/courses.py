@@ -153,7 +153,7 @@ async def assign_ta(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TaAssignResponse:
-    """Make any registered account a TA of the course (course teacher only)."""
+    """Assign a student account as a TA, or only check it (course teacher only)."""
     return await courses_service.assign_course_ta(db, current_user, courseId, payload)
 
 

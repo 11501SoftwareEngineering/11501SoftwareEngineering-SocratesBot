@@ -51,12 +51,8 @@ CORE_ACCOUNTS: tuple[SeedAccount, ...] = (
     ACCOUNT_ADMIN,
 )
 
-# Leave view_reports / edit_summary off so both allowed and denied paths can be
-# tried with the same account.
-TA_PERMISSIONS: tuple[TaPermission, ...] = (
-    TaPermission.EDIT_TOPICS,
-    TaPermission.VIEW_MEMBERS,
-)
+# Every TA holds all permissions, same as one assigned through the API.
+TA_PERMISSIONS: tuple[TaPermission, ...] = tuple(TaPermission)
 
 DEFAULT_PACKS: tuple[str, ...] = ("auth", "course_graph")
 KNOWN_PACKS: frozenset[str] = frozenset(DEFAULT_PACKS)

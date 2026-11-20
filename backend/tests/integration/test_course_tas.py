@@ -100,26 +100,14 @@ def test_student_promoted_to_ta_then_revoked_leaves_course_without_sessions() ->
                 db,
                 teacher,
                 course_id,
-                TaAssignRequest(
-                    account_id=student.account_id,
-                    permissions=[
-                        TaPermission.VIEW_MEMBERS,
-                        TaPermission.EDIT_TOPICS,
-                    ],
-                ),
+                TaAssignRequest(account_id=student.account_id),
             )
-            assert assigned.permissions == ["edit_topics", "view_members"]
+            assert assigned.message == "TA assigned"
             my_rows = await course_crud.list_my_course_rows(db, student_id)
             my_row = next(row for row in my_rows if row[0].id == course_id)
             assert my_row[4] == "TA"
-            assert sorted(my_row[5]) == ["edit_topics", "view_members"]
-            member_permissions = await course_crud.list_ta_permissions(
-                db, course_id=course_id, user_ids=[student_id]
-            )
-            assert sorted(member_permissions[student_id]) == [
-                "edit_topics",
-                "view_members",
-            ]
+            # A new TA holds every permission.
+            assert sorted(my_row[5]) == sorted(p.value for p in TaPermission)
             assert (
                 await course_crud.get_course_role(
                     db, course_id=course_id, user_id=student.id
@@ -225,10 +213,7 @@ def test_revoked_ta_can_be_assigned_again() -> None:
         async with AsyncSessionLocal() as db:
             teacher, student, course_id = await _setup_course(db, "ta-again")
             student_id = uuid.UUID(str(student.id))
-            request = TaAssignRequest(
-                account_id=student.account_id,
-                permissions=[TaPermission.VIEW_REPORTS],
-            )
+            request = TaAssignRequest(account_id=student.account_id)
             await courses_service.assign_course_ta(db, teacher, course_id, request)
             await courses_service.revoke_course_ta(db, teacher, course_id, student_id)
 
@@ -241,14 +226,14 @@ def test_revoked_ta_can_be_assigned_again() -> None:
             assert membership.role == "TA"
             assert membership.left_at is None
             assert (
-                await _permission_rows(db, course_id=course_id, user_id=student_id) == 1
+                await _permission_rows(db, course_id=course_id, user_id=student_id) == 4
             )
 
     asyncio.run(_run())
 
 
 @pytest.mark.integration
-def test_any_account_can_be_assigned_and_course_delete_cascades() -> None:
+def test_outside_student_account_can_be_assigned_and_course_delete_cascades() -> None:
     async def _run() -> None:
         await engine.dispose()
         await run_migrations()
@@ -264,7 +249,7 @@ def test_any_account_can_be_assigned_and_course_delete_cascades() -> None:
             )
             await db.commit()
 
-            # The course's own teacher cannot be a TA of it.
+            # A teacher account (here the course's own teacher) cannot be a TA.
             with pytest.raises(HTTPException) as exc_info:
                 await courses_service.assign_course_ta(
                     db,
@@ -274,8 +259,8 @@ def test_any_account_can_be_assigned_and_course_delete_cascades() -> None:
                 )
             assert exc_info.value.status_code == 400
 
-            # Someone outside the course joins it as a TA.
-            await courses_service.assign_course_ta(
+            # Someone outside the course joins it as a TA with chosen permissions.
+            assigned = await courses_service.assign_course_ta(
                 db,
                 teacher,
                 course_id,
@@ -284,6 +269,7 @@ def test_any_account_can_be_assigned_and_course_delete_cascades() -> None:
                     permissions=[TaPermission.EDIT_TOPICS],
                 ),
             )
+            assert assigned.permissions == ["edit_topics"]
             assert (
                 await course_crud.get_course_role(
                     db, course_id=course_id, user_id=outsider.id
@@ -299,10 +285,7 @@ def test_any_account_can_be_assigned_and_course_delete_cascades() -> None:
                 db,
                 teacher,
                 course_id,
-                TaAssignRequest(
-                    account_id=student.account_id,
-                    permissions=list(TaPermission),
-                ),
+                TaAssignRequest(account_id=student.account_id),
             )
             assert (
                 await _permission_rows(db, course_id=course_id, user_id=student.id) == 4
@@ -376,10 +359,7 @@ def test_assign_waits_for_concurrent_removal_then_reactivates_as_ta() -> None:
                     assigner,
                     assigning_teacher,
                     course_id,
-                    TaAssignRequest(
-                        account_id=account_id,
-                        permissions=[TaPermission.VIEW_MEMBERS],
-                    ),
+                    TaAssignRequest(account_id=account_id),
                 )
             )
             await _wait_until_lock_waiter()
@@ -388,8 +368,7 @@ def test_assign_waits_for_concurrent_removal_then_reactivates_as_ta() -> None:
 
             # The assign sees the committed removal and brings the row back as
             # an active TA, never a TA that has left.
-            assigned = await assign
-            assert assigned.permissions == ["view_members"]
+            await assign
 
             membership = await _membership_row(
                 remover, course_id=course_id, user_id=student_id
@@ -399,7 +378,7 @@ def test_assign_waits_for_concurrent_removal_then_reactivates_as_ta() -> None:
             assert membership.left_at is None
             assert (
                 await _permission_rows(remover, course_id=course_id, user_id=student_id)
-                == 1
+                == 4
             )
 
     asyncio.run(_run())
@@ -419,10 +398,7 @@ def test_permission_update_waits_for_concurrent_revoke_and_is_404() -> None:
                 revoker,
                 teacher,
                 course_id,
-                TaAssignRequest(
-                    account_id=student.account_id,
-                    permissions=[TaPermission.EDIT_TOPICS],
-                ),
+                TaAssignRequest(account_id=student.account_id),
             )
 
             # Same steps as revoke_course_ta, with the commit held back.

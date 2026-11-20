@@ -143,7 +143,7 @@ version: 0.2
 ---
 
 ## 課程名單
-助教權限有四項，如下表說明
+助教權限有四項，如下表說明。指派助教時可省略 `permissions`，省略即給予全部四項；其他 API 照常回傳 `permissions` / `my_permissions`，前端不需要時可忽略
 
 | permission | 允許做的事 |
 | --- | --- |
@@ -179,19 +179,19 @@ version: 0.2
     - 查無此課程 (404)
 
 ### 指派助教
-- 功能說明: 老師輸入任一已註冊帳號，指派為本課程助教並勾選權限。原為本課程學生者改任助教時保留歷史對話，並從學生統計排除；不在本課程者直接以助教身分加入課程
+- 功能說明: 老師輸入學生帳號（全域角色為 USER），指派為本課程助教並給予權限（未指定時給予全部四項）；老師帳號與管理員不可擔任助教。原為本課程學生者改任助教時保留歷史對話，並從學生統計排除；不在本課程者直接以助教身分加入課程。確認彈窗先以 `check: true` 呼叫，只做檢查並取得姓名、不寫入，讓錯誤在按下「新增」前就能顯示；確認後再以 `check: false`（或不帶）正式指派
 - 呼叫方式: POST /courses/{courseId}/tas
 - 授權: 老師
-- 輸入資料: `account_id`, `permissions`(僅接受 edit_topics, view_reports, edit_summary, view_members)
-- 成功回應: `user_id`, `account_id`, `name`, `permissions`, `message`
+- 輸入資料: `account_id`, `permissions`（選填，僅接受 edit_topics, view_reports, edit_summary, view_members；省略時給予全部四項）, `check`（選填，只接受 `true` / `false`，預設 `false`）
+- 成功回應: `user_id`, `account_id`, `name`, `permissions`, `message`（`check: true` 時為 `TA can be assigned`，正式指派為 `TA assigned`）
 - 錯誤:
-    - 帳號未填寫或含未知權限 (422)
+    - 帳號未填寫、含未知權限，或 `check` 不是 `true` / `false` (422)
     - 非該課程老師 (403)
     - 查無此帳號 (404)
-    - 已是本課程助教，或帳號身分不允許（如本課程老師、管理員），或同時有其他請求變更了該帳號的課程身分 (400)
+    - 指派對象已是本課程助教，或帳號不是學生帳號（全域角色為 TEACHER，或為管理員），或同時有其他請求變更了該帳號的課程身分 (400)
 
 ### 更新助教權限
-- 功能說明: 老師逐項更新助教權限；儲存後下一次 API 請求立即依新權限檢查
+- 功能說明: 老師逐項更新助教權限；儲存後下一次 API 請求立即依新權限檢查。助教已不分權限，前端不使用此 API，暫時保留
 - 呼叫方式: PUT /courses/{courseId}/tas/{userId}
 - 授權: 老師
 - 輸入資料: `permissions`
