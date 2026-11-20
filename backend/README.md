@@ -183,6 +183,8 @@ Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 tr
 - `dialogue_messages.generation_meta.analysis`：每則 AI 回覆的 move、status、safetyLevel，以及各階段的 prompt 版本。
 - 寫入前 `save_exchange` 會先 `SELECT … FOR UPDATE` 鎖住 session，progress 與 goal 的更新在同一交易內序列化。
 
+既有 session 沒有 progress：在它的第一個新回合前，會呼叫一次 status，對整段對話（附 exchange 編號）做補算，之後照常運作。這個補算每個 session 只做一次。
+
 ## 模型設定
 
 - `OPENAI_MODEL` 預設為 `openai/gpt-6-luna`；`OPENAI_VALIDITY_MODEL` 預設同值，用於每回合的 validity 閘門。
@@ -201,6 +203,7 @@ Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 tr
 ## 已知限制（部署前需處理）
 
 - **tokenizer 對照不完整**：`app/services/token_budget.py` 的 `MODEL_ENCODINGS` 只有 `gpt-4o` 系列與 `gpt-6.2-sol`。預設模型 `openai/gpt-6-luna` 以及模型目錄中的其他模型都沒有對照，對話的上下文預算計算會拋出 `UnsupportedModelTokenizerError`，回 503。部署前需要補上這些模型的對照，並以實際 tokenizer 驗證，不能直接沿用其他模型的對照。
+- 既有 session 的 progress 補算只在它的下一個新回合發生。
 
 ## 課程設定（Stage 1）
 
