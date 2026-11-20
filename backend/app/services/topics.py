@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import CourseRole, SessionStatus, TopicStage
 from app.crud import course as course_crud
-from app.crud import session as session_crud
 from app.crud import topic as topic_crud
 from app.models.topic import Topic
 from app.models.user import User
@@ -149,22 +148,24 @@ async def get_topic_explanation(
 ) -> TopicExplanationResponse:
     """Return the topic's title and background (``key_terms`` not stored yet).
 
+    Teachers and TAs can read a topic in any stage; students only once it is
+    in ``conversation`` or ``summary``.
+
     Raises:
-        HTTPException: 404 if the topic is missing; 403 if not a member.
+        HTTPException: 404 if the topic is missing, ``user`` is not a member
+            of its course, or a student asks for a setup topic.
     """
     topic = await topic_crud.get_topic_by_id(db, topic_id)
     if topic is None:
         raise _topic_not_found()
-    if not await session_crud.is_course_member(
-        db, user_id=user.id, course_id=topic.course_id
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Course membership required",
-        )
+    role = await courses_service.get_my_course_role(db, user, topic.course_id)
+    if role is None:
+        raise _topic_not_found()
+    if role is CourseRole.STUDENT and topic.stage not in _STUDENT_VISIBLE_STAGES:
+        raise _topic_not_found()
     return TopicExplanationResponse(
         topic_id=topic.id,
         title=topic.title,
-        background=topic.description,
+        background=topic.background_info,
         key_terms=[],
     )

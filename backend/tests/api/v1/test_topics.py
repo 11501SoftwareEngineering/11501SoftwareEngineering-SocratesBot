@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 
 from app.core.enums import SessionStatus, UserRole
 from app.crud import course as course_crud
-from app.crud import session as session_crud
 from app.crud import topic as topic_crud
 from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
 
@@ -44,6 +43,7 @@ def _topic(course_id, **overrides):
         "title": "T1",
         "description": "Background",
         "stage": "conversation",
+        "background_info": "A published case",
         "age_band": "16-18",
         "max_turns": 10,
     }
@@ -487,7 +487,9 @@ def test_delete_missing_topic_is_idempotent(
     course_route_db.commit.assert_not_awaited()
 
 
-def test_explanation_for_course_member(
+@pytest.mark.parametrize("db_role", ["TEACHER", "TA", "STUDENT"])
+def test_explanation_open_to_all_members(
+    db_role: str,
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -496,8 +498,8 @@ def test_explanation_for_course_member(
     bearer, _ = _login(auth_client, store)
     course = _course()
     topic = _topic(course.id)
+    _patch_role(monkeypatch, db_role, course)
     monkeypatch.setattr(topic_crud, "get_topic_by_id", AsyncMock(return_value=topic))
-    monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=True))
 
     response = auth_client.get(
         f"/api/v1/topics/{topic.id}/explanation", headers={"Authorization": bearer}
@@ -507,14 +509,24 @@ def test_explanation_for_course_member(
     assert response.json() == {
         "topic_id": str(topic.id),
         "title": "T1",
-        "background": "Background",
+        "background": "A published case",
         "key_terms": [],
     }
 
 
-@pytest.mark.parametrize(("topic_exists", "expected"), [(True, 403), (False, 404)])
-def test_explanation_non_member_or_missing(
-    topic_exists: bool,
+@pytest.mark.parametrize(
+    ("db_role", "stage", "expected"),
+    [
+        ("STUDENT", "setup", 404),
+        ("STUDENT", "conversation", 200),
+        ("STUDENT", "summary", 200),
+        ("TEACHER", "setup", 200),
+        ("TA", "setup", 200),
+    ],
+)
+def test_explanation_hides_setup_topics_from_students(
+    db_role: str,
+    stage: str,
     expected: int,
     auth_client: TestClient,
     store: FakeStore,
@@ -523,13 +535,34 @@ def test_explanation_non_member_or_missing(
 ) -> None:
     bearer, _ = _login(auth_client, store)
     course = _course()
+    topic = _topic(course.id, stage=stage)
+    _patch_role(monkeypatch, db_role, course)
+    monkeypatch.setattr(topic_crud, "get_topic_by_id", AsyncMock(return_value=topic))
+
+    response = auth_client.get(
+        f"/api/v1/topics/{topic.id}/explanation", headers={"Authorization": bearer}
+    )
+
+    assert response.status_code == expected
+
+
+@pytest.mark.parametrize("topic_exists", [True, False])
+def test_explanation_non_member_or_missing_is_404(
+    topic_exists: bool,
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store)
+    course = _course()
+    _patch_role(monkeypatch, None, course)
     monkeypatch.setattr(
         topic_crud,
         "get_topic_by_id",
         AsyncMock(return_value=_topic(course.id) if topic_exists else None),
     )
-    monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=False))
     response = auth_client.get(
         f"/api/v1/topics/{uuid4()}/explanation", headers={"Authorization": bearer}
     )
-    assert response.status_code == expected
+    assert response.status_code == 404
