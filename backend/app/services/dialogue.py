@@ -26,6 +26,7 @@ from app.services.dialogue_context import (
     UnsupportedModelTokenizerError,
     build_bounded_context,
 )
+from app.services.dialogue_turn import TurnPrompts, question_before, run_turn
 from app.services.model_client import ModelCallError, ModelClient
 
 # ponytail: one process. A second worker will not see this lock; a DB lease is the upgrade.
@@ -111,6 +112,10 @@ def apply_end(
     if action == DialogueAction.CONTINUE:
         return _continue(status_value, goal_reached)
     return _abandon()
+
+
+def _progress_of(session: Session) -> dict | None:
+    return (session.generation_meta or {}).get("progress")
 
 
 def _checkpoint_of(session: Session) -> DialogueContextCheckpoint:
@@ -273,12 +278,23 @@ async def _ask_and_store(
                 summary=summary_prompt,
             ),
         )
-        text, goal_reached = await client.complete_reply(
-            instructions=reply_prompt.instructions,
-            material=bounded.material,
-            model=model_id,
-            max_tokens=reply_prompt.max_output_tokens,
+        turn = await run_turn(
+            client,
+            prompts=TurnPrompts(
+                validity=prompt_for(PromptStage.VALIDITY),
+                status=prompt_for(PromptStage.STATUS),
+                dialogue=reply_prompt,
+            ),
+            topic=topic,
+            question=question_before(messages, topic.core_question or ""),
+            latest=content,
+            transcript_material=bounded.material,
+            previous_progress=_progress_of(session),
+            exchange=_turn_count(messages) + 1,
+            model_id=model_id,
+            validity_model=settings.OPENAI_VALIDITY_MODEL,
         )
+        text, goal_reached = turn.reply, turn.goal_reached
         locked = await message_crud.lock_session(db, session.id)
         if locked is None or locked.outcome != DialogueOutcome.OPEN.value:
             raise HTTPException(
@@ -319,6 +335,13 @@ async def _ask_and_store(
             goal_reached=goal_reached,
             prompt_stage=reply_prompt.stage.value,
             prompt_version=reply_prompt.version,
+            analysis={
+                "move": turn.move,
+                "status": turn.status,
+                "safetyLevel": turn.safety_level,
+                "promptVersions": turn.prompt_versions,
+            },
+            progress=turn.progress,
         )
         await db.commit()
     except ContextWindowExceeded as exc:
