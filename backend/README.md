@@ -162,15 +162,41 @@ make -C backend db-migration-check                # 檢查是否對齊 origin/ma
 
 Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 transcript、prompt 來源 metadata 和目前摘要 checkpoint。此流程不使用 Redis 作為對話資料或 prompt 快取，之後若要加快速度，先依實際流量與 profiling 找出瓶頸。
 
+## Stage 2 對話流程
+
+每個學生回合依序執行三個模型階段（`app/services/dialogue_turn.py`）：
+
+1. **validity**：判斷學生回答是否切題並說明理由（YES / NO）。NO 時只呼叫這一次，回覆為固定的離題訊息（`app/core/dialogue_messages.toml`），不呼叫後兩個階段。
+2. **status**：產生這一回合的完整 progress 快照。
+3. **planning**：產生可見回覆與提問方式（`present_counterexample` 或 `change_one_condition`）。
+
+就緒由伺服器判定（`app/services/dialogue_progress.py`），不由模型決定。`goal_reached` 為真，需同時符合：
+
+- 至少 3 個學生回合；
+- 四個里程碑（position、reason、examination、response）都已達成，且每個證據都指向目前或之前的學生回合；
+- response 在 examination 之後；
+- 模型在 status 回報 `ready`。
+
+儲存方式：
+
+- `sessions.generation_meta.progress`：最新的 progress 快照。
+- `dialogue_messages.generation_meta.analysis`：每則 AI 回覆的 move、status、safetyLevel，以及各階段的 prompt 版本。
+- 寫入前 `save_exchange` 會先 `SELECT … FOR UPDATE` 鎖住 session，progress 與 goal 的更新在同一交易內序列化。
+
 ## 模型設定
 
-- `OPENAI_MODEL` 預設為 `openai/gpt-6-luna`。
+- `OPENAI_MODEL` 預設為 `openai/gpt-6-luna`；`OPENAI_VALIDITY_MODEL` 預設同值，用於每回合的 validity 閘門。
 - 各任務的 timeout 與 `max_tokens` 上限（`app/services/model_client.py`）：
   - 課程設定（`inquiry_setup`）：45 秒，上限 2400 tokens；推理模型送 `reasoning: {effort: low}`。
   - 其他任務：60 秒，上限 4500 tokens。
   - 呼叫端可以要求更小的值，不能超過上限。超時會拋出 `ModelTimeoutError`。
 - `REASONING_MODELS`：模型目錄中的 8 個 OpenAI 模型。2026-11-20 於 OpenRouter 公開模型清單確認，這 8 個都列出 `reasoning` 參數。
 - 對話回覆使用 topic 上設定的模型，沒有才使用 `OPENAI_MODEL`。
+
+## 尚未實作與刻意的設計選擇
+
+- 離題回覆不顯示模型的內部推理（`thinkingProgress`），只顯示固定的說明文字。
+- `safety_interruption` 與 `student_requested_stop` 尚未結束對話。`sessions.outcome` 目前有 CHECK 約束，新增 `interrupted` 需要先決定 migration 方式。
 
 ## 已知限制（部署前需處理）
 

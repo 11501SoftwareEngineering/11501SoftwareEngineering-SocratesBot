@@ -1,0 +1,333 @@
+"""One Stage 2 student turn: validity gate, progress, then the visible reply.
+
+A turn makes up to three model calls:
+
+1. validity: YES or NO. NO ends the turn with a fixed "answer the question" reply
+   and makes no further calls.
+2. status: the full progress snapshot for this turn.
+3. planning: the visible reply, a counterexample or a changed condition.
+
+Readiness is decided by the server from the progress snapshot, not by the model.
+"""
+
+from __future__ import annotations
+
+import json
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Literal
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic.alias_generators import to_camel
+
+from app.core.config import settings
+from app.core.enums import MessageSender
+from app.core.prompts import PromptDefinition
+from app.models.message import DialogueMessage
+from app.models.topic import Topic
+from app.services.dialogue_progress import (
+    empty_progress,
+    reset_milestones,
+    validate_progress,
+)
+from app.services.model_client import ModelCallError, ModelClient
+
+_QUESTION_MARKS = ("?", "\uff1f")
+_MESSAGES_PATH = Path(__file__).resolve().parents[1] / "core" / "dialogue_messages.toml"
+_MESSAGES: dict[str, dict[str, str]] = tomllib.loads(
+    _MESSAGES_PATH.read_text(encoding="utf-8")
+)
+
+MOVES = (
+    "present_counterexample",
+    "change_one_condition",
+)
+STATUSES = (
+    "continue",
+    "ready",
+    "partial_complete",
+    "student_requested_stop",
+    "safety_interruption",
+)
+SAFETY_LEVELS = (
+    "normal",
+    "restricted_request",
+    "safeguarding_concern",
+    "urgent_risk",
+)
+
+
+class _Output(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
+
+class MilestoneOut(_Output):
+    met: bool
+    evidence_exchange: int | None = Field(default=None, ge=1, le=15)
+    summary: str = Field(max_length=1000)
+
+
+class EvidenceOut(_Output):
+    text: str = Field(max_length=1000)
+    evidence_exchanges: list[int] = Field(max_length=6)
+
+
+class ProgressOut(_Output):
+    position: MilestoneOut
+    reason: MilestoneOut
+    examination: MilestoneOut
+    response: MilestoneOut
+    current_position: str = Field(max_length=1400)
+    reasoned_uncertainty: str = Field(max_length=1400)
+    definitions: list[EvidenceOut] = Field(max_length=10)
+    reasons: list[EvidenceOut] = Field(max_length=10)
+    assumptions: list[EvidenceOut] = Field(max_length=10)
+    alternatives: list[EvidenceOut] = Field(max_length=10)
+    counterexamples: list[EvidenceOut] = Field(max_length=10)
+    revisions_or_defences: list[EvidenceOut] = Field(max_length=10)
+    unresolved_questions: list[str] = Field(max_length=10)
+    focal_tension_connection: str = Field(max_length=1400)
+    dialogue_movement: str = Field(max_length=1400)
+    stalled_turns: int = Field(ge=0, le=15)
+
+
+class StatusOut(_Output):
+    progress: ProgressOut
+    status: Literal[
+        "continue",
+        "ready",
+        "partial_complete",
+        "student_requested_stop",
+        "safety_interruption",
+    ]
+    safety_level: Literal[
+        "normal",
+        "restricted_request",
+        "safeguarding_concern",
+        "urgent_risk",
+    ]
+
+
+class ValidityOut(_Output):
+    thinking_progress: str = Field(max_length=1000)
+    validity: Literal["YES", "NO"]
+
+
+class PlanningOut(_Output):
+    method: Literal["present_counterexample", "change_one_condition"]
+    content: str = Field(min_length=1, max_length=1000)
+
+
+def _obj(properties: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": properties,
+        "required": list(properties),
+    }
+
+
+_STRING = {"type": "string"}
+_INTEGER = {"type": "integer"}
+_BOOLEAN = {"type": "boolean"}
+
+
+def _enum(values: tuple[str, ...]) -> dict[str, Any]:
+    return {"type": "string", "enum": list(values)}
+
+
+_MILESTONE = _obj(
+    {
+        "met": _BOOLEAN,
+        "evidenceExchange": {"type": ["integer", "null"]},
+        "summary": _STRING,
+    }
+)
+_EVIDENCE = _obj(
+    {
+        "text": _STRING,
+        "evidenceExchanges": {"type": "array", "items": _INTEGER},
+    }
+)
+_EVIDENCE_LIST = {"type": "array", "items": _EVIDENCE}
+_PROGRESS = _obj(
+    {
+        "position": _MILESTONE,
+        "reason": _MILESTONE,
+        "examination": _MILESTONE,
+        "response": _MILESTONE,
+        "currentPosition": _STRING,
+        "reasonedUncertainty": _STRING,
+        "definitions": _EVIDENCE_LIST,
+        "reasons": _EVIDENCE_LIST,
+        "assumptions": _EVIDENCE_LIST,
+        "alternatives": _EVIDENCE_LIST,
+        "counterexamples": _EVIDENCE_LIST,
+        "revisionsOrDefences": _EVIDENCE_LIST,
+        "unresolvedQuestions": {"type": "array", "items": _STRING},
+        "focalTensionConnection": _STRING,
+        "dialogueMovement": _STRING,
+        "stalledTurns": _INTEGER,
+    }
+)
+VALIDITY_SCHEMA = _obj(
+    {
+        "thinkingProgress": _STRING,
+        "validity": _enum(("YES", "NO")),
+    }
+)
+STATUS_SCHEMA = _obj(
+    {
+        "progress": _PROGRESS,
+        "status": _enum(STATUSES),
+        "safetyLevel": _enum(SAFETY_LEVELS),
+    }
+)
+PLANNING_SCHEMA = _obj(
+    {
+        "method": _enum(MOVES),
+        "content": _STRING,
+    }
+)
+
+
+@dataclass(frozen=True)
+class TurnPrompts:
+    validity: PromptDefinition
+    status: PromptDefinition
+    dialogue: PromptDefinition
+
+
+@dataclass(frozen=True)
+class TurnResult:
+    reply: str
+    move: str
+    status: str
+    safety_level: str
+    progress: dict[str, Any]
+    goal_reached: bool
+    prompt_versions: dict[str, str]
+
+
+def unrelated_reply(language: str) -> str:
+    table = _MESSAGES["unrelated_response"]
+    return table.get(language, table["zh-TW"])
+
+
+def question_before(messages: list[DialogueMessage], fallback: str) -> str:
+    """The latest tutor message that asked something, or the inquiry question."""
+    for message in reversed(messages):
+        if message.sender != MessageSender.AI:
+            continue
+        if any(mark in message.content for mark in _QUESTION_MARKS):
+            return message.content
+    return fallback
+
+
+def brief_of(topic: Topic) -> dict[str, Any]:
+    return {
+        "learnerBand": topic.age_band,
+        "targetExchanges": topic.max_turns,
+        "theme": topic.inquiry_topic,
+        "inquiryQuestion": topic.core_question,
+        "inquiryFocus": topic.inquiry_focus or "",
+        "necessaryContext": topic.background_info or "",
+        "exclusions": topic.exclusions or "",
+        "openingMessage": topic.opening_message or "",
+    }
+
+
+def _parse[T: BaseModel](model: type[T], raw: dict[str, Any]) -> T:
+    try:
+        return model.model_validate(raw)
+    except ValidationError:
+        raise ModelCallError(200) from None
+
+
+async def run_turn(
+    client: ModelClient,
+    *,
+    prompts: TurnPrompts,
+    topic: Topic,
+    question: str,
+    latest: str,
+    transcript_material: str,
+    previous_progress: dict[str, Any] | None,
+    exchange: int,
+    model_id: str,
+    validity_model: str,
+) -> TurnResult:
+    language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
+    validity_raw = await client.complete_object(
+        name="dialogue_validity",
+        schema=VALIDITY_SCHEMA,
+        instructions=prompts.validity.instructions,
+        material=json.dumps(
+            {"interfaceLanguage": language, "question": question, "answer": latest},
+            ensure_ascii=False,
+        ),
+        model=validity_model,
+        max_tokens=prompts.validity.max_output_tokens,
+    )
+    validity = _parse(ValidityOut, validity_raw)
+    base_progress = previous_progress or empty_progress()
+    if validity.validity == "NO":
+        return TurnResult(
+            reply=unrelated_reply(language),
+            move="unrelated_response",
+            status="continue",
+            safety_level="normal",
+            progress=reset_milestones(base_progress),
+            goal_reached=False,
+            prompt_versions={"validity": prompts.validity.version},
+        )
+
+    status_raw = await client.complete_object(
+        name="dialogue_status",
+        schema=STATUS_SCHEMA,
+        instructions=prompts.status.instructions,
+        material=json.dumps(
+            {
+                "approvedInquiryBrief": brief_of(topic),
+                "interfaceLanguage": language,
+                "previousProgress": base_progress,
+                "question": question,
+                "answer": latest,
+            },
+            ensure_ascii=False,
+        ),
+        model=model_id,
+        max_tokens=prompts.status.max_output_tokens,
+    )
+    status = _parse(StatusOut, status_raw)
+    progress = status.progress.model_dump(by_alias=True)
+
+    planning_raw = await client.complete_object(
+        name="dialogue_planning",
+        schema=PLANNING_SCHEMA,
+        instructions=prompts.dialogue.instructions,
+        material=transcript_material,
+        model=model_id,
+        max_tokens=prompts.dialogue.max_output_tokens,
+    )
+    planning = _parse(PlanningOut, planning_raw)
+
+    check = validate_progress(progress, exchange)
+    return TurnResult(
+        reply=planning.content,
+        move=planning.method,
+        status=status.status,
+        safety_level=status.safety_level,
+        progress=progress,
+        goal_reached=check.structurally_ready and status.status == "ready",
+        prompt_versions={
+            "validity": prompts.validity.version,
+            "status": prompts.status.version,
+            "dialogue": prompts.dialogue.version,
+        },
+    )
