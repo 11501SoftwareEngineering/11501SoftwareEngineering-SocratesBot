@@ -12,6 +12,7 @@ from typing import Any, Protocol
 import httpx
 
 from app.core.config import settings
+from app.core.model_catalog import INQUIRY_CATALOG_MODELS
 
 logger = logging.getLogger("app.model")
 # A provider can ask for a long pause. This request does not wait past two seconds.
@@ -75,20 +76,9 @@ class ModelTimeoutError(ModelCallError):
         super().__init__(None)
 
 
-# The inquiry model catalog from PR #236 (eight OpenAI models). Each one is listed
-# with the "reasoning" parameter in OpenRouter's public models list, checked 2026-11-20.
-REASONING_MODELS = frozenset(
-    {
-        "openai/gpt-6.2-sol",
-        "openai/gpt-6.1-sol",
-        "openai/gpt-6.1-terra",
-        "openai/gpt-6-luna",
-        "openai/gpt-6.2-sol-pro",
-        "openai/gpt-6.1-sol-pro",
-        "openai/gpt-6.1-terra-pro",
-        "openai/gpt-6-luna-pro",
-    }
-)
+# Every inquiry catalog model is listed with the "reasoning" parameter in
+# OpenRouter's public models list, checked 2026-11-20.
+REASONING_MODELS = frozenset(INQUIRY_CATALOG_MODELS)
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.core.prompts import PromptStage, prompt_for
 from app.models.message import DialogueMessage
 from app.models.topic import Topic
@@ -195,3 +195,33 @@ async def test_invalid_summary_output_is_a_model_failure(
                 summary=prompt_for(PromptStage.DIALOGUE_CONTEXT_SUMMARY),
             ),
         )
+
+
+async def test_default_model_builds_the_full_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    default_model = Settings.model_fields["OPENAI_MODEL"].default
+    monkeypatch.setattr(settings, "DIALOGUE_CONTEXT_TOKEN_BUDGET", 3_000)
+    client = SummaryClient()
+
+    context = await build_bounded_context(
+        client=client,
+        topic=_topic(),
+        messages=_history(10),
+        latest="I want to compare who benefits with who pays.",
+        checkpoint=DialogueContextCheckpoint(
+            summary=None,
+            summarized_message_count=0,
+            prompt_stage=None,
+            prompt_version=None,
+        ),
+        model_id=default_model,
+        prompts=DialogueContextPrompts(
+            reply=prompt_for(PromptStage.DIALOGUE),
+            summary=prompt_for(PromptStage.DIALOGUE_CONTEXT_SUMMARY),
+        ),
+    )
+
+    assert default_model == "openai/gpt-6-luna"
+    assert client.summary_inputs
+    assert "compare who benefits" in context.material
