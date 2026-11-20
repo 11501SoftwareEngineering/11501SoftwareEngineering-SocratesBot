@@ -3,6 +3,7 @@
 .env.local
 .env.*.local
 .env.db
+.env.backend
 !.env.example
 *.log
 *.tmp
@@ -23,3 +24,4 @@
 .idea/
 *.swp
 *.swo
+

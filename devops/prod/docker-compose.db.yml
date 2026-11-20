@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: "postgres"
-      POSTGRES_DB: "postgres"
+      POSTGRES_DB: "production"
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     volumes:
       - postgres_data_prod:/var/lib/postgresql

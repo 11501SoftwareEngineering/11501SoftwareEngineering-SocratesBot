@@ -1,0 +1,19 @@
+services:
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    container_name: socrates-backend
+    restart: unless-stopped
+    env_file:
+      - .env.backend
+    expose:
+      - "8000:8000"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - db-network-prod
+
+networks:
+  db-network-prod:
+    external: true
