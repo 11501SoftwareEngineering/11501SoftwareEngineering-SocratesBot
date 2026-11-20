@@ -1,5 +1,6 @@
 services:
   backend:
+    image: socrates-backend:latest
     build:
       context: ../../backend
       dockerfile: Dockerfile
