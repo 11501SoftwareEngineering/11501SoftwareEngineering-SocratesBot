@@ -22,6 +22,7 @@ if not (Path(__file__).resolve().parents[1] / ".env").is_file():
         "REDIS_PORT": "6379",
         "REDIS_URL": "redis://localhost:6379/0",
         "JWT_SECRET_KEY": "test-only-jwt-secret-key-for-tests",
+        "TEACHER_API_KEY_SECRET": "test-only-teacher-api-key-secret-32",
         "JWT_ALGORITHM": "HS256",
         "ACCESS_TOKEN_EXPIRE_MINUTES": "15",
         "OPENAI_API_KEY": "",

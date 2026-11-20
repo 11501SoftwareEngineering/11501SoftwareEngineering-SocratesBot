@@ -56,6 +56,8 @@ class Settings(BaseSettings):
 
     # Security & JWT
     JWT_SECRET_KEY: Annotated[SecretStr, Field(min_length=32)]
+    # Encrypts a teacher's OpenRouter key at rest. Losing it makes stored keys unreadable.
+    TEACHER_API_KEY_SECRET: Annotated[SecretStr, Field(min_length=32)]
     JWT_ALGORITHM: NonEmptyStr
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7

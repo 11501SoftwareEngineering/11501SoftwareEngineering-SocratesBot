@@ -25,6 +25,22 @@ def test_sanitize_strips_password_input_keeps_loc() -> None:
     assert out[1]["input"] is None
 
 
+def test_sanitize_strips_api_key_input() -> None:
+    secret = "a" * 20
+    errors = [
+        {
+            "type": "value_error",
+            "loc": ["body", "api_key"],
+            "msg": "Value error, invalid api key",
+            "input": secret,
+        }
+    ]
+    out = sanitize_validation_errors(errors)
+    assert "input" not in out[0]
+    if secret in str(out):
+        raise AssertionError("sanitized errors included the raw api key")
+
+
 def test_sanitize_redacts_password_in_sibling_field_input() -> None:
     errors = [
         {

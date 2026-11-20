@@ -255,7 +255,7 @@ def test_create_topic_fills_eight_fields_from_the_description(
     monkeypatch.setattr(topic_crud, "create_topic", create_mock)
     monkeypatch.setattr(topic_crud, "record_inquiry_change", AsyncMock())
 
-    async def complete(self, *, instructions, material, model=None):
+    async def complete(self, *, instructions, material, model=None, **_extra):
         assert "course_description" in material
         return _GENERATED
 
@@ -302,7 +302,7 @@ def test_ta_with_edit_topics_can_create_a_topic(
     monkeypatch.setattr(topic_crud, "create_topic", AsyncMock(return_value=created))
     monkeypatch.setattr(topic_crud, "record_inquiry_change", AsyncMock())
 
-    async def complete(self, *, instructions, material, model=None):
+    async def complete(self, *, instructions, material, model=None, **_extra):
         return _GENERATED
 
     monkeypatch.setattr(
@@ -330,7 +330,7 @@ def test_create_topic_does_not_store_a_row_when_the_model_fails(
     create_mock = AsyncMock()
     monkeypatch.setattr(topic_crud, "create_topic", create_mock)
 
-    async def fail(self, *, instructions, material, model=None):
+    async def fail(self, *, instructions, material, model=None, **_extra):
         from app.services.model_client import ModelCallError
 
         raise ModelCallError(503)

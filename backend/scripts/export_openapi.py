@@ -32,6 +32,7 @@ DUMMY_ENV: dict[str, str] = {
     "REDIS_HOST": "localhost",
     "REDIS_PORT": "6379",
     "JWT_SECRET_KEY": "test-only-jwt-secret-key-for-tests",
+    "TEACHER_API_KEY_SECRET": "test-only-teacher-api-key-secret-32",
     "JWT_ALGORITHM": "HS256",
     "ACCESS_TOKEN_EXPIRE_MINUTES": "15",
     "OPENAI_API_KEY": "unused-for-openapi-export",

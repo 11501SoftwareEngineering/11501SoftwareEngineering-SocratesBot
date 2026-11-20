@@ -1,3 +1,4 @@
+import base64
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from secrets import token_urlsafe
@@ -5,6 +6,7 @@ from typing import Any
 from uuid import UUID
 
 import jwt
+from cryptography.fernet import Fernet, InvalidToken
 from pwdlib import PasswordHash
 
 from app.core.config import settings
@@ -30,6 +32,24 @@ def generate_initial_password() -> str:
 def hash_token(raw_token: str) -> str:
     """Return a SHA-256 hex digest of an opaque token (for DB storage)."""
     return sha256(raw_token.encode("utf-8")).hexdigest()
+
+
+def _teacher_key_fernet() -> Fernet:
+    secret = settings.TEACHER_API_KEY_SECRET.get_secret_value().encode("utf-8")
+    return Fernet(base64.urlsafe_b64encode(sha256(secret).digest()))
+
+
+def encrypt_api_key(api_key: str) -> str:
+    """Encrypt a teacher OpenRouter key for database storage."""
+    return _teacher_key_fernet().encrypt(api_key.encode("utf-8")).decode("ascii")
+
+
+def decrypt_api_key(stored: str) -> str:
+    """Return the OpenRouter key. The error text never includes the key."""
+    try:
+        return _teacher_key_fernet().decrypt(stored.encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError):
+        raise RuntimeError("failed to read teacher ai settings") from None
 
 
 def hash_password(password: str) -> str:

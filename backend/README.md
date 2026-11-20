@@ -13,6 +13,7 @@
     cp backend/config.yaml.example backend/config.yaml
     ```
     `.env` 放密鑰；`config.yaml` 放非密鑰本機設定（見下方 Super Admin）。
+    老師自備的 OpenRouter key 會加密後存進資料庫。`.env` 的 `TEACHER_API_KEY_SECRET` 是解密用的伺服器金鑰，至少 32 字元，可用 `openssl rand -hex 32` 產生。沒設老師 key 時，模型呼叫仍用 `OPENAI_API_KEY`。換掉 `TEACHER_API_KEY_SECRET` 之後，已存的老師 key 無法解密。
 
 3. 在 repo 根目錄安裝鎖定的 Python 套件並啟用 pre-commit：
     ```bash
