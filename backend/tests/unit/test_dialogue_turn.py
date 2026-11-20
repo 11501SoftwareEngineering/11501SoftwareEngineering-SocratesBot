@@ -5,9 +5,16 @@ from typing import Any
 
 import pytest
 
+from app.core.enums import MessageSender
 from app.core.prompts import PromptStage, prompt_for
+from app.models.message import DialogueMessage
 from app.services.dialogue_progress import empty_progress
-from app.services.dialogue_turn import TurnPrompts, run_turn, unrelated_reply
+from app.services.dialogue_turn import (
+    TurnPrompts,
+    catch_up_progress,
+    run_turn,
+    unrelated_reply,
+)
 from app.services.model_client import ModelCallError
 
 pytestmark = pytest.mark.anyio
@@ -128,3 +135,22 @@ async def test_malformed_status_is_a_model_failure() -> None:
 
     with pytest.raises(ModelCallError):
         await _run(client)
+
+
+async def test_legacy_session_catches_up_with_one_status_call() -> None:
+    client = ScriptedClient(_status())
+    messages = [
+        DialogueMessage(sender=MessageSender.AI, content="Why?"),
+        DialogueMessage(sender=MessageSender.STUDENT, content="Fair."),
+    ]
+
+    progress = await catch_up_progress(
+        client,
+        prompt=prompt_for(PromptStage.STATUS),
+        topic=_topic(),
+        messages=messages,
+        model_id="openai/gpt-6-luna",
+    )
+
+    assert client.calls == ["dialogue_status"]
+    assert progress["response"]["met"] is True

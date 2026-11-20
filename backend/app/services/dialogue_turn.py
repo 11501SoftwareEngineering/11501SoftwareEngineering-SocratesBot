@@ -331,3 +331,50 @@ async def run_turn(
             "dialogue": prompts.dialogue.version,
         },
     )
+
+
+def dialogue_record(messages: list[DialogueMessage]) -> str:
+    """The whole dialogue so far, with student exchange numbers."""
+    lines: list[str] = []
+    exchange = 0
+    for message in messages:
+        if message.sender == MessageSender.STUDENT:
+            exchange += 1
+            lines.append(f"exchange {exchange} student: {message.content}")
+        else:
+            lines.append(f"tutor: {message.content}")
+    return "\n".join(lines)
+
+
+async def catch_up_progress(
+    client: ModelClient,
+    *,
+    prompt: PromptDefinition,
+    topic: Topic,
+    messages: list[DialogueMessage],
+    model_id: str,
+) -> dict[str, Any]:
+    """Build the starting progress for a session that began before progress existed.
+
+    One status call over the whole dialogue record. It runs once per such session,
+    on its first turn after this change, so older dialogues can become ready on
+    the same terms as new ones.
+    """
+    language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
+    raw = await client.complete_object(
+        name="dialogue_status",
+        schema=STATUS_SCHEMA,
+        instructions=prompt.instructions,
+        material=json.dumps(
+            {
+                "approvedInquiryBrief": brief_of(topic),
+                "interfaceLanguage": language,
+                "previousProgress": empty_progress(),
+                "dialogueRecord": dialogue_record(messages),
+            },
+            ensure_ascii=False,
+        ),
+        model=model_id,
+        max_tokens=prompt.max_output_tokens,
+    )
+    return _parse(StatusOut, raw).progress.model_dump(by_alias=True)
