@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, literal, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import DialogueOutcome, GenerationStatus
@@ -133,14 +134,32 @@ async def _close_open_dialogues(db: AsyncSession, topic: Topic) -> None:
     )
 
 
-async def _mark_ready(db: AsyncSession, attempt_id: UUID, draft: dict) -> bool:
+async def _mark_ready(
+    db: AsyncSession,
+    attempt_id: UUID,
+    draft: dict,
+    *,
+    prompt_stage: str,
+    prompt_version: str,
+) -> bool:
     result = await db.execute(
         update(SummaryAttempt)
         .where(
             SummaryAttempt.id == attempt_id,
             SummaryAttempt.status == GenerationStatus.PROCESSING.value,
         )
-        .values(status=GenerationStatus.READY.value, result_json=draft)
+        .values(
+            status=GenerationStatus.READY.value,
+            result_json=draft,
+            generation_meta=func.coalesce(
+                SummaryAttempt.generation_meta, literal({}, JSONB)
+            ).op("||")(
+                literal(
+                    {"prompt_stage": prompt_stage, "prompt_version": prompt_version},
+                    JSONB,
+                )
+            ),
+        )
         .returning(SummaryAttempt.id)
     )
     return result.scalar_one_or_none() is not None
@@ -152,8 +171,16 @@ async def store_ready_summary(
     attempt_id: UUID,
     topic_id: UUID,
     draft: dict,
+    prompt_stage: str,
+    prompt_version: str,
 ) -> None:
-    if not await _mark_ready(db, attempt_id, draft):
+    if not await _mark_ready(
+        db,
+        attempt_id,
+        draft,
+        prompt_stage=prompt_stage,
+        prompt_version=prompt_version,
+    ):
         return
     topic = (
         await db.execute(select(Topic).where(Topic.id == topic_id).with_for_update())

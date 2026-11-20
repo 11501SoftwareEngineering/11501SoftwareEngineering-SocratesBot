@@ -6,7 +6,9 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.enums import DialogueAction, DialogueOutcome, MessageSender, SessionStatus
+from app.core.prompts import PromptStage, prompt_for
 from app.crud import message as message_crud
 from app.models.message import DialogueMessage
 from app.models.session import Session
@@ -17,16 +19,17 @@ from app.schemas.dialogue import (
     EndDialogueResponse,
     StreamDone,
 )
+from app.services.dialogue_context import (
+    ContextWindowExceeded,
+    DialogueContextCheckpoint,
+    DialogueContextPrompts,
+    UnsupportedModelTokenizerError,
+    build_bounded_context,
+)
 from app.services.model_client import ModelCallError, ModelClient
 
 # ponytail: one process. A second worker will not see this lock; a DB lease is the upgrade.
 _BUSY: set[UUID] = set()
-
-REPLY_INSTRUCTIONS = (
-    "You are guiding one Socratic inquiry. Reply in the inquiry's content language. "
-    "Do not name the student. Use exclusions 'unspecified' when none were given. "
-    "Set goal_reached only when the inquiry goal is met."
-)
 
 
 class ReplyRejected(Exception):
@@ -110,35 +113,14 @@ def apply_end(
     return _abandon()
 
 
-def reply_material(
-    topic: Topic,
-    messages: list[DialogueMessage],
-    latest: str | None = None,
-) -> str:
-    """Build the model prompt from the saved inquiry and the messages so far."""
-    lines = [
-        f"topic: {topic.inquiry_topic or ''}",
-        f"core_question: {topic.core_question or ''}",
-        f"inquiry_focus: {topic.inquiry_focus or ''}",
-        f"background_info: {topic.background_info or ''}",
-        f"exclusions: {topic.exclusions or 'unspecified'}",
-        f"content_language: {topic.content_language or ''}",
-        f"age_band: {topic.age_band or ''}",
-    ]
-    opening = (topic.opening_message or "").strip()
-    already_open = bool(
-        opening
-        and messages
-        and messages[0].sender == MessageSender.AI
-        and messages[0].content == opening
+def _checkpoint_of(session: Session) -> DialogueContextCheckpoint:
+    context = (session.generation_meta or {}).get("context_summary") or {}
+    return DialogueContextCheckpoint(
+        summary=context.get("text"),
+        summarized_message_count=context.get("message_count") or 0,
+        prompt_stage=context.get("prompt_stage"),
+        prompt_version=context.get("prompt_version"),
     )
-    if opening and not already_open:
-        lines.append(f"{MessageSender.AI}: {opening}")
-    for message in messages:
-        lines.append(f"{message.sender}: {message.content}")
-    if latest:
-        lines.append(f"{MessageSender.STUDENT}: {latest}")
-    return "\n".join(lines)
 
 
 def _turn_count(messages: list[DialogueMessage]) -> int:
@@ -266,39 +248,91 @@ async def _ask_and_store(
     db: AsyncSession,
     client: ModelClient,
     *,
-    session_id: UUID,
+    session: Session,
     topic: Topic,
     messages: list[DialogueMessage],
     content: str,
     request_id: UUID,
 ) -> StreamDone:
+    reply_prompt = prompt_for(PromptStage.DIALOGUE)
+    summary_prompt = prompt_for(PromptStage.DIALOGUE_CONTEXT_SUMMARY)
+    model_id = settings.OPENAI_MODEL
     try:
-        text, goal_reached = await client.complete_reply(
-            instructions=REPLY_INSTRUCTIONS,
-            material=reply_material(topic, messages, latest=content),
+        # The loaded ORM objects remain usable because expire_on_commit is false.
+        # Close the read transaction before either provider call.
+        await db.commit()
+        bounded = await build_bounded_context(
+            client=client,
+            topic=topic,
+            messages=messages,
+            latest=content,
+            checkpoint=_checkpoint_of(session),
+            model_id=model_id,
+            prompts=DialogueContextPrompts(
+                reply=reply_prompt,
+                summary=summary_prompt,
+            ),
         )
-        locked = await message_crud.lock_session(db, session_id)
+        text, goal_reached = await client.complete_reply(
+            instructions=reply_prompt.instructions,
+            material=bounded.material,
+            model=model_id,
+            max_tokens=reply_prompt.max_output_tokens,
+        )
+        locked = await message_crud.lock_session(db, session.id)
         if locked is None or locked.outcome != DialogueOutcome.OPEN.value:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Dialogue is not accepting replies",
             )
+        current_message_count = await message_crud.count_messages(db, session.id)
+        if current_message_count != len(messages) or _checkpoint_of(
+            locked
+        ) != _checkpoint_of(session):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Dialogue changed while replying",
+            )
         if topic.max_turns is not None:
-            turns = await message_crud.count_student_turns(db, session_id)
+            turns = await message_crud.count_student_turns(db, session.id)
             if turns >= topic.max_turns:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Turn cap reached",
                 )
+        await message_crud.merge_session_meta(
+            db,
+            session.id,
+            context_summary={
+                "text": bounded.summary,
+                "message_count": bounded.summarized_message_count,
+                "prompt_stage": bounded.summary_prompt_stage,
+                "prompt_version": bounded.summary_prompt_version,
+            },
+        )
         message_id = await message_crud.save_exchange(
             db,
-            session_id=session_id,
+            session_id=session.id,
             content=content,
             request_id=request_id,
             reply=text,
             goal_reached=goal_reached,
+            prompt_stage=reply_prompt.stage.value,
+            prompt_version=reply_prompt.version,
         )
         await db.commit()
+    except ContextWindowExceeded as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=str(exc),
+        ) from exc
+    except UnsupportedModelTokenizerError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Configured model tokenizer is not supported",
+        ) from exc
     except ModelCallError as exc:
         await db.rollback()
         raise _model_http(exc) from exc
@@ -369,7 +403,7 @@ async def send_reply(
         return await _ask_and_store(
             db,
             client,
-            session_id=session_id,
+            session=session,
             topic=topic,
             messages=messages,
             content=content,

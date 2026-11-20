@@ -8,7 +8,9 @@ import logging
 from contextlib import suppress
 from uuid import UUID
 
+from app.core.config import settings
 from app.core.database import AsyncSessionLocal
+from app.core.prompts import PromptStage, prompt_for
 from app.crud import summary as summary_crud
 from app.services.attempt_lease import refresh
 from app.services.model_client import ModelCallError, OpenAIChatClient
@@ -18,12 +20,6 @@ logger = logging.getLogger("app.model")
 client = OpenAIChatClient()
 _live: set[UUID] = set()
 _tasks: set[asyncio.Task] = set()
-
-INSTRUCTIONS = (
-    "Write a de-identified class summary from the name-free reports. "
-    "Refer to reports only by their label. Do not include a student name, "
-    "session id, or report id."
-)
 
 _SCHEMA: dict = {
     "type": "object",
@@ -68,6 +64,8 @@ async def run_summary(attempt_id: UUID) -> None:
     """Prepare one summary attempt and store it as ready or failed."""
     _live.add(attempt_id)
     refresher: asyncio.Task[None] | None = None
+    prompt = prompt_for(PromptStage.CLASS_SUMMARY)
+    model_id = settings.OPENAI_MODEL
     try:
         request = await _begin(attempt_id)
         if request is None:
@@ -79,14 +77,22 @@ async def run_summary(attempt_id: UUID) -> None:
             parsed = await client.complete_object(
                 name="class_summary",
                 schema=_SCHEMA,
-                instructions=INSTRUCTIONS,
+                instructions=prompt.instructions,
                 material=json.dumps(request["material"], ensure_ascii=False),
+                model=model_id,
+                max_tokens=prompt.max_output_tokens,
             )
             draft = validate_summary(parsed, request["labels"])
         except (ModelCallError, ValueError, TypeError, KeyError):
             await _fail(attempt_id)
             return
-        await _ready(attempt_id, request["topic_id"], draft)
+        await _ready(
+            attempt_id,
+            request["topic_id"],
+            draft,
+            prompt.stage.value,
+            prompt.version,
+        )
     except Exception:
         logger.info("summary attempt ended")
         await _fail(attempt_id)
@@ -117,9 +123,20 @@ async def _fail(attempt_id: UUID) -> None:
     logger.info("summary attempt failed")
 
 
-async def _ready(attempt_id: UUID, topic_id: UUID, draft: dict) -> None:
+async def _ready(
+    attempt_id: UUID,
+    topic_id: UUID,
+    draft: dict,
+    prompt_stage: str,
+    prompt_version: str,
+) -> None:
     async with AsyncSessionLocal() as db:
         await summary_crud.store_ready_summary(
-            db, attempt_id=attempt_id, topic_id=topic_id, draft=draft
+            db,
+            attempt_id=attempt_id,
+            topic_id=topic_id,
+            draft=draft,
+            prompt_stage=prompt_stage,
+            prompt_version=prompt_version,
         )
         await db.commit()
