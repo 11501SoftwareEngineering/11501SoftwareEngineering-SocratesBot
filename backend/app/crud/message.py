@@ -76,7 +76,16 @@ async def save_exchange(
     goal_reached: bool,
     prompt_stage: str,
     prompt_version: str,
+    analysis: dict | None = None,
+    progress: dict | None = None,
 ) -> UUID:
+    """Store one student message and its AI reply in the current transaction.
+
+    The session row is locked first, so the progress and readiness updates below
+    are serialized with any other writer in this transaction.
+    """
+    if await lock_session(db, session_id) is None:
+        raise LookupError("session not found")
     now = datetime.now(UTC)
     db.add(
         DialogueMessage(
@@ -94,6 +103,7 @@ async def save_exchange(
         generation_meta={
             "prompt_stage": prompt_stage,
             "prompt_version": prompt_version,
+            **({"analysis": analysis} if analysis is not None else {}),
         },
         created_at=now + timedelta(microseconds=1),
     )
@@ -105,6 +115,8 @@ async def save_exchange(
             .where(Session.id == session_id)
             .values(goal_reached=True, awaiting_end_consent=True)
         )
+    if progress is not None:
+        await merge_session_meta(db, session_id, progress=progress)
     return ai_message.id
 
 

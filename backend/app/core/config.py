@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: SecretStr
     ANTHROPIC_API_KEY: SecretStr
     OPENAI_MODEL: NonEmptyStr = "openai/gpt-6-luna"
+    # Fast model for the Stage 2 validity gate, which runs on every student turn.
+    OPENAI_VALIDITY_MODEL: NonEmptyStr = "openai/gpt-6-luna"
     OPENAI_BASE_URL: NonEmptyStr = "https://openrouter.ai/api/v1"
     DIALOGUE_CONTEXT_TOKEN_BUDGET: int = Field(default=12_000, ge=1_024)
 
