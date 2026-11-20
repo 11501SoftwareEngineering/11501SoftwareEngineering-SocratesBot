@@ -17,8 +17,6 @@ from app.schemas.topic import (
     CourseTopicsResponse,
     TopicExplanationResponse,
     TopicListItem,
-    TopicUpdateRequest,
-    TopicWriteResponse,
 )
 from app.services import courses as courses_service
 
@@ -43,42 +41,6 @@ async def get_instructed_topic(
         raise _topic_not_found()
     await courses_service.require_course_teacher(db, teacher, topic.course_id)
     return topic
-
-
-def _write_response(topic: Topic, message: str) -> TopicWriteResponse:
-    return TopicWriteResponse(
-        topic_id=topic.id,
-        course_id=topic.course_id,
-        title=topic.title,
-        description=topic.description,
-        message=message,
-    )
-
-
-async def update_topic(
-    db: AsyncSession, user: User, topic_id: UUID, payload: TopicUpdateRequest
-) -> TopicWriteResponse:
-    """Replace a topic's title and description (course cannot change).
-
-    Raises:
-        HTTPException: 404 if the topic is missing; 403 if not its teacher.
-    """
-    topic = await topic_crud.get_topic_by_id(db, topic_id)
-    if topic is None:
-        raise _topic_not_found()
-    await courses_service.require_course_teacher(db, user, topic.course_id)
-    try:
-        topic = await topic_crud.update_topic(
-            db,
-            topic,
-            title=payload.title,
-            description=payload.description,
-        )
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise
-    return _write_response(topic, "Topic updated")
 
 
 async def delete_topic(db: AsyncSession, user: User, topic_id: UUID) -> None:

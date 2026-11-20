@@ -337,17 +337,6 @@ PREFERENCES_UPDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     ),
 }
 
-_TOPIC_TITLE_TOO_SHORT_422 = json_detail_example(
-    "Request validation failed",
-    [
-        {
-            "type": "string_too_short",
-            "loc": ["body", "title"],
-            "msg": "String should have at least 1 character",
-        }
-    ],
-)
-
 _TOPIC_CREATE_INVALID_422 = json_detail_example(
     "Request validation failed",
     [
@@ -381,25 +370,6 @@ TOPIC_CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
         "Inquiry generation failed",
         "Inquiry generation failed",
     ),
-}
-
-TEACHER_TOPIC_UPDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
-    401: json_detail_example(
-        AUTH_UNAUTHORIZED_DETAIL,
-        AUTH_UNAUTHORIZED_DETAIL,
-    ),
-    403: json_detail_examples(
-        "Update denied",
-        {
-            "not_teacher": "Teacher privileges required",
-            "not_instructor": "Course instructor required",
-        },
-    ),
-    404: json_detail_example(
-        "Topic not found",
-        "Topic not found",
-    ),
-    422: _TOPIC_TITLE_TOO_SHORT_422,
 }
 
 TOPIC_DELETE_RESPONSES: dict[int | str, dict[str, Any]] = {
