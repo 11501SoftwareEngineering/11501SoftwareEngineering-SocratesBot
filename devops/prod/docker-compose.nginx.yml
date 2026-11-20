@@ -1,0 +1,17 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: socrates-nginx
+    restart: unless-stopped
+    ports:
+      # 將 VM 宿主機的 80 Port 映射到 Nginx 容器的 80 Port，讓校方 Gateway 連入
+      - "0.0.0.0:80:80"
+    volumes:
+      # 將本機的 nginx.conf 唯讀掛載進容器覆蓋預設設定
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - db-network-prod
+
+networks:
+  db-network-prod:
+    external: true
