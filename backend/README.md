@@ -220,3 +220,9 @@ Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 tr
 - 課程設定超過 45 秒，回 504，教師的輸入保留在前端。
 - 客戶端中止回 499 尚未實作。FastAPI 不會因為客戶端斷線而取消 handler，需要另外設計。
 - 課程設定的回應尚未包含 assessments、澄清問題與建議欄位。
+
+## 驗證
+
+- `make -C backend check`（ruff、格式、migration 對齊、單元、API 與 migration 測試）通過。
+- PostgreSQL 上 `upgrade head`、`downgrade 5b7e2c9d1a40`、`upgrade head` 通過。head 是 merge revision，`downgrade -1` 會因為 Ambiguous walk 失敗，所以要指定 revision。
+- integration（`make -C backend test-integration`，需要 `SESSION_TEST_DATABASE_URL`、PostgreSQL 與 Redis）：使用新建的空資料庫時 29 通過。
