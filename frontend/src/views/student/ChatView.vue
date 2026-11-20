@@ -16,7 +16,7 @@ import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { courseKeys } from '@/api/courses'
-import { sessionKeys, sessionsApi, type SessionMessage } from '@/api/sessions'
+import { sessionKeys, sessionsApi, type DialogueStatus, type SessionMessage } from '@/api/sessions'
 import ChatBubble from '@/components/common/ChatBubble.vue'
 import ChatInput from '@/components/common/ChatInput.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -72,16 +72,17 @@ const messagesQuery = useQuery({
 const messages = ref<DisplayMessage[]>([])
 const maxTurns = ref(0)
 const usedTurns = ref(0)
-const completed = ref(false)
+const status = ref<DialogueStatus>('open')
+const completed = computed(() => status.value === 'completed')
 
 watch(
   () => messagesQuery.data.value,
   (data) => {
     if (!data) return
     messages.value = data.messages.map((m) => ({ ...m }))
-    maxTurns.value = data.max_turns
+    maxTurns.value = data.max_turns ?? 0
     usedTurns.value = data.completed_turns
-    completed.value = data.session_status === 'COMPLETED'
+    status.value = data.session_status
   },
   { immediate: true },
 )
@@ -90,7 +91,13 @@ const loading = computed(
   () => !course.value || sessionQuery.isPending.value || messagesQuery.isPending.value,
 )
 const loadError = computed(() => sessionQuery.error.value ?? messagesQuery.error.value)
-const closed = computed(() => topic.value?.topic_status === 'summary' && !completed.value)
+/** 不能再回答：放棄了、老師產生摘要時被關閉，或題目已經進入摘要階段 */
+const closed = computed(
+  () =>
+    status.value === 'abandoned' ||
+    status.value === 'closed_by_summary' ||
+    (topic.value?.topic_status === 'summary' && !completed.value),
+)
 
 function retryLoad() {
   if (sessionQuery.isError.value) void sessionQuery.refetch()
@@ -155,7 +162,7 @@ async function handleSend(text: string) {
       onDone: (done) => {
         reply.message_id = done.message_id
         usedTurns.value = done.completed_turns
-        completed.value = done.is_completed
+        if (done.is_completed) status.value = 'completed'
       },
     })
     reply.pending = false
@@ -167,7 +174,7 @@ async function handleSend(text: string) {
     if (fresh && fresh.completed_turns > usedTurns.value) {
       queryClient.setQueryData(sessionKeys.messages(sessionId.value), fresh)
       pendingRequest = null
-      if (fresh.session_status === 'COMPLETED') markFinished()
+      if (fresh.session_status === 'completed') markFinished()
       return
     }
     messages.value = messages.value.filter((m) => !m.message_id.endsWith(`-${stamp}`))
@@ -266,7 +273,13 @@ const reportLink = computed(() => ({
           :class="[cardClass, 'mt-4 flex flex-col items-center gap-4 p-6 text-center']"
         >
           <p class="text-h2-title text-foreground">
-            {{ completed ? t('chat.finished') : t('chat.closed') }}
+            {{
+              completed
+                ? t('chat.finished')
+                : status === 'abandoned'
+                  ? t('chat.abandoned')
+                  : t('chat.closed')
+            }}
           </p>
           <p v-if="completed" class="text-body-lg text-muted-foreground">
             {{ t('chat.preparingReport') }}

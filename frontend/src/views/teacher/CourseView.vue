@@ -139,22 +139,28 @@ const removeTa = useConfirmAction(
   },
 )
 
-// 新增助教：輸入帳號 →「＋助教」→ 確認視窗 → 送出（預設給全部四項權限，之後可以從卡片修改）
+// 新增助教：輸入帳號 →「＋助教」→ 先請後端檢查（check: true，順便拿到姓名）→ 確認視窗 → 送出
+// （預設給全部四項權限，之後可以從卡片修改）
 const taAccount = ref('')
-/**
- * Figma「P10_AddTA_Confirm」要顯示姓名，但後端沒有「用帳號查使用者」的 API：
- * 本課程學生（改任助教）從學生名單找得到姓名，其他帳號顯示「—」，新增後在助教卡片看到姓名。
- */
-const taName = computed(
-  () => students.data.value?.find((m) => m.account_id === taAccount.value.trim())?.name ?? '—',
-)
+/** 檢查通過時後端回傳的姓名，確認視窗顯示（Figma「P10_AddTA_Confirm」） */
+const taName = ref('')
 const taError = ref('')
 const confirmTaOpen = ref(false)
 // 照 Figma 沒有權限設定畫面：新增助教時四個權限全開
 const DEFAULT_TA_PERMISSIONS = TA_PERMISSIONS.map((p) => p.value)
+const checkTa = useMutation({
+  mutationFn: (account: string) =>
+    coursesApi.addTa(courseId.value, account, DEFAULT_TA_PERMISSIONS, { check: true }),
+  onSuccess: (result) => {
+    taName.value = result.name
+    confirmTaOpen.value = true
+  },
+  onError: (err) => (taError.value = getApiErrorMessage(err, t('course.addTaFailed'))),
+})
 function askAddTa() {
-  taError.value = taAccount.value.trim() ? '' : t('course.accountRequired')
-  if (!taError.value) confirmTaOpen.value = true
+  const account = taAccount.value.trim()
+  taError.value = account ? '' : t('course.accountRequired')
+  if (!taError.value) checkTa.mutate(account)
 }
 const addTa = useMutation({
   mutationFn: () =>
@@ -305,7 +311,7 @@ const breadcrumbs = computed(() => [
                 class="h-9 flex-1 rounded-2xl bg-card"
                 :aria-invalid="!!taError"
               />
-              <Button type="submit"
+              <Button type="submit" :disabled="checkTa.isPending.value"
                 ><UserPlus class="size-6" aria-hidden="true" /> {{ t('course.addTa') }}</Button
               >
             </div>

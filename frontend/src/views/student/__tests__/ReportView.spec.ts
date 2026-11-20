@@ -121,7 +121,7 @@ describe('student ReportView（P08）', () => {
     })
     vi.mocked(sessionsApi.messages).mockResolvedValue({
       messages,
-      session_status: 'COMPLETED',
+      session_status: 'completed',
       max_turns: 5,
       completed_turns: 1,
       goal_reached: true,

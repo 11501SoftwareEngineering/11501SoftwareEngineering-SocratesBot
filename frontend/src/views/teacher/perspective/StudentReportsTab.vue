@@ -5,10 +5,10 @@ import ViewpointTag from '@/components/common/ViewpointTag.vue'
  *   搜尋、「清除 tag」；觀點 tag（摘要的群組）可以點來篩選；「目前 tag：… X 份報告」
  *   表格：姓名、匿名代碼、目前觀點、使用回合數、提交時間、學生報告（檢視）
  * 「檢視」打開那位學生的個人報告（Figma「P13_StudentReport」）。
- * API：GET /topics/{topicId}/reports（groups、reports[].group_ids 是 #195 規格新增的）
+ * API：GET /topics/{topicId}/reports；觀點 tag 是摘要（GET /topics/{topicId}/summary）的 groups，用 report_ids 對應報告
  */
 import { computed, ref, watch } from 'vue'
-import type { TeachingReport, TopicReports } from '@/api/summaries'
+import type { ReportGroup, TeachingReport, TopicReports } from '@/api/summaries'
 import SearchInput from '@/components/common/SearchInput.vue'
 import { CloseRingIcon, FileIcon } from '@/components/icons'
 import PersonalReport from '@/components/report/PersonalReport.vue'
@@ -20,19 +20,19 @@ import { useI18n } from 'vue-i18n'
 
 const { t } = useI18n()
 
-const props = defineProps<{ data: TopicReports }>()
+const props = defineProps<{ data: TopicReports; groups: ReportGroup[] }>()
 const group = defineModel<string>('group', { default: '' })
 
-const groups = computed(() => props.data.groups ?? [])
-const current = computed(() => groups.value.find((g) => g.group_id === group.value))
+const current = computed(() => props.groups.find((g) => g.group_id === group.value))
+const grouped = computed(() => new Set(props.groups.flatMap((g) => g.report_ids)))
 
 const filtered = computed(() =>
   props.data.reports.filter((r) =>
     !group.value
       ? true
       : group.value === 'ungrouped'
-        ? !r.group_ids?.length
-        : r.group_ids?.includes(group.value),
+        ? !grouped.value.has(r.report_id)
+        : (current.value?.report_ids.includes(r.report_id) ?? false),
   ),
 )
 const { keyword, results } = useSearch(

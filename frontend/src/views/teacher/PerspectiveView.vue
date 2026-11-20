@@ -12,7 +12,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { courseKeys } from '@/api/courses'
-import { summariesApi, summaryKeys } from '@/api/summaries'
+import { reportGroups, summariesApi, summaryKeys } from '@/api/summaries'
 import { topicKeys, topicsApi } from '@/api/topics'
 import ComingSoon from '@/components/common/ComingSoon.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -63,6 +63,8 @@ const summary = useQuery({
   queryFn: () => summariesApi.get(topicId.value),
   enabled: () => !!course.value && (can('view_reports') || can('edit_summary')),
 })
+
+const groups = computed(() => reportGroups(summary.data.value?.summary))
 
 const tab = computed<Tab>({
   get: () => (route.query.tab === 'reports' ? 'reports' : 'summary'),
@@ -218,6 +220,7 @@ function askGenerate() {
           v-if="reports.data.value"
           v-model:group="group"
           :data="reports.data.value"
+          :groups="groups"
         />
       </QueryState>
     </section>

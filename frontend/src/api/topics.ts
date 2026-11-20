@@ -86,12 +86,34 @@ export const topicKeys = {
   models: ['inquiry-models'] as const,
 }
 
+/** 八欄裡的文字欄位（後端可能回 null，例如剛建立、AI 還沒填的欄位） */
+const TEXT_FIELDS = [
+  'topic',
+  'core_question',
+  'inquiry_focus',
+  'background_info',
+  'exclusions',
+  'opening_message',
+] as const
+
+type RawSetup = Partial<Record<keyof TopicSetup, string | number | null>>
+
 /**
- * 後端有的版本把 opening_message 放在最外層（規格有兩種寫法），這裡統一放進 setup。
+ * 整理後端回傳的設定：
+ * - 文字欄位是 null 時換成空字串（輸入框和字數統計都要字串）
+ * - 後端有的版本把 opening_message 放在最外層（規格有兩種寫法），統一放進 setup
  */
-function normalize(data: TopicSetupResponse & { opening_message?: string | null }) {
-  const opening = data.setup?.opening_message ?? data.opening_message ?? ''
-  return { ...data, setup: { ...data.setup, opening_message: opening } } as TopicSetupResponse
+function normalize(
+  data: Omit<TopicSetupResponse, 'setup'> & {
+    setup?: RawSetup | null
+    opening_message?: string | null
+  },
+) {
+  const raw = data.setup ?? {}
+  const setup = { ...raw } as Record<string, unknown>
+  for (const key of TEXT_FIELDS) setup[key] = raw[key] ?? ''
+  setup.opening_message = raw.opening_message ?? data.opening_message ?? ''
+  return { ...data, setup: setup as unknown as TopicSetup } as TopicSetupResponse
 }
 
 export const topicsApi = {

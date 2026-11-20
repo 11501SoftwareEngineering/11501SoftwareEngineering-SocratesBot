@@ -32,7 +32,8 @@ const props = defineProps<{
 const emit = defineEmits<{ action: [] }>()
 const value = defineModel<string>({ default: '' })
 const id = useId()
-const count = computed(() => value.value.length)
+// 防呆：外面傳 null 進來也不會壞
+const count = computed(() => value.value?.length ?? 0)
 const locked = computed(() => props.readonly || props.disabled)
 const footText = computed(() => props.error || props.hint)
 const describedBy = computed(() => (footText.value || props.maxlength ? `${id}-foot` : undefined))

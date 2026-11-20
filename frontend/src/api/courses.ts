@@ -168,14 +168,23 @@ export const coursesApi = {
   removeStudent(courseId: string, userId: string) {
     return apiClient.delete(`/courses/${enc(courseId)}/students/${enc(userId)}`)
   },
-  async addTa(courseId: string, account_id: string, permissions: TaPermission[]) {
+  /**
+   * 指派助教。check: true 只檢查、不寫入：回傳那個帳號的姓名（給確認視窗顯示），
+   * 不能指派時（帳號不存在、是老師、已經是助教…）回錯誤，跟真的送出一樣。
+   */
+  async addTa(
+    courseId: string,
+    account_id: string,
+    permissions: TaPermission[],
+    options: { check?: boolean } = {},
+  ) {
     const res = await apiClient.post<{
       user_id: string
       account_id: string
       name: string
       permissions: TaPermission[]
       message: string
-    }>(`/courses/${enc(courseId)}/tas`, { account_id, permissions })
+    }>(`/courses/${enc(courseId)}/tas`, { account_id, permissions, check: options.check ?? false })
     return res.data
   },
   async updateTa(courseId: string, userId: string, permissions: TaPermission[]) {
