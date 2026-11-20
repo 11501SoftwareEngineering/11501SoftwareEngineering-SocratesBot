@@ -537,3 +537,97 @@ def test_explanation_non_member_or_missing(
         f"/api/v1/topics/{uuid4()}/explanation", headers={"Authorization": bearer}
     )
     assert response.status_code == expected
+
+
+def _no_model_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def must_not_call(self, **kwargs):
+        raise AssertionError("the model must not be called")
+
+    monkeypatch.setattr(
+        "app.services.model_client.OpenAIChatClient.complete_json", must_not_call
+    )
+
+
+def test_create_topic_refuses_keyboard_mash_before_the_model(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
+    course = _course()
+    _patch_role(monkeypatch, "TEACHER", course)
+    create_mock = AsyncMock()
+    monkeypatch.setattr(topic_crud, "create_topic", create_mock)
+    _no_model_call(monkeypatch)
+
+    response = auth_client.post(
+        f"/api/v1/courses/{course.id}/topics",
+        headers={"Authorization": bearer},
+        json={**_CREATE_BODY, "course_description": "asdfghjkl asdfghjkl asdfghjkl"},
+    )
+
+    assert response.status_code == 422
+    assert "recognizable topic" in response.json()["detail"]
+    create_mock.assert_not_awaited()
+
+
+def test_create_topic_refuses_placeholder_substance(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
+    course = _course()
+    _patch_role(monkeypatch, "TEACHER", course)
+    create_mock = AsyncMock()
+    monkeypatch.setattr(topic_crud, "create_topic", create_mock)
+
+    async def placeholder(self, **kwargs):
+        return {**_GENERATED, "core_question": "未指定"}
+
+    monkeypatch.setattr(
+        "app.services.model_client.OpenAIChatClient.complete_json", placeholder
+    )
+
+    response = auth_client.post(
+        f"/api/v1/courses/{course.id}/topics",
+        headers={"Authorization": bearer},
+        json=_CREATE_BODY,
+    )
+
+    assert response.status_code == 503
+    create_mock.assert_not_awaited()
+
+
+def test_create_topic_warns_when_background_is_not_specified(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store, "teach", UserRole.TEACHER)
+    course = _course()
+    _patch_role(monkeypatch, "TEACHER", course)
+    created = _topic(course.id, title="", description=None, stage="setup")
+    monkeypatch.setattr(topic_crud, "create_topic", AsyncMock(return_value=created))
+    monkeypatch.setattr(topic_crud, "record_inquiry_change", AsyncMock())
+
+    async def complete(self, **kwargs):
+        return {**_GENERATED, "background_info": "", "exclusions": "unspecified"}
+
+    monkeypatch.setattr(
+        "app.services.model_client.OpenAIChatClient.complete_json", complete
+    )
+
+    response = auth_client.post(
+        f"/api/v1/courses/{course.id}/topics",
+        headers={"Authorization": bearer},
+        json=_CREATE_BODY,
+    )
+
+    assert response.status_code == 200
+    warnings = response.json()["warnings"]
+    assert len(warnings) == 1
+    assert "not specified" in warnings[0]

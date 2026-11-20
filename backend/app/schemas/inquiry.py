@@ -99,6 +99,12 @@ class InquirySetupWriteResponse(InquirySetupResponse):
     message: str
 
 
+class CreatedInquiryResponse(InquirySetupResponse):
+    """A new setup topic. Warnings tell the teacher what still needs confirming."""
+
+    warnings: list[str] = Field(default_factory=list)
+
+
 class SaveInquiryRequest(BaseModel):
     setup: InquiryFields
 
