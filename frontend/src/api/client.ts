@@ -3,7 +3,15 @@ import { useAuthStore } from '@/stores/auth'
 
 // 後端 API 規格文件（docs/API功能規格.md）裡的路徑都是 /api/v1/... 開頭，
 // 例如 /api/v1/auth/login，如果這裡沒有補上 /api/v1，所有請求都會 404。
-export const API_BASE_URL = `${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/api/v1`
+// 後端網址由環境變數 VITE_API_BASE_URL 決定（開發用 .env.development，正式環境由部署設定），程式裡不寫死。
+// Demo 模式（VITE_USE_MOCK=true）不接後端，留空就好：假後端會攔截相對路徑的 /api/v1。
+const backendUrl = import.meta.env.VITE_API_BASE_URL ?? ''
+if (import.meta.env.PROD && !backendUrl && import.meta.env.VITE_USE_MOCK !== 'true') {
+  throw new Error(
+    'VITE_API_BASE_URL 沒有設定：正式環境要在建置時提供後端網址（見 frontend/.env.example）',
+  )
+}
+export const API_BASE_URL = `${backendUrl}/api/v1`
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
