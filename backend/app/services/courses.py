@@ -25,7 +25,6 @@ from app.schemas.course import (
     CourseMemberListItem,
     TaAssignRequest,
     TaAssignResponse,
-    TaCandidateResponse,
     TaPermissionsUpdateRequest,
     TaPermissionsUpdateResponse,
 )
@@ -445,26 +444,12 @@ async def _require_assignable_account(db: AsyncSession, account_id: str) -> User
     return target
 
 
-async def get_ta_candidate(
-    db: AsyncSession, teacher: User, course_id: UUID, account_id: str
-) -> TaCandidateResponse:
-    """Look up one account by exact ``account_id`` before assigning it as a TA.
-
-    Runs the same checks as ``assign_course_ta`` so the confirm dialog can
-    show the error before the teacher confirms.
-
-    Raises:
-        HTTPException: 404 course / account missing; 403 not the course
-            teacher; 400 already a TA here, a teacher account, or an admin.
-    """
-    await require_course_teacher(db, teacher, course_id)
-    target = await _require_assignable_account(db, account_id)
-    membership = await course_crud.get_active_membership(
-        db, course_id=course_id, user_id=target.id
+def _is_active_ta(membership: CourseMembership | None) -> bool:
+    return (
+        membership is not None
+        and membership.left_at is None
+        and membership.role == course_crud.MEMBERSHIP_TA
     )
-    if membership is not None and membership.role == course_crud.MEMBERSHIP_TA:
-        raise _ta_assign_rejected(_ALREADY_TA_DETAIL)
-    return TaCandidateResponse(account_id=target.account_id, name=target.name)
 
 
 async def assign_course_ta(
@@ -475,22 +460,34 @@ async def assign_course_ta(
     A student of the course is promoted in place (sessions are kept); someone
     who left or was removed rejoins as a TA; anyone else is added as a TA.
 
+    With ``payload.check`` only the checks run, nothing is written, so the
+    confirm dialog can show the account's name or the error first.
+
     Raises:
         HTTPException: 404 course / account missing; 403 not the course
             teacher; 400 already a TA here, a teacher account, or an admin.
     """
     await require_course_teacher(db, teacher, course_id)
     target = await _require_assignable_account(db, payload.account_id)
+    if payload.check:
+        membership = await course_crud.get_membership(
+            db, course_id=course_id, user_id=target.id
+        )
+        if _is_active_ta(membership):
+            raise _ta_assign_rejected(_ALREADY_TA_DETAIL)
+        return TaAssignResponse(
+            user_id=target.id,
+            account_id=target.account_id,
+            name=target.name,
+            message="TA can be assigned",
+        )
+
     # Lock the row (active or soft-left) so a concurrent removal, leave or
     # revoke cannot slip in between this check and the write.
     membership = await course_crud.get_membership(
         db, course_id=course_id, user_id=target.id, for_update=True
     )
-    if (
-        membership is not None
-        and membership.left_at is None
-        and membership.role == course_crud.MEMBERSHIP_TA
-    ):
+    if _is_active_ta(membership):
         raise _ta_assign_rejected(_ALREADY_TA_DETAIL)
 
     try:

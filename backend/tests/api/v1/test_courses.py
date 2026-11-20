@@ -1168,8 +1168,15 @@ def test_assign_ta_requires_course_teacher(
     mocks.promote.assert_not_awaited()
 
 
-@pytest.mark.parametrize("membership", [None, _membership("STUDENT")])
-def test_ta_candidate_returns_account_and_name(
+@pytest.mark.parametrize(
+    "membership",
+    [
+        None,
+        _membership("STUDENT"),
+        _membership("TA", left_at=datetime(2026, 11, 1, tzinfo=UTC)),
+    ],
+)
+def test_assign_ta_check_returns_account_without_writing(
     membership: object | None,
     auth_client: TestClient,
     store: FakeStore,
@@ -1180,17 +1187,25 @@ def test_ta_candidate_returns_account_and_name(
     alice = seed_user(store, account_id="alice", name="Alice")
     mocks = _patch_ta_course(monkeypatch, membership=membership)
 
-    response = auth_client.get(
-        f"/api/v1/courses/{mocks.course.id}/ta-candidate",
+    response = auth_client.post(
+        f"/api/v1/courses/{mocks.course.id}/tas",
         headers={"Authorization": bearer},
-        params={"account_id": "alice"},
+        json={"account_id": "alice", "check": True},
     )
 
     assert response.status_code == 200
-    assert response.json() == {"account_id": "alice", "name": "Alice"}
+    assert response.json() == {
+        "user_id": str(alice.id),
+        "account_id": "alice",
+        "name": "Alice",
+        "message": "TA can be assigned",
+    }
+    # No row lock and no write.
     mocks.lookup.assert_awaited_once_with(
         course_route_db, course_id=mocks.course.id, user_id=alice.id
     )
+    mocks.add.assert_not_awaited()
+    mocks.promote.assert_not_awaited()
     course_route_db.commit.assert_not_awaited()
 
 
@@ -1202,7 +1217,7 @@ def test_ta_candidate_returns_account_and_name(
         (None, False, True, "Teacher accounts cannot be TAs"),
     ],
 )
-def test_ta_candidate_rejected(
+def test_assign_ta_check_rejected(
     membership: object | None,
     admin: bool,
     teacher_account: bool,
@@ -1223,14 +1238,15 @@ def test_ta_candidate_rejected(
         monkeypatch.setattr(yaml_config, "SUPER_ADMIN_ACCOUNTS", ["alice"])
     mocks = _patch_ta_course(monkeypatch, membership=membership)
 
-    response = auth_client.get(
-        f"/api/v1/courses/{mocks.course.id}/ta-candidate",
+    response = auth_client.post(
+        f"/api/v1/courses/{mocks.course.id}/tas",
         headers={"Authorization": bearer},
-        params={"account_id": "alice"},
+        json={"account_id": "alice", "check": True},
     )
 
     assert response.status_code == 400
     assert response.json()["detail"] == detail
+    course_route_db.commit.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
@@ -1239,10 +1255,9 @@ def test_ta_candidate_rejected(
         ("nobody", True, True, 404),
         ("alice", False, True, 403),
         ("alice", True, False, 404),
-        ("", True, True, 422),
     ],
 )
-def test_ta_candidate_errors(
+def test_assign_ta_check_errors(
     account_id: str,
     instructor: bool,
     exists: bool,
@@ -1256,19 +1271,25 @@ def test_ta_candidate_errors(
     seed_user(store, account_id="alice", name="Alice")
     _patch_ta_course(monkeypatch, instructor=instructor, exists=exists)
 
-    response = auth_client.get(
-        f"/api/v1/courses/{uuid4()}/ta-candidate",
+    response = auth_client.post(
+        f"/api/v1/courses/{uuid4()}/tas",
         headers={"Authorization": bearer},
-        params={"account_id": account_id},
+        json={"account_id": account_id, "check": True},
     )
 
     assert response.status_code == expected
     assert "Alice" not in response.text
+    course_route_db.commit.assert_not_awaited()
 
 
 @pytest.mark.parametrize(
     "body",
-    [{}, {"account_id": ""}],
+    [
+        {},
+        {"account_id": ""},
+        {"account_id": "alice", "check": 1},
+        {"account_id": "alice", "check": "yes"},
+    ],
 )
 def test_assign_ta_validation_errors(
     body: dict,

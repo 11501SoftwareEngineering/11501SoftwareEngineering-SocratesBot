@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 from app.core.enums import CourseRole, TaPermission
 from app.services.course_invites import INVITE_ALPHABET, INVITE_LENGTH
@@ -76,24 +76,26 @@ class CourseMemberListItem(BaseModel):
 _EXAMPLE_TA_PERMISSIONS = [TaPermission.EDIT_TOPICS, TaPermission.VIEW_MEMBERS]
 
 
-class TaCandidateResponse(BaseModel):
-    """The account a teacher is about to assign, shown in the confirm dialog."""
-
-    account_id: str = Field(examples=["alice"])
-    name: str = Field(examples=["Alice"])
-
-
 class TaAssignRequest(BaseModel):
     """A new TA always gets every permission."""
 
     account_id: str = Field(min_length=1, max_length=64, examples=["alice"])
+    check: StrictBool = Field(
+        default=False,
+        examples=[False],
+        description="true: only run the checks and return the account, no write",
+    )
 
 
 class TaAssignResponse(BaseModel):
     user_id: UUID = Field(examples=[_EXAMPLE_USER_ID])
     account_id: str = Field(examples=["alice"])
     name: str = Field(examples=["Alice"])
-    message: str = Field(default="TA assigned", examples=["TA assigned"])
+    message: str = Field(
+        default="TA assigned",
+        examples=["TA assigned"],
+        description='"TA can be assigned" when check is true',
+    )
 
 
 class TaPermissionsUpdateRequest(BaseModel):

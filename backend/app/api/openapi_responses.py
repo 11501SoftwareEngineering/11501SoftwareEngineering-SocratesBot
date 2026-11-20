@@ -444,17 +444,16 @@ _UNKNOWN_TA_PERMISSION_422 = json_detail_example(
 )
 
 
-def _blank_account_id_422(location: str) -> dict[str, Any]:
-    return json_detail_example(
-        "Request validation failed",
-        [
-            {
-                "type": "string_too_short",
-                "loc": [location, "account_id"],
-                "msg": "String should have at least 1 character",
-            }
-        ],
-    )
+_BLANK_ACCOUNT_ID_422 = json_detail_example(
+    "Request validation failed",
+    [
+        {
+            "type": "string_too_short",
+            "loc": ["body", "account_id"],
+            "msg": "String should have at least 1 character",
+        }
+    ],
+)
 
 
 _TA_ASSIGN_400 = json_detail_examples(
@@ -477,24 +476,6 @@ _TA_ASSIGN_404 = json_detail_examples(
     },
 )
 
-COURSE_TA_CANDIDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
-    400: json_detail_examples(
-        "The account is already a TA of this course, is a teacher account, or is an admin",
-        {
-            "already_ta": "Already a TA of this course",
-            "teacher_account": "Teacher accounts cannot be TAs",
-            "admin": "Admins cannot be TAs",
-        },
-    ),
-    401: json_detail_example(
-        AUTH_UNAUTHORIZED_DETAIL,
-        AUTH_UNAUTHORIZED_DETAIL,
-    ),
-    403: _COURSE_TEACHER_403,
-    404: _TA_ASSIGN_404,
-    422: _blank_account_id_422("query"),
-}
-
 COURSE_TA_ASSIGN_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: _TA_ASSIGN_400,
     401: json_detail_example(
@@ -503,7 +484,7 @@ COURSE_TA_ASSIGN_RESPONSES: dict[int | str, dict[str, Any]] = {
     ),
     403: _COURSE_TEACHER_403,
     404: _TA_ASSIGN_404,
-    422: _blank_account_id_422("body"),
+    422: _BLANK_ACCOUNT_ID_422,
 }
 
 COURSE_TA_UPDATE_RESPONSES: dict[int | str, dict[str, Any]] = {
