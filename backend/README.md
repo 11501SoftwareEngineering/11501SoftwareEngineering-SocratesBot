@@ -161,7 +161,3 @@ make -C backend db-migration-check                # 檢查是否對齊 origin/ma
 `DIALOGUE_CONTEXT_TOKEN_BUDGET` 預設為 12,000，計算 system prompt、對話資料、strict schema、訊息格式、安全餘裕和輸出 token 預留。估算使用 `tiktoken`，依實際傳給 provider 的模型 ID 選擇明確 tokenizer 對照；沒有對照的模型會在 provider 呼叫前被拒絕。新增或更換可用模型時，請先在 `app/services/token_budget.py` 補上並驗證 tokenizer 對照。各 stage 的輸出上限由 prompt registry 設定。
 
 Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 transcript、prompt 來源 metadata 和目前摘要 checkpoint。此流程不使用 Redis 作為對話資料或 prompt 快取，之後若要加快速度，先依實際流量與 profiling 找出瓶頸。
-
-## 尚未實作與刻意的設計選擇
-
-- `SOCRATES_POLICY` 與 `ANALYSIS_POLICY` 目前沒有呼叫點，不移植。
