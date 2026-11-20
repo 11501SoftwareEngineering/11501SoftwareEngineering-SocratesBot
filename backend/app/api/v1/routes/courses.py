@@ -10,6 +10,7 @@ from app.api.deps import ActiveUser, TeacherUser, UserAccount, get_db
 from app.api.openapi_responses import (
     COURSE_CREATE_RESPONSES,
     COURSE_DELETE_RESPONSES,
+    COURSE_GET_RESPONSES,
     COURSE_JOIN_RESPONSES,
     COURSE_LEAVE_RESPONSES,
     COURSE_LIST_RESPONSES,
@@ -18,15 +19,19 @@ from app.api.openapi_responses import (
     COURSE_TA_ASSIGN_RESPONSES,
     COURSE_TA_REVOKE_RESPONSES,
     COURSE_TA_UPDATE_RESPONSES,
+    COURSE_UPDATE_RESPONSES,
 )
 from app.core.enums import CourseRole
 from app.schemas.course import (
     CourseCreateRequest,
     CourseCreateResponse,
+    CourseDetailResponse,
     CourseJoinRequest,
     CourseJoinResponse,
     CourseListItem,
     CourseMemberListItem,
+    CourseUpdateRequest,
+    CourseUpdateResponse,
     TaAssignRequest,
     TaAssignResponse,
     TaPermissionsUpdateRequest,
@@ -77,6 +82,33 @@ async def join_course(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CourseJoinResponse:
     return await courses_service.join_course(db, current_user, payload)
+
+
+@router.get(
+    "/{courseId}",
+    response_model=CourseDetailResponse,
+    responses=COURSE_GET_RESPONSES,
+)
+async def get_course(
+    courseId: UUID,
+    current_user: ActiveUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CourseDetailResponse:
+    return await courses_service.get_course(db, current_user, courseId)
+
+
+@router.put(
+    "/{courseId}",
+    response_model=CourseUpdateResponse,
+    responses=COURSE_UPDATE_RESPONSES,
+)
+async def update_course(
+    courseId: UUID,
+    payload: CourseUpdateRequest,
+    current_user: ActiveUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> CourseUpdateResponse:
+    return await courses_service.update_course(db, current_user, courseId, payload)
 
 
 @router.delete(

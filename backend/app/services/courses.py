@@ -19,10 +19,13 @@ from app.models.user import User
 from app.schemas.course import (
     CourseCreateRequest,
     CourseCreateResponse,
+    CourseDetailResponse,
     CourseJoinRequest,
     CourseJoinResponse,
     CourseListItem,
     CourseMemberListItem,
+    CourseUpdateRequest,
+    CourseUpdateResponse,
     TaAssignRequest,
     TaAssignResponse,
     TaPermissionsUpdateRequest,
@@ -128,6 +131,17 @@ def sort_permissions(permissions: Iterable[str]) -> list[str]:
     return sorted(set(permissions), key=lambda p: _PERMISSION_ORDER[TaPermission(p)])
 
 
+async def get_my_ta_permissions(
+    db: AsyncSession, user: User, course_id: UUID, role: CourseRole | None
+) -> list[str]:
+    """The caller's ordered TA permissions in ``course_id``; empty unless TA."""
+    if role is not CourseRole.TA:
+        return []
+    return sort_permissions(
+        await course_crud.get_ta_permissions(db, course_id=course_id, user_id=user.id)
+    )
+
+
 async def require_course_teacher_or_ta(
     db: AsyncSession, user: User, course_id: UUID, permission: TaPermission
 ) -> tuple[Course, CourseRole]:
@@ -225,6 +239,46 @@ async def list_my_courses(db: AsyncSession, user: User) -> list[CourseListItem]:
             )
         )
     return items
+
+
+async def get_course(
+    db: AsyncSession, user: User, course_id: UUID
+) -> CourseDetailResponse:
+    """Course info for a member; non-members get 404 like a missing course."""
+    course = await course_crud.get_course_by_id(db, course_id)
+    role = await get_my_course_role(db, user, course_id) if course else None
+    if course is None or role is None:
+        raise course_not_found()
+    return CourseDetailResponse(
+        course_id=course.id,
+        name=course.name,
+        description=course.description,
+        teacher_name=await course_crud.get_user_name(db, course.created_by),
+        my_role=role,
+        my_permissions=await get_my_ta_permissions(db, user, course.id, role),
+        invite_code=course.invitation_code,
+    )
+
+
+async def update_course(
+    db: AsyncSession, teacher: User, course_id: UUID, payload: CourseUpdateRequest
+) -> CourseUpdateResponse:
+    course = await require_course_teacher(db, teacher, course_id)
+    try:
+        course = await course_crud.update_course(
+            db, course, name=payload.name, description=payload.description
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return CourseUpdateResponse(
+        course_id=course.id,
+        name=course.name,
+        description=course.description,
+        invite_code=course.invitation_code,
+        message="Course updated",
+    )
 
 
 async def delete_course(db: AsyncSession, teacher: User, course_id: UUID) -> None:
