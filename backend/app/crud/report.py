@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, literal, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import GenerationStatus, MessageSender
@@ -84,14 +85,32 @@ async def list_processing(db: AsyncSession) -> list[ReportAttempt]:
     return list(await db.scalars(statement))
 
 
-async def mark_ready(db: AsyncSession, attempt_id: UUID, body: dict) -> None:
+async def mark_ready(
+    db: AsyncSession,
+    attempt_id: UUID,
+    body: dict,
+    *,
+    prompt_stage: str,
+    prompt_version: str,
+) -> None:
     await db.execute(
         update(ReportAttempt)
         .where(
             ReportAttempt.id == attempt_id,
             ReportAttempt.status == GenerationStatus.PROCESSING.value,
         )
-        .values(status=GenerationStatus.READY.value, result_json=body)
+        .values(
+            status=GenerationStatus.READY.value,
+            result_json=body,
+            generation_meta=func.coalesce(
+                ReportAttempt.generation_meta, literal({}, JSONB)
+            ).op("||")(
+                literal(
+                    {"prompt_stage": prompt_stage, "prompt_version": prompt_version},
+                    JSONB,
+                )
+            ),
+        )
     )
 
 

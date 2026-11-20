@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.enums import TaPermission, TopicStage, UserRole
+from app.core.prompts import PromptDefinition, PromptStage, prompt_for
 from app.crud import course as course_crud
 from app.crud import inquiry_model as inquiry_model_crud
 from app.crud import topic as topic_crud
@@ -34,20 +35,6 @@ from app.services import courses as courses_service
 from app.services.model_client import ModelCallError, OpenAIChatClient
 from app.services.teacher_ai_settings import openrouter_api_key
 from app.services.topics import get_instructed_topic
-
-_INSTRUCTIONS = (
-    "Turn the teacher's notes into an eight-field inquiry. "
-    "Return only the JSON object. Do not name a student. "
-    "inquiry_focus must not prescribe a conclusion the student must accept. "
-    "background_info must not state unverified claims as facts. "
-    "Use exclusions 'unspecified' when the teacher gave no exclusion. "
-    "opening_message may be empty."
-)
-_OPENING_INSTRUCTIONS = (
-    "Write one opening message for this inquiry. "
-    "Return it in opening_message and keep the other fields unchanged. "
-    "The opening message may be empty. Do not name a student."
-)
 
 
 async def list_inquiry_models(db: AsyncSession, user: User) -> list[InquiryModel]:
@@ -144,14 +131,15 @@ def _model_failure(exc: ModelCallError) -> HTTPException:
 
 
 async def _model_json(
-    model_id: str, instructions: str, material: str, api_key: str
+    model_id: str, prompt: PromptDefinition, material: str, api_key: str
 ) -> dict:
     try:
         return await OpenAIChatClient().complete_json(
-            instructions=instructions,
+            instructions=prompt.instructions,
             material=material,
             model=model_id,
             api_key=api_key,
+            max_tokens=prompt.max_output_tokens,
         )
     except ModelCallError as exc:
         raise _model_failure(exc) from None
@@ -168,9 +156,9 @@ def _validated(raw: dict, schema: type[GeneratedInquiry] | type[OpeningMessageDr
 
 
 async def _complete(
-    model_id: str, instructions: str, material: str, api_key: str
+    model_id: str, prompt: PromptDefinition, material: str, api_key: str
 ) -> GeneratedInquiry:
-    raw = await _model_json(model_id, instructions, material, api_key)
+    raw = await _model_json(model_id, prompt, material, api_key)
     return _validated(raw, GeneratedInquiry)
 
 
@@ -235,9 +223,10 @@ async def create_inquiry_topic(
     language = settings.DEFAULT_LANGUAGE_CODE
     model_id = settings.OPENAI_MODEL
     api_key = await openrouter_api_key(db, user.id)
+    prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
     generated = await _complete(
         model_id,
-        _INSTRUCTIONS,
+        prompt,
         (
             f"content_language: {language}\n"
             f"age_band: {payload.age_band}\n"
@@ -258,7 +247,13 @@ async def create_inquiry_topic(
         topic.model_id = model_id
         topic.stage = TopicStage.SETUP.value
         _apply(topic, generated)
-        await topic_crud.record_inquiry_change(db, topic)
+        await topic_crud.record_inquiry_change(
+            db,
+            topic,
+            prompt_stage=prompt.stage.value,
+            prompt_version=prompt.version,
+            force=True,
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -301,7 +296,13 @@ async def save_inquiry_setup(
     try:
         topic = await _locked_setup(db, topic.id)
         topic = await _store_setup(db, topic, payload.setup)
-        await topic_crud.record_inquiry_change(db, topic)
+        prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
+        await topic_crud.record_inquiry_change(
+            db,
+            topic,
+            prompt_stage=prompt.stage.value,
+            prompt_version=prompt.version,
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -334,7 +335,13 @@ async def publish_inquiry(
                 detail=f"Incomplete setup: {missing}",
             )
         topic = await topic_crud.publish_topic(db, topic)
-        await topic_crud.record_inquiry_change(db, topic)
+        prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
+        await topic_crud.record_inquiry_change(
+            db,
+            topic,
+            prompt_stage=prompt.stage.value,
+            prompt_version=prompt.version,
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -364,9 +371,11 @@ async def generate_inquiry(
             detail="Invalid model id",
         )
     api_key = await openrouter_api_key(db, teacher.id)
+    prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
+    await db.commit()
     generated = await _complete(
         catalog.model_id,
-        _INSTRUCTIONS,
+        prompt,
         (
             f"content_language: {payload.content_language}\n"
             f"age_band: {payload.age_band}\n"
@@ -392,9 +401,11 @@ async def refine_inquiry(
     model_id = topic.model_id or settings.OPENAI_MODEL
     language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
     api_key = await openrouter_api_key(db, teacher.id)
+    prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
+    await db.commit()
     generated = await _complete(
         model_id,
-        _INSTRUCTIONS,
+        prompt,
         _material(payload.setup, content_language=language, feedback=payload.feedback),
         api_key,
     )
@@ -417,10 +428,11 @@ async def opening_message(
     model_id = topic.model_id or settings.OPENAI_MODEL
     draft = payload.setup
     api_key = await openrouter_api_key(db, teacher.id)
+    prompt = prompt_for(PromptStage.OPENING)
     await db.commit()
     raw = await _model_json(
         model_id,
-        _OPENING_INSTRUCTIONS,
+        prompt,
         (
             f"age_band: {draft.age_band}\n"
             f"max_turns: {draft.max_turns}\n"
@@ -438,7 +450,13 @@ async def opening_message(
         topic = await _locked_setup(db, topic_id)
         _reject_if_stale(topic, seen_at)
         topic.opening_message = generated.opening_message or None
-        await topic_crud.record_inquiry_change(db, topic)
+        await topic_crud.record_inquiry_change(
+            db,
+            topic,
+            prompt_stage=prompt.stage.value,
+            prompt_version=prompt.version,
+            force=True,
+        )
         await db.commit()
     except Exception:
         await db.rollback()
