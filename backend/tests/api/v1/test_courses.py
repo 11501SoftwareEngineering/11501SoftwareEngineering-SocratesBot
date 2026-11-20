@@ -697,6 +697,7 @@ def test_list_members_role_filter(
             "name": "Alice",
             "role": "student",
             "joined_at": "2026-10-01T00:00:00Z",
+            "permissions": [],
         }
     ]
     list_mock.assert_awaited_once_with(course_route_db, course.id, roles=db_roles)
@@ -737,7 +738,7 @@ def test_list_members_errors(
     assert response.status_code == expected
 
 
-def test_list_members_lists_tas_without_permissions(
+def test_list_members_teacher_sees_ta_permissions(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -749,11 +750,17 @@ def test_list_members_lists_tas_without_permissions(
     monkeypatch.setattr(
         course_crud, "is_course_instructor", AsyncMock(return_value=True)
     )
+    student_row = _member_row("alice")
+    ta_row = _member_row("bob", "TA")
     monkeypatch.setattr(
         course_crud,
         "list_course_members",
-        AsyncMock(return_value=[_member_row("alice"), _member_row("bob", "TA")]),
+        AsyncMock(return_value=[student_row, ta_row]),
     )
+    permissions_mock = AsyncMock(
+        return_value={ta_row[0].id: ["view_members", "edit_topics"]}
+    )
+    monkeypatch.setattr(course_crud, "list_ta_permissions", permissions_mock)
 
     response = auth_client.get(
         f"/api/v1/courses/{course.id}/members", headers={"Authorization": bearer}
@@ -761,8 +768,13 @@ def test_list_members_lists_tas_without_permissions(
 
     assert response.status_code == 200
     body = response.json()
-    assert [row["role"] for row in body] == ["student", "ta"]
-    assert all("permissions" not in row for row in body)
+    assert [(row["role"], row["permissions"]) for row in body] == [
+        ("student", []),
+        ("ta", ["edit_topics", "view_members"]),
+    ]
+    permissions_mock.assert_awaited_once_with(
+        course_route_db, course_id=course.id, user_ids=[ta_row[0].id]
+    )
 
 
 @pytest.mark.parametrize(
@@ -934,7 +946,7 @@ def _membership(role: str, left_at: datetime | None = None) -> SimpleNamespace:
 _ALL_PERMISSIONS = ["edit_topics", "view_reports", "edit_summary", "view_members"]
 
 
-def test_assign_ta_promotes_student_with_every_permission(
+def test_assign_ta_without_permissions_grants_all(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -956,6 +968,7 @@ def test_assign_ta_promotes_student_with_every_permission(
         "user_id": str(alice.id),
         "account_id": "alice",
         "name": "Alice",
+        "permissions": _ALL_PERMISSIONS,
         "message": "TA assigned",
     }
     mocks.lookup.assert_awaited_once_with(
@@ -967,7 +980,19 @@ def test_assign_ta_promotes_student_with_every_permission(
     course_route_db.commit.assert_awaited_once()
 
 
-def test_assign_ta_ignores_permissions_in_the_body(
+@pytest.mark.parametrize(
+    ("granted", "expected"),
+    [
+        (
+            ["view_members", "edit_topics", "view_members"],
+            ["edit_topics", "view_members"],
+        ),
+        ([], []),
+    ],
+)
+def test_assign_ta_with_chosen_permissions(
+    granted: list[str],
+    expected: list[str],
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -981,14 +1006,12 @@ def test_assign_ta_ignores_permissions_in_the_body(
     response = auth_client.post(
         f"/api/v1/courses/{mocks.course.id}/tas",
         headers={"Authorization": bearer},
-        json={"account_id": "alice", "permissions": ["view_members"]},
+        json={"account_id": "alice", "permissions": granted},
     )
 
     assert response.status_code == 200
-    assert "permissions" not in response.json()
-    mocks.promote.assert_awaited_once_with(
-        course_route_db, membership, _ALL_PERMISSIONS
-    )
+    assert response.json()["permissions"] == expected
+    mocks.promote.assert_awaited_once_with(course_route_db, membership, expected)
 
 
 def test_assign_ta_adds_account_outside_the_course(
@@ -1212,6 +1235,7 @@ def test_assign_ta_check_returns_account_without_writing(
         "user_id": str(alice.id),
         "account_id": "alice",
         "name": "Alice",
+        "permissions": _ALL_PERMISSIONS,
         "message": "TA can be assigned",
     }
     # No row lock and no write.
@@ -1301,6 +1325,7 @@ def test_assign_ta_check_errors(
     [
         {},
         {"account_id": ""},
+        {"account_id": "alice", "permissions": ["delete_course"]},
         {"account_id": "alice", "check": 1},
         {"account_id": "alice", "check": "yes"},
     ],

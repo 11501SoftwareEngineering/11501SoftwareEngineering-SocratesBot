@@ -259,13 +259,17 @@ def test_outside_student_account_can_be_assigned_and_course_delete_cascades() ->
                 )
             assert exc_info.value.status_code == 400
 
-            # Someone outside the course joins it as a TA.
-            await courses_service.assign_course_ta(
+            # Someone outside the course joins it as a TA with chosen permissions.
+            assigned = await courses_service.assign_course_ta(
                 db,
                 teacher,
                 course_id,
-                TaAssignRequest(account_id=outsider.account_id),
+                TaAssignRequest(
+                    account_id=outsider.account_id,
+                    permissions=[TaPermission.EDIT_TOPICS],
+                ),
             )
+            assert assigned.permissions == ["edit_topics"]
             assert (
                 await course_crud.get_course_role(
                     db, course_id=course_id, user_id=outsider.id
@@ -274,7 +278,7 @@ def test_outside_student_account_can_be_assigned_and_course_delete_cascades() ->
             )
             assert (
                 await _permission_rows(db, course_id=course_id, user_id=outsider.id)
-                == 4
+                == 1
             )
 
             await courses_service.assign_course_ta(

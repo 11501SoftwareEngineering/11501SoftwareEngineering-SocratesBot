@@ -444,18 +444,6 @@ _UNKNOWN_TA_PERMISSION_422 = json_detail_example(
 )
 
 
-_BLANK_ACCOUNT_ID_422 = json_detail_example(
-    "Request validation failed",
-    [
-        {
-            "type": "string_too_short",
-            "loc": ["body", "account_id"],
-            "msg": "String should have at least 1 character",
-        }
-    ],
-)
-
-
 _TA_ASSIGN_400 = json_detail_examples(
     (
         "The account is already a TA of this course, is a teacher account, or is "
@@ -484,7 +472,28 @@ COURSE_TA_ASSIGN_RESPONSES: dict[int | str, dict[str, Any]] = {
     ),
     403: _COURSE_TEACHER_403,
     404: _TA_ASSIGN_404,
-    422: _BLANK_ACCOUNT_ID_422,
+    422: json_detail_examples(
+        "account_id is blank, a permission is unknown, or check is not a boolean",
+        {
+            "blank_account_id": [
+                {
+                    "type": "string_too_short",
+                    "loc": ["body", "account_id"],
+                    "msg": "String should have at least 1 character",
+                }
+            ],
+            "unknown_permission": [
+                {
+                    "type": "enum",
+                    "loc": ["body", "permissions", 0],
+                    "msg": (
+                        "Input should be 'edit_topics', 'view_reports', "
+                        "'edit_summary' or 'view_members'"
+                    ),
+                }
+            ],
+        },
+    ),
 }
 
 COURSE_TA_UPDATE_RESPONSES: dict[int | str, dict[str, Any]] = {

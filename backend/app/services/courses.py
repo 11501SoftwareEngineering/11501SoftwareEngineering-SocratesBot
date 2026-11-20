@@ -375,6 +375,15 @@ async def list_course_members(
             else (course_crud.MEMBERSHIP_STUDENT, course_crud.MEMBERSHIP_TA)
         )
     rows = await course_crud.list_course_members(db, course_id, roles=db_roles)
+    ta_permissions = await course_crud.list_ta_permissions(
+        db,
+        course_id=course_id,
+        user_ids=[
+            member.id
+            for member, membership in rows
+            if membership.role == course_crud.MEMBERSHIP_TA
+        ],
+    )
     return [
         CourseMemberListItem(
             user_id=member.id,
@@ -382,6 +391,7 @@ async def list_course_members(
             name=member.name,
             role=_ROLE_BY_DB_VALUE[membership.role],
             joined_at=membership.joined_at,
+            permissions=sort_permissions(ta_permissions.get(member.id, [])),
         )
         for member, membership in rows
     ]
@@ -426,7 +436,7 @@ async def _require_active_ta(
     return membership
 
 
-# TAs are no longer given a subset; every new TA holds all permissions.
+# Assigning without ``permissions`` grants all of them.
 _ALL_TA_PERMISSIONS = sort_permissions(TaPermission)
 
 
@@ -461,7 +471,10 @@ def _is_active_ta(membership: CourseMembership | None) -> bool:
 async def assign_course_ta(
     db: AsyncSession, teacher: User, course_id: UUID, payload: TaAssignRequest
 ) -> TaAssignResponse:
-    """Make a student (USER) account a TA of the course with every permission.
+    """Make a student (USER) account a TA of the course.
+
+    ``payload.permissions`` picks the granted permissions; omitted, all four
+    are granted.
 
     A student of the course is promoted in place (sessions are kept); someone
     who left or was removed rejoins as a TA; anyone else is added as a TA.
@@ -475,6 +488,11 @@ async def assign_course_ta(
     """
     await require_course_teacher(db, teacher, course_id)
     target = await _require_assignable_account(db, payload.account_id)
+    permissions = (
+        _ALL_TA_PERMISSIONS
+        if payload.permissions is None
+        else sort_permissions(payload.permissions)
+    )
     if payload.check:
         membership = await course_crud.get_membership(
             db, course_id=course_id, user_id=target.id
@@ -485,6 +503,7 @@ async def assign_course_ta(
             user_id=target.id,
             account_id=target.account_id,
             name=target.name,
+            permissions=permissions,
             message="TA can be assigned",
         )
 
@@ -502,10 +521,10 @@ async def assign_course_ta(
                 db,
                 course_id=course_id,
                 user_id=target.id,
-                permissions=_ALL_TA_PERMISSIONS,
+                permissions=permissions,
             )
         else:
-            await course_crud.promote_to_ta(db, membership, _ALL_TA_PERMISSIONS)
+            await course_crud.promote_to_ta(db, membership, permissions)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -522,6 +541,7 @@ async def assign_course_ta(
         user_id=target.id,
         account_id=target.account_id,
         name=target.name,
+        permissions=permissions,
         message="TA assigned",
     )
 

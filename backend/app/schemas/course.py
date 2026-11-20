@@ -76,15 +76,24 @@ class CourseMemberListItem(BaseModel):
     name: str = Field(examples=["Alice"])
     role: CourseRole = Field(examples=[CourseRole.STUDENT])
     joined_at: datetime = Field(examples=[_EXAMPLE_JOINED_AT])
+    permissions: list[TaPermission] = Field(
+        default_factory=list,
+        description="TA permissions; empty for students",
+    )
 
 
 _EXAMPLE_TA_PERMISSIONS = [TaPermission.EDIT_TOPICS, TaPermission.VIEW_MEMBERS]
 
 
 class TaAssignRequest(BaseModel):
-    """A new TA always gets every permission."""
-
     account_id: str = Field(min_length=1, max_length=64, examples=["alice"])
+    permissions: list[TaPermission] | None = Field(
+        default=None,
+        examples=[_EXAMPLE_TA_PERMISSIONS],
+        description=(
+            "Granted TA permissions; omit to grant all four. Duplicates are ignored"
+        ),
+    )
     check: StrictBool = Field(
         default=False,
         examples=[False],
@@ -96,6 +105,7 @@ class TaAssignResponse(BaseModel):
     user_id: UUID = Field(examples=[_EXAMPLE_USER_ID])
     account_id: str = Field(examples=["alice"])
     name: str = Field(examples=["Alice"])
+    permissions: list[TaPermission] = Field(examples=[_EXAMPLE_TA_PERMISSIONS])
     message: str = Field(
         default="TA assigned",
         examples=["TA assigned"],
