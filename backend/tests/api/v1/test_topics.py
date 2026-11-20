@@ -12,7 +12,12 @@ from fastapi.testclient import TestClient
 from app.core.enums import SessionStatus, UserRole
 from app.crud import course as course_crud
 from app.crud import topic as topic_crud
-from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
+from tests.api.v1.conftest import (
+    FakeStore,
+    bearer_from,
+    seed_user,
+    stage1_output,
+)
 
 
 def _login(
@@ -277,11 +282,11 @@ def test_create_topic_fills_eight_fields_from_the_description(
     monkeypatch.setattr(topic_crud, "record_inquiry_change", AsyncMock())
 
     async def complete(self, *, instructions, material, model=None, **_extra):
-        assert "course_description" in material
-        return _GENERATED
+        assert "themeContext" in material
+        return stage1_output(_GENERATED)
 
     monkeypatch.setattr(
-        "app.services.model_client.OpenAIChatClient.complete_json", complete
+        "app.services.model_client.OpenAIChatClient.complete_design", complete
     )
 
     response = auth_client.post(
@@ -324,10 +329,10 @@ def test_ta_with_edit_topics_can_create_a_topic(
     monkeypatch.setattr(topic_crud, "record_inquiry_change", AsyncMock())
 
     async def complete(self, *, instructions, material, model=None, **_extra):
-        return _GENERATED
+        return stage1_output(_GENERATED)
 
     monkeypatch.setattr(
-        "app.services.model_client.OpenAIChatClient.complete_json", complete
+        "app.services.model_client.OpenAIChatClient.complete_design", complete
     )
 
     response = auth_client.post(
@@ -357,7 +362,7 @@ def test_create_topic_does_not_store_a_row_when_the_model_fails(
         raise ModelCallError(503)
 
     monkeypatch.setattr(
-        "app.services.model_client.OpenAIChatClient.complete_json", fail
+        "app.services.model_client.OpenAIChatClient.complete_design", fail
     )
 
     response = auth_client.post(
@@ -573,7 +578,7 @@ def _no_model_call(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AssertionError("the model must not be called")
 
     monkeypatch.setattr(
-        "app.services.model_client.OpenAIChatClient.complete_json", must_not_call
+        "app.services.model_client.OpenAIChatClient.complete_design", must_not_call
     )
 
 
@@ -614,10 +619,10 @@ def test_create_topic_refuses_placeholder_substance(
     monkeypatch.setattr(topic_crud, "create_topic", create_mock)
 
     async def placeholder(self, **kwargs):
-        return {**_GENERATED, "core_question": "未指定"}
+        return stage1_output({**_GENERATED, "core_question": "未指定"})
 
     monkeypatch.setattr(
-        "app.services.model_client.OpenAIChatClient.complete_json", placeholder
+        "app.services.model_client.OpenAIChatClient.complete_design", placeholder
     )
 
     response = auth_client.post(
@@ -644,10 +649,12 @@ def test_create_topic_warns_when_background_is_not_specified(
     monkeypatch.setattr(topic_crud, "record_inquiry_change", AsyncMock())
 
     async def complete(self, **kwargs):
-        return {**_GENERATED, "background_info": "", "exclusions": "unspecified"}
+        return stage1_output(
+            {**_GENERATED, "background_info": "", "exclusions": "unspecified"}
+        )
 
     monkeypatch.setattr(
-        "app.services.model_client.OpenAIChatClient.complete_json", complete
+        "app.services.model_client.OpenAIChatClient.complete_design", complete
     )
 
     response = auth_client.post(
@@ -660,3 +667,104 @@ def test_create_topic_warns_when_background_is_not_specified(
     warnings = response.json()["warnings"]
     assert len(warnings) == 1
     assert "not specified" in warnings[0]
+
+
+def _created_route(
+    monkeypatch: pytest.MonkeyPatch, store: FakeStore, client: TestClient
+):
+    bearer, _ = _login(client, store, "teach", UserRole.TEACHER)
+    course = _course()
+    _patch_role(monkeypatch, "TEACHER", course)
+    created = _topic(course.id, title="", description=None, stage="setup")
+    create_mock = AsyncMock(return_value=created)
+    monkeypatch.setattr(topic_crud, "create_topic", create_mock)
+    monkeypatch.setattr(topic_crud, "record_inquiry_change", AsyncMock())
+    return bearer, course, create_mock
+
+
+def _model_returns(monkeypatch: pytest.MonkeyPatch, output: dict) -> None:
+    async def complete(self, **kwargs):
+        return output
+
+    monkeypatch.setattr(
+        "app.services.model_client.OpenAIChatClient.complete_design", complete
+    )
+
+
+def test_create_topic_returns_the_stage1_feedback(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, course, _ = _created_route(monkeypatch, store, auth_client)
+    assessment = {"field": "theme", "status": "sufficient", "note": "Clear topic."}
+    _model_returns(
+        monkeypatch,
+        stage1_output(
+            _GENERATED,
+            assessments=[assessment],
+            clarificationQuestions=["Which unit is this for?"],
+            suggestions=["Add one real case."],
+            warnings=["The question leaned toward one answer."],
+        ),
+    )
+
+    response = auth_client.post(
+        f"/api/v1/courses/{course.id}/topics",
+        headers={"Authorization": bearer},
+        json=_CREATE_BODY,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["setup"]["topic"] == _GENERATED["topic"]
+    assert body["assessments"] == [assessment]
+    assert body["clarification_questions"] == ["Which unit is this for?"]
+    assert body["suggestions"] == ["Add one real case."]
+    assert "The question leaned toward one answer." in body["warnings"]
+
+
+def test_create_topic_returns_the_model_revision_request(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, course, create_mock = _created_route(monkeypatch, store, auth_client)
+    _model_returns(
+        monkeypatch,
+        {
+            "inputCheck": {"status": "needs_revision", "message": "Name the topic."},
+            "design": None,
+        },
+    )
+
+    response = auth_client.post(
+        f"/api/v1/courses/{course.id}/topics",
+        headers={"Authorization": bearer},
+        json=_CREATE_BODY,
+    )
+
+    assert response.status_code == 422
+    assert "Name the topic." in response.json()["detail"]
+    create_mock.assert_not_awaited()
+
+
+def test_create_topic_rejects_output_outside_the_stage1_contract(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, course, create_mock = _created_route(monkeypatch, store, auth_client)
+    _model_returns(monkeypatch, _GENERATED)
+
+    response = auth_client.post(
+        f"/api/v1/courses/{course.id}/topics",
+        headers={"Authorization": bearer},
+        json=_CREATE_BODY,
+    )
+
+    assert response.status_code == 502
+    create_mock.assert_not_awaited()
