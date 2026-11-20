@@ -1,7 +1,7 @@
 """add inquiry models
 
 Revision ID: d7fec49c16de
-Revises: c0f35e45489f
+Revises: 3991ec74f5a3
 Create Date: 2026-11-18 23:30:37.793863+08:00
 
 """
@@ -15,7 +15,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "d7fec49c16de"
-down_revision: str | Sequence[str] | None = "c0f35e45489f"
+down_revision: str | Sequence[str] | None = "3991ec74f5a3"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
