@@ -77,14 +77,14 @@ version: 0.2
 - 呼叫方式: GET /courses
 - 授權: 已登入
 - 輸入資料: 無
-- 成功回應: 課程清單 [`course_id`, `name`, `description`, `teacher_name`, `topic_count`, `my_role`(`teacher` / `ta` / `student`), `invite_code`, `student_count`(僅 `teacher`、`ta`)]
+- 成功回應: 課程清單 [`course_id`, `name`, `description`, `teacher_name`, `topic_count`, `my_role`(`teacher` / `ta` / `student`),`my_permissions`(本人在此課程的助教權限陣列，見「課程名單」的權限表；僅助教有值，其餘 role 為空陣列), `invite_code`, `student_count`(僅 `teacher`、具 `view_members` 的 TA)]
 
 ### 取得課程資訊
 - 功能說明: 進入課程頁面時取得課程基本資訊及本人在此課程的身分
 - 呼叫方式: GET /courses/{courseId}
 - 授權: 老師、助教、學生
 - 輸入資料: 無
-- 成功回應: `course_id`, `name`, `description`, `teacher_name`, `my_role`, `invite_code`
+- 成功回應: `course_id`, `name`, `description`, `teacher_name`, `my_role`, `my_permissions`, `invite_code`
 - 錯誤:
     - 非課程成員或查無此課程 (404)
 
@@ -143,7 +143,7 @@ version: 0.2
 ---
 
 ## 課程名單
-助教權限有四項，如下表說明。助教不再分權限：指派時直接給予全部四項，API 不再帶 `permissions` 或 `my_permissions`；資料庫仍保留四項權限
+助教權限有四項，如下表說明。助教不再分權限：指派時直接給予全部四項，API 不再帶 `permissions`；資料庫仍保留四項權限，回應中的 `my_permissions` 照實回傳
 
 | permission | 允許做的事 |
 | --- | --- |
@@ -252,7 +252,7 @@ version: 0.2
 - 呼叫方式: GET /courses/{courseId}/topics
 - 授權: 老師、助教、學生
 - 輸入資料: 無
-- 成功回應: `course_id`, `name`, `invite_code`, `my_role`, `topics`[`topic_id`, `title`, `description`, `topic_status`（內容見上方表格）, `age_band`, `max_turns`, 依身分另含下列欄位]
+- 成功回應: `course_id`, `name`, `invite_code`, `my_role`, `my_permissions`, `topics`[`topic_id`, `title`, `description`, `topic_status`（內容見上方表格）, `age_band`, `max_turns`, 依身分另含下列欄位]
     - 學生: 只列 `conversation`、`summary` 階段的題目；另含 `session_status`（未進入時為 null）, `session_id`
     - 老師與助教: `answered_count`, `student_count`
 - 錯誤:
