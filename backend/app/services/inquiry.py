@@ -1,4 +1,4 @@
-"""Teacher inquiry setup. Create, refine, and the opening line wait for the model."""
+"""Teacher inquiry setup. Create, generate, refine, and the opening line wait for the model."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from app.models.user import User
 from app.schemas.inquiry import (
     CreateInquiryTopicRequest,
     GeneratedInquiry,
+    GenerateInquiryRequest,
     InquiryFields,
     InquirySetupResponse,
     InquirySetupWriteResponse,
@@ -84,6 +85,18 @@ def _response(topic: Topic) -> InquirySetupResponse:
         topic_status=topic.stage,
         model_id=topic.model_id,
         setup=_fields_of(topic),
+    )
+
+
+def _suggestion(
+    topic: Topic, generated: GeneratedInquiry, model_id: str | None
+) -> InquirySetupResponse:
+    return InquirySetupResponse(
+        topic_id=topic.id,
+        course_id=topic.course_id,
+        topic_status=topic.stage,
+        model_id=model_id,
+        setup=InquiryFields.model_validate(generated.model_dump()),
     )
 
 
@@ -323,10 +336,44 @@ async def publish_inquiry(
     return _written(topic, "Inquiry published")
 
 
+async def generate_inquiry(
+    db: AsyncSession,
+    teacher: User,
+    topic_id: UUID,
+    payload: GenerateInquiryRequest,
+) -> InquirySetupResponse:
+    """Suggest eight fields. The saved topic is left unchanged.
+
+    Raises:
+        HTTPException: 404 if the topic is missing; 403 if not an instructor;
+            400 if the topic is not in setup; 422 if the model is not in the
+            catalog; 502 or 503 if the model call fails.
+    """
+    topic = await get_instructed_topic(db, teacher, topic_id)
+    await _require_setup(topic)
+    catalog = await inquiry_model_crud.get_inquiry_model(db, payload.model_id)
+    if catalog is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Invalid model id",
+        )
+    generated = await _complete(
+        catalog.model_id,
+        _INSTRUCTIONS,
+        (
+            f"content_language: {payload.content_language}\n"
+            f"age_band: {payload.age_band}\n"
+            f"max_turns: {payload.max_turns}\n"
+            f"course_description:\n{payload.course_description}"
+        ),
+    )
+    return _suggestion(topic, generated, catalog.model_id)
+
+
 async def refine_inquiry(
     db: AsyncSession, teacher: User, topic_id: UUID, payload: RefineInquiryRequest
 ) -> InquirySetupResponse:
-    """Regenerate the eight fields from the setup on screen and store the change.
+    """Suggest eight fields from the screen and the feedback. Nothing is saved.
 
     Raises:
         HTTPException: 404 if the topic is missing; 403 if not an instructor;
@@ -334,27 +381,14 @@ async def refine_inquiry(
     """
     topic = await get_instructed_topic(db, teacher, topic_id)
     await _require_setup(topic)
-    seen_at = topic.updated_at
-    topic_id = topic.id
     model_id = topic.model_id or settings.OPENAI_MODEL
     language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
-    await db.commit()
     generated = await _complete(
         model_id,
         _INSTRUCTIONS,
         _material(payload.setup, content_language=language, feedback=payload.feedback),
     )
-    try:
-        topic = await _locked_setup(db, topic_id)
-        _reject_if_stale(topic, seen_at)
-        _apply(topic, generated)
-        await _store_setup(db, topic, _fields_of(topic))
-        await topic_crud.record_inquiry_change(db, topic)
-        await db.commit()
-    except Exception:
-        await db.rollback()
-        raise
-    return _response(topic)
+    return _suggestion(topic, generated, topic.model_id)
 
 
 async def opening_message(

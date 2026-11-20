@@ -71,6 +71,13 @@ class InquiryFields(BaseModel):
         return cleaned or "unspecified"
 
 
+def _required_text(value: str) -> str:
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError("blank")
+    return cleaned
+
+
 def _legal_limits(setup: InquiryFields) -> None:
     band = setup.age_band
     turns = setup.max_turns
@@ -109,10 +116,20 @@ class CreateInquiryTopicRequest(BaseModel):
     @field_validator("course_description")
     @classmethod
     def required_text(cls, value: str) -> str:
-        cleaned = value.strip()
-        if not cleaned:
-            raise ValueError("blank")
-        return cleaned
+        return _required_text(value)
+
+
+class GenerateInquiryRequest(BaseModel):
+    age_band: AgeBandValue
+    max_turns: TurnCap
+    content_language: str = Field(min_length=1, max_length=16)
+    course_description: str = Field(min_length=1, max_length=6000)
+    model_id: str = Field(min_length=1)
+
+    @field_validator("content_language", "course_description", "model_id")
+    @classmethod
+    def required_text(cls, value: str) -> str:
+        return _required_text(value)
 
 
 class RefineInquiryRequest(BaseModel):
