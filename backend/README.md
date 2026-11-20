@@ -195,16 +195,22 @@ Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 tr
 - `REASONING_MODELS`：模型目錄中的 8 個 OpenAI 模型。2026-11-20 於 OpenRouter 公開模型清單確認，這 8 個都列出 `reasoning` 參數。
 - 對話回覆使用 topic 上設定的模型，沒有才使用 `OPENAI_MODEL`。
 
+## 個人報告的 progress 快照
+
+- `report_attempts.generation_meta.progress` 在建立 attempt 時寫入當下的 `sessions.generation_meta.progress`。之後對話再變動，報告的依據不會改變。教師重新產生報告時會取新的快照。
+- 沒有快照的 attempt（舊資料，或從未有 progress 的對話）只根據對話紀錄產生報告，快照欄位為 `NULL`。
+
 ## 尚未實作與刻意的設計選擇
 
 - 離題回覆不顯示模型的內部推理（`thinkingProgress`），只顯示固定的說明文字。
 - `safety_interruption` 與 `student_requested_stop` 尚未結束對話。`sessions.outcome` 目前有 CHECK 約束，新增 `interrupted` 需要先決定 migration 方式。
+- 報告 schema 尚未映射新欄位，`ReportBody` 的形狀不變。
 - `SOCRATES_POLICY` 與 `ANALYSIS_POLICY` 目前沒有呼叫點，不移植。
 
 ## 已知限制（部署前需處理）
 
 - **tokenizer 對照不完整**：`app/services/token_budget.py` 的 `MODEL_ENCODINGS` 只有 `gpt-4o` 系列與 `gpt-6.2-sol`。預設模型 `openai/gpt-6-luna` 以及模型目錄中的其他模型都沒有對照，對話的上下文預算計算會拋出 `UnsupportedModelTokenizerError`，回 503。部署前需要補上這些模型的對照，並以實際 tokenizer 驗證，不能直接沿用其他模型的對照。
-- 既有 session 的 progress 補算只在它的下一個新回合發生。
+- 既有 session 的 progress 補算只在它的下一個新回合發生；既有 report attempt 不會回補快照。
 
 ## 課程設定（Stage 1）
 

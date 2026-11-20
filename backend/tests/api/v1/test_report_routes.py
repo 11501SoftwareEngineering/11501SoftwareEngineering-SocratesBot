@@ -45,6 +45,7 @@ class _Memory:
             user_id=None,
             topic_id=self.topic.id,
             outcome="completed",
+            generation_meta=None,
         )
         self.attempts: list[SimpleNamespace] = []
         self.reports_scheduled: list = []
@@ -82,7 +83,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
     async def list_for_sessions(_db, session_ids):
         return [row for row in memory.attempts if row.session_id in session_ids]
 
-    async def insert_pending(_db, session_id):
+    async def insert_pending(_db, session_id, progress=None):
         return memory.add_attempt("pending", None)
 
     async def is_instructor(_db, *, course_id, teacher_id):
