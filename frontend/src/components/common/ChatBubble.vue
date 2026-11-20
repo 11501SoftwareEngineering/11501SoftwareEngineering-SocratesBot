@@ -1,13 +1,15 @@
 <script setup lang="ts">
 /**
  * 對話泡泡。對應 Figma 元件頁「Chat」（node 232:576）。
- *   Dir=Left（AI 導魷）：輔色淺底，左上角是尖角，頭像是魷魚
+ *   Dir=Left（AI 導魷）：「圖形外框」色底（#EBE9E1，就是 Tailwind 的 bg-border），左上角是尖角，頭像是魷魚
  *   Dir=Right（學生）：主色淺底，右上角是尖角，頭像是空白圓圈
  *
  * 用法：
  *   <ChatBubble from="ai">什麼是正義？</ChatBubble>
  *   <ChatBubble from="student">我覺得是公平。</ChatBubble>
  *   <ChatBubble from="ai" pending />   AI 還在回覆（串流中）時顯示「…」動畫
+ *   <ChatBubble from="ai">…<template #after><SpeakButton :text="…" /></template></ChatBubble>
+ *                                      泡泡下面的操作（Figma 對話紀錄的喇叭圖示）
  */
 import { computed } from 'vue'
 import logoIconUrl from '@/assets/brand/logo-icon.svg'
@@ -45,9 +47,7 @@ const displayName = computed(() => props.name ?? (isAi.value ? '導魷' : '學�
 
     <div
       class="w-full px-4 py-2.5 text-body break-words whitespace-pre-line text-foreground"
-      :class="
-        isAi ? 'rounded-2xl rounded-tl bg-secondary/80' : 'rounded-2xl rounded-tr bg-primary/80'
-      "
+      :class="isAi ? 'rounded-2xl rounded-tl bg-border' : 'rounded-2xl rounded-tr bg-primary/80'"
     >
       <span v-if="pending" class="inline-flex gap-1 py-2" role="status" aria-label="導魷正在思考">
         <span
@@ -59,5 +59,7 @@ const displayName = computed(() => props.name ?? (isAi.value ? '導魷' : '學�
       </span>
       <slot v-else />
     </div>
+
+    <slot name="after" />
   </div>
 </template>

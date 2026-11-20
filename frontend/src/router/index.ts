@@ -119,6 +119,12 @@ const routes: RouteRecordRaw[] = [
         '對話結果',
         () => import('@/views/student/ResultView.vue'),
       ),
+      page(
+        'courses/:courseId/sessions/:sessionId/report/:tab(personal|chat|summary)?',
+        'StudentReport',
+        '探索結果報告',
+        () => import('@/views/student/ReportView.vue'),
+      ),
     ],
   ),
 

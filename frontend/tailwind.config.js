@@ -19,6 +19,15 @@ export default {
             letterSpacing: '0em',
           },
         ],
+        // Figma 文字樣式「H1」：頁面大標題，例如「探索結果報告」
+        'page-title': [
+          '40px',
+          {
+            lineHeight: '1.3',
+            fontWeight: '700',
+            letterSpacing: '0.02em',
+          },
+        ],
         'h1-title': [
           '32px',
           {
