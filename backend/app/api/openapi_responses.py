@@ -515,6 +515,14 @@ _INQUIRY_UNAUTHORIZED = json_detail_example(
     AUTH_UNAUTHORIZED_DETAIL,
 )
 
+INQUIRY_MODEL_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
+    401: _INQUIRY_UNAUTHORIZED,
+    403: json_detail_example(
+        "Teacher or TA privileges required",
+        "Teacher or TA privileges required",
+    ),
+}
+
 INQUIRY_SETUP_READ_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: _INQUIRY_UNAUTHORIZED,
     403: _INQUIRY_DENIED,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -450,3 +451,76 @@ def test_refine_refuses_a_save_that_landed_while_the_model_ran(
     assert response.status_code == 409
     assert topic.inquiry_topic == "saved topic"
     recorded.assert_not_awaited()
+
+
+def _catalog(monkeypatch: pytest.MonkeyPatch, *, is_ta: bool) -> None:
+    luna = SimpleNamespace(
+        model_id="openai/gpt-6-luna",
+        name="GPT-6 Luna",
+        description="Fast.",
+        provider_id="openai",
+        input_price_usd=Decimal("0.1"),
+        output_price_usd=Decimal("0.5"),
+        sort_order=4,
+    )
+    monkeypatch.setattr(
+        "app.crud.inquiry_model.list_inquiry_models", AsyncMock(return_value=[luna])
+    )
+    monkeypatch.setattr(
+        course_crud, "is_active_ta_anywhere", AsyncMock(return_value=is_ta)
+    )
+
+
+def test_inquiry_models_need_auth(auth_client: TestClient) -> None:
+    assert auth_client.get("/api/v1/inquiry-models").status_code == 401
+
+
+def test_student_who_is_not_a_ta_cannot_list_inquiry_models(
+    auth_client: TestClient, store: FakeStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seed_user(store, account_id="student1", role=UserRole.USER)
+    login = auth_client.post(
+        "/api/v1/auth/login",
+        json={"account_id": "student1", "password": "password1"},
+    )
+    _catalog(monkeypatch, is_ta=False)
+
+    response = auth_client.get(
+        "/api/v1/inquiry-models", headers={"Authorization": bearer_from(login)}
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    ("role", "is_ta"), [(UserRole.TEACHER, False), (UserRole.USER, True)]
+)
+def test_teacher_or_ta_lists_inquiry_models_as_a_json_array(
+    auth_client: TestClient,
+    store: FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
+    role: UserRole,
+    is_ta: bool,
+) -> None:
+    seed_user(store, account_id="caller1", role=role)
+    login = auth_client.post(
+        "/api/v1/auth/login",
+        json={"account_id": "caller1", "password": "password1"},
+    )
+    _catalog(monkeypatch, is_ta=is_ta)
+
+    response = auth_client.get(
+        "/api/v1/inquiry-models", headers={"Authorization": bearer_from(login)}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "model_id": "openai/gpt-6-luna",
+            "name": "GPT-6 Luna",
+            "description": "Fast.",
+            "provider_id": "openai",
+            "input_price_usd": 0.1,
+            "output_price_usd": 0.5,
+        }
+    ]

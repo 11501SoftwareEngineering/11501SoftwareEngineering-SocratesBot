@@ -23,6 +23,19 @@ def _clean(value: str | None) -> str | None:
     return stripped or None
 
 
+class InquiryModelResponse(BaseModel):
+    """One catalog model. Prices are USD per million tokens."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    model_id: str
+    name: str
+    description: str
+    provider_id: str
+    input_price_usd: float
+    output_price_usd: float
+
+
 class InquiryFields(BaseModel):
     """Saved or displayed fields. Illegal stored values stay readable."""
 

@@ -1,4 +1,4 @@
-"""Unprefixed inquiry routes. The caller is the course instructor."""
+"""Unprefixed inquiry routes. Setup routes need the course instructor."""
 
 from typing import Annotated
 from uuid import UUID
@@ -6,14 +6,16 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import TeacherUser, get_db
+from app.api.deps import ActiveUser, TeacherUser, get_db
 from app.api.openapi_responses import (
     INQUIRY_GENERATE_RESPONSES,
+    INQUIRY_MODEL_LIST_RESPONSES,
     INQUIRY_PUBLISH_RESPONSES,
     INQUIRY_SETUP_READ_RESPONSES,
     INQUIRY_SETUP_WRITE_RESPONSES,
 )
 from app.schemas.inquiry import (
+    InquiryModelResponse,
     InquirySetupResponse,
     InquirySetupWriteResponse,
     OpeningMessageRequest,
@@ -24,6 +26,19 @@ from app.schemas.inquiry import (
 from app.services import inquiry as inquiry_service
 
 router = APIRouter(tags=["inquiry"])
+
+
+@router.get(
+    "/inquiry-models",
+    response_model=list[InquiryModelResponse],
+    responses=INQUIRY_MODEL_LIST_RESPONSES,
+)
+async def list_inquiry_models(
+    current_user: ActiveUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[InquiryModelResponse]:
+    """List the models a teacher or TA can pick, with per-million-token prices."""
+    return await inquiry_service.list_inquiry_models(db, current_user)
 
 
 @router.get(

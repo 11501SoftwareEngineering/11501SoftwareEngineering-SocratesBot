@@ -76,6 +76,20 @@ async def is_course_instructor(
     return await db.scalar(statement) is not None
 
 
+async def is_active_ta_anywhere(db: AsyncSession, user_id: UUID) -> bool:
+    """Return whether ``user_id`` is an active TA of at least one course."""
+    statement = select(
+        select(CourseMembership.id)
+        .where(
+            CourseMembership.user_id == user_id,
+            CourseMembership.role == MEMBERSHIP_TA,
+            CourseMembership.left_at.is_(None),
+        )
+        .exists()
+    )
+    return bool(await db.scalar(statement))
+
+
 def _course_count_subqueries():
     student_count = (
         select(func.count())
