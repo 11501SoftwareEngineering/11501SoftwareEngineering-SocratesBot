@@ -11,7 +11,12 @@ import pytest
 from pydantic import SecretStr
 
 from app.core.config import settings
-from app.services.model_client import ModelCallError, OpenAIChatClient
+from app.services.model_client import (
+    ModelCallError,
+    ModelTimeoutError,
+    OpenAIChatClient,
+    TaskLimits,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -212,3 +217,70 @@ async def test_retry_after_above_two_seconds_is_not_waited(
     assert caught.value.status_code == 429
     assert calls == 1
     assert slept == []
+
+
+def _capture(seen: list[dict]):
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return _completion({"reply": "ok", "goal_reached": False})
+
+    return handler
+
+
+async def test_course_setup_is_capped_and_uses_low_reasoning_on_reasoning_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr(KEY))
+    seen: list[dict] = []
+
+    await _client(_capture(seen)).complete_json(
+        instructions="Design",
+        material="course",
+        model="openai/gpt-6-luna",
+        max_tokens=5000,
+    )
+
+    assert seen[0]["max_tokens"] == 2400
+    assert seen[0]["reasoning"] == {"effort": "low"}
+
+
+async def test_non_reasoning_model_gets_no_reasoning_parameter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr(KEY))
+    seen: list[dict] = []
+
+    await _client(_capture(seen)).complete_json(
+        instructions="Design",
+        material="course",
+        model="gpt-test",
+    )
+
+    assert seen[0]["max_tokens"] == 2400
+    assert "reasoning" not in seen[0]
+
+
+async def test_course_setup_times_out_as_a_model_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr(KEY))
+    monkeypatch.setattr(
+        "app.services.model_client.DESIGN_LIMITS",
+        TaskLimits(timeout_s=0.05, max_tokens=2400, low_reasoning=True),
+    )
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(1)
+        return _completion({"topic": "late"})
+
+    with pytest.raises(ModelTimeoutError) as caught:
+        await _client(slow).complete_json(instructions="Design", material="course")
+
+    assert caught.value.status_code is None
+    assert isinstance(caught.value, ModelCallError)
+
+
+def test_default_model_is_a_valid_openrouter_id() -> None:
+    field = type(settings).model_fields["OPENAI_MODEL"]
+
+    assert field.default == "openai/gpt-6-luna"
