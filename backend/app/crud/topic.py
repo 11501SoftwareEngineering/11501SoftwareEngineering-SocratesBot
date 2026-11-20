@@ -8,6 +8,8 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import SessionStatus, TopicStage
+from app.crud.course import MEMBERSHIP_STUDENT
+from app.models.course import CourseMembership
 from app.models.inquiry_revision import InquiryRevision
 from app.models.session import Session
 from app.models.topic import Topic
@@ -154,13 +156,24 @@ async def delete_topic(db: AsyncSession, topic: Topic) -> None:
 async def list_topics_with_completed_count(
     db: AsyncSession, course_id: UUID
 ) -> list[TopicWithCompletedCountRow]:
-    """List a course's topics with COMPLETED session counts in one query."""
+    """List a course's topics with COMPLETED session counts in one query.
+
+    Only sessions of current students count, so the number matches the
+    active student count (TAs and students who left are excluded).
+    """
     completed_count = (
         select(func.count())
         .select_from(Session)
+        .join(
+            CourseMembership,
+            (CourseMembership.user_id == Session.user_id)
+            & (CourseMembership.course_id == Topic.course_id),
+        )
         .where(
             Session.topic_id == Topic.id,
             Session.status == SessionStatus.COMPLETED.value,
+            CourseMembership.role == MEMBERSHIP_STUDENT,
+            CourseMembership.left_at.is_(None),
         )
         .correlate(Topic)
         .scalar_subquery()

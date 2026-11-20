@@ -14,6 +14,7 @@ from app.core.database import AsyncSessionLocal, engine
 from app.core.enums import SessionStatus, TaPermission, UserRole
 from app.core.migration import run_migrations
 from app.crud import course as course_crud
+from app.crud import topic as topic_crud
 from app.crud import user as user_crud
 from app.models.course import CourseMembership, CourseTaPermission
 from app.models.session import Session
@@ -96,6 +97,13 @@ def test_student_promoted_to_ta_then_revoked_leaves_course_without_sessions() ->
             db.add(Session(topic_id=topic_id, user_id=teacher.id))
             await db.commit()
 
+            async def answered() -> int:
+                rows = await topic_crud.list_topics_with_completed_count(db, course_id)
+                return rows[0][1]
+
+            # The student's completed session counts as answered ...
+            assert await answered() == 1
+
             assigned = await courses_service.assign_course_ta(
                 db,
                 teacher,
@@ -114,6 +122,8 @@ def test_student_promoted_to_ta_then_revoked_leaves_course_without_sessions() ->
                 )
                 == "TA"
             )
+            # ... but not while they are a TA.
+            assert await answered() == 0
 
             # The guard reads permissions on each call: dropping a permission
             # takes effect on the very next check.
@@ -180,6 +190,8 @@ def test_student_promoted_to_ta_then_revoked_leaves_course_without_sessions() ->
                 )
                 == 1
             )
+            # ... nor once the revoke has removed them and their sessions ...
+            assert await answered() == 0
 
             with pytest.raises(HTTPException) as exc_info:
                 await courses_service.revoke_course_ta(
@@ -200,6 +212,8 @@ def test_student_promoted_to_ta_then_revoked_leaves_course_without_sessions() ->
                 )
                 == "STUDENT"
             )
+            # ... and rejoining does not bring the deleted session back.
+            assert await answered() == 0
 
     asyncio.run(_run())
 
