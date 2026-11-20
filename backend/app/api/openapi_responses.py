@@ -549,6 +549,35 @@ INQUIRY_GENERATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     503: _INQUIRY_GENERATION_FAILED,
 }
 
+SUMMARY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_examples(
+        "Summary was not published",
+        {
+            "not_reviewed": {
+                "version": 3,
+                "summary_status": "draft",
+                "message": "Summary is not reviewed",
+            },
+            "identifier": "Summary contains a name or identifier",
+        },
+    ),
+    401: json_detail_example(
+        AUTH_UNAUTHORIZED_DETAIL,
+        AUTH_UNAUTHORIZED_DETAIL,
+    ),
+    403: json_detail_example(
+        "Course instructor required",
+        "Course instructor required",
+    ),
+    404: json_detail_examples(
+        "Topic or summary not found",
+        {
+            "topic_not_found": "Topic not found",
+            "summary_not_found": "Summary not found",
+        },
+    ),
+}
+
 INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: json_detail_example(
         "Topic is not in setup",
@@ -561,7 +590,13 @@ INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
         "Inquiry was not published",
         {
             "incomplete": "Incomplete setup: topic",
-            "invalid": "Request validation failed",
+            "invalid": [
+                {
+                    "type": "missing",
+                    "loc": ["body", "setup", "age_band"],
+                    "msg": "Field required",
+                }
+            ],
         },
     ),
 }

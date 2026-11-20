@@ -3,11 +3,12 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ActiveUser, TeacherUser, get_db
+from app.api.openapi_responses import SUMMARY_PUBLISH_RESPONSES
 from app.schemas.summary import (
     PublishedSummaryResponse,
     PublishSummaryResponse,
@@ -21,14 +22,9 @@ from app.services import summaries as summary_service
 router = APIRouter(tags=["summaries"])
 
 
-class SummaryEditRequest(BaseModel):
-    version: int
+class SummaryTextRequest(BaseModel):
     overview: str = Field(min_length=1)
     viewpoint_summary: str = Field(min_length=1)
-
-
-class SummaryVersionRequest(BaseModel):
-    version: int
 
 
 @router.post("/topics/{topicId}/summary")
@@ -46,17 +42,18 @@ async def read_summary(
     topicId: UUID,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
+    version: Annotated[int | None, Query(ge=1)] = None,
 ) -> TeacherSummaryResponse:
     """Return the instructor's summary draft and publish state."""
     return await summary_service.read_teacher_summary(
-        db, teacher=teacher, topic_id=topicId
+        db, teacher=teacher, topic_id=topicId, version=version
     )
 
 
 @router.patch("/topics/{topicId}/summary")
 async def edit_summary(
     topicId: UUID,
-    payload: SummaryEditRequest,
+    payload: SummaryTextRequest,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SummaryDraftResponse:
@@ -65,7 +62,6 @@ async def edit_summary(
         db,
         teacher=teacher,
         topic_id=topicId,
-        version=payload.version,
         overview=payload.overview,
         viewpoint_summary=payload.viewpoint_summary,
     )
@@ -77,30 +73,32 @@ async def edit_summary(
 )
 async def review_summary(
     topicId: UUID,
-    payload: SummaryVersionRequest,
+    payload: SummaryTextRequest,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> ReviewSummaryResponse:
-    """Mark a draft summary as reviewed."""
+    """Store the visible text when it changed, then mark that version reviewed."""
     return await summary_service.review_summary(
-        db, teacher=teacher, topic_id=topicId, version=payload.version
+        db,
+        teacher=teacher,
+        topic_id=topicId,
+        overview=payload.overview,
+        viewpoint_summary=payload.viewpoint_summary,
     )
 
 
 @router.post(
     "/topics/{topicId}/summary/publish",
     response_model_exclude_unset=True,
+    responses=SUMMARY_PUBLISH_RESPONSES,
 )
 async def publish_summary(
     topicId: UUID,
-    payload: SummaryVersionRequest,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PublishSummaryResponse:
-    """Publish a reviewed summary after it contains no student identity."""
-    return await summary_service.publish_summary(
-        db, teacher=teacher, topic_id=topicId, version=payload.version
-    )
+    """Publish the latest summary when that version is reviewed."""
+    return await summary_service.publish_summary(db, teacher=teacher, topic_id=topicId)
 
 
 @router.post(
