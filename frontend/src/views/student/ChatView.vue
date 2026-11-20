@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppBanner from '@/components/common/AppBanner.vue'
 /**
  * 學生：和導魷對話。對應 Figma「P07_Student_Question」（node 171:280）。
  * API（docs/API功能規格.md v0.2「題目對話階段」）：
@@ -289,13 +290,9 @@ const reportLink = computed(() => ({
     />
 
     <div class="sticky bottom-0 z-10">
-      <p
-        v-if="sendError || speech.errorMessage.value"
-        role="alert"
-        class="bg-background px-4 pt-2 text-center text-body text-destructive"
-      >
-        {{ sendError || speech.errorMessage.value }}
-      </p>
+      <div v-if="sendError || speech.errorMessage.value" class="bg-background px-4 pt-2">
+        <AppBanner type="error">{{ sendError || speech.errorMessage.value }}</AppBanner>
+      </div>
       <ChatInput
         v-if="!completed && !closed"
         v-model="draft"

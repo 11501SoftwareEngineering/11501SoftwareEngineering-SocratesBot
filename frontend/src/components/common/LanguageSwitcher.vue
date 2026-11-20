@@ -2,13 +2,14 @@
 /**
  * 介面語言切換（Header 右上角）。對應 Figma 元件「Language」（node 961:2775）：
  * 主色淺底的膠囊按鈕，地球圖示 + 目前語言 + 向下箭頭，點了選正體中文、English、Español。
+ * 選單（Lang=…, State=Open）：寬 150、白底、圓角 8、內距 6；每項內距 10/8、左邊 16px 的勾，選中的項目底色 #F7F6F2。
  */
-import { ChevronDownIcon, GlobeIcon } from '@/components/icons'
+import { DropdownMenuItemIndicator, DropdownMenuRadioItem } from 'reka-ui'
+import { CheckIcon, ChevronDownIcon, GlobeIcon } from '@/components/icons'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useUiLanguage } from '@/composables/useUiLanguage'
@@ -32,7 +33,7 @@ const { language, label, options, setLanguage } = useUiLanguage()
     </DropdownMenuTrigger>
     <DropdownMenuContent
       align="end"
-      class="w-40 rounded-lg border border-border bg-card p-1 shadow-elevated"
+      class="flex w-[150px] flex-col gap-0.5 rounded-lg border border-border bg-card p-1.5 shadow-elevated"
     >
       <DropdownMenuRadioGroup
         :model-value="language"
@@ -42,8 +43,11 @@ const { language, label, options, setLanguage } = useUiLanguage()
           v-for="option in options"
           :key="option.value"
           :value="option.value"
-          class="cursor-pointer py-2 text-body-lg focus:bg-muted focus:text-foreground"
+          class="flex cursor-pointer items-center gap-2 rounded-md px-2.5 py-2 text-body-lg text-foreground outline-none select-none data-[highlighted]:bg-background data-[state=checked]:bg-background"
         >
+          <span class="flex size-4 shrink-0 items-center justify-center">
+            <DropdownMenuItemIndicator><CheckIcon /></DropdownMenuItemIndicator>
+          </span>
           {{ option.label }}
         </DropdownMenuRadioItem>
       </DropdownMenuRadioGroup>

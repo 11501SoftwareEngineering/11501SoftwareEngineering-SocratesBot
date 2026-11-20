@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ViewpointTag from '@/components/common/ViewpointTag.vue'
 /**
  * 全班觀點 →「學生報告」。對應 Figma「P13-2_Teacher_Result」（node 724:2527）：
  *   搜尋、「清除 tag」；觀點 tag（摘要的群組）可以點來篩選；「目前 tag：… X 份報告」
@@ -61,22 +62,13 @@ const open = computed({
     </div>
 
     <ul v-if="groups.length" class="flex flex-wrap gap-3" :aria-label="t('perspective.tags')">
-      <li v-for="(g, i) in groups" :key="g.group_id" class="min-w-0 max-w-[240px]">
-        <button
-          type="button"
-          class="flex w-full items-center gap-2 rounded-full border bg-card px-3 py-1 text-body text-foreground shadow-elevated outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          :class="group === g.group_id ? 'border-muted-foreground bg-border' : 'border-border'"
-          :aria-pressed="group === g.group_id"
+      <li v-for="(g, i) in groups" :key="g.group_id" class="min-w-0 max-w-[380px]">
+        <ViewpointTag
+          :label="g.name"
+          :color="groupColor(i)"
+          :selected="group === g.group_id"
           @click="group = group === g.group_id ? '' : g.group_id"
-        >
-          <span
-            class="size-3 shrink-0 rounded-full"
-            :style="{ backgroundColor: groupColor(i) }"
-            aria-hidden="true"
-          />
-          <span class="truncate" :title="g.name">{{ g.name }}</span>
-          <CloseRingIcon v-if="group === g.group_id" class="size-5" />
-        </button>
+        />
       </li>
     </ul>
     <p class="flex flex-wrap gap-x-3 text-body text-muted-foreground" role="status">

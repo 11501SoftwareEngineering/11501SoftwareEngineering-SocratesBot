@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppBanner from '@/components/common/AppBanner.vue'
 /**
  * 活動設定。同一個頁面有三種樣子：
  *   確認活動設定（剛新增，網址 ?new=1）  Figma「P11-2_Teacher_NewActivity」（node 750:2208）：
@@ -22,7 +23,7 @@ import QueryState from '@/components/common/QueryState.vue'
 import StatusTag from '@/components/common/StatusTag.vue'
 import AppSelect from '@/components/form/AppSelect.vue'
 import LongTextField from '@/components/form/LongTextField.vue'
-import { RefreshIcon, SpinnerIcon } from '@/components/icons'
+import { SpinnerIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { useCourseTopics } from '@/composables/useCourse'
 import { useUnsavedGuard } from '@/composables/useUnsavedGuard'
@@ -190,9 +191,7 @@ const title = computed(() =>
         ]"
         @submit.prevent="save.mutate()"
       >
-        <p v-if="!editable" class="text-body text-destructive">
-          {{ t('setup.locked') }}
-        </p>
+        <AppBanner v-if="!editable" type="lock">{{ t('setup.locked') }}</AppBanner>
         <div class="grid gap-4 sm:grid-cols-2">
           <AppSelect
             v-model="form.age_band"
@@ -220,21 +219,11 @@ const title = computed(() =>
           :label="t('setupFields.opening_message')"
           :readonly="!editable"
           :disabled="busy"
-        >
-          <template v-if="editable" #action>
-            <button
-              type="button"
-              class="flex items-center gap-1 rounded text-body text-primary-dark outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
-              :disabled="busy"
-              :aria-label="t('setup.regenerateOpeningAria')"
-              @click="opening.mutate()"
-            >
-              <SpinnerIcon v-if="opening.isPending.value" class="size-4 animate-spin" />
-              <RefreshIcon v-else class="size-4" />
-              {{ t('setup.regenerate') }}
-            </button>
-          </template>
-        </LongTextField>
+          :action-label="editable ? t('setup.regenerate') : undefined"
+          :action-aria-label="t('setup.regenerateOpeningAria')"
+          :action-pending="opening.isPending.value"
+          @action="opening.mutate()"
+        />
 
         <div v-if="editable && isNew" class="flex flex-col gap-2 sm:flex-row sm:items-end">
           <LongTextField
@@ -265,8 +254,8 @@ const title = computed(() =>
         >
           <SpinnerIcon class="animate-spin" /> {{ t('setup.refining') }}
         </p>
-        <p v-if="actionError" role="alert" class="text-body text-destructive">{{ actionError }}</p>
-        <p v-else-if="notice" role="status" class="text-body text-muted-foreground">{{ notice }}</p>
+        <AppBanner v-if="actionError" type="error">{{ actionError }}</AppBanner>
+        <AppBanner v-else-if="notice" type="success">{{ notice }}</AppBanner>
 
         <div v-if="editable" class="flex justify-end gap-3">
           <Button type="submit" variant="secondary" :disabled="busy">

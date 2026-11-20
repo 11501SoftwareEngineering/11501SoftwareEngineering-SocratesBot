@@ -10,7 +10,13 @@ defineProps<{ name: string; account: string }>()
 </script>
 
 <template>
-  <article :class="[cardClass, 'flex flex-col gap-1 p-4']">
+  <!-- Figma「Card_TA」（node 693:4280）：滑過時背景色 #F7F6F2、外框 1.5px 文字輔色 -->
+  <article
+    :class="[
+      cardClass,
+      'flex flex-col gap-1 p-4 transition-colors hover:border-[1.5px] hover:border-muted-foreground hover:bg-background',
+    ]"
+  >
     <div class="flex items-center justify-between gap-3">
       <div class="min-w-0">
         <h3 class="truncate font-heading text-h2-title text-foreground">{{ name }}</h3>

@@ -53,6 +53,8 @@ export const buttonVariants = cva(
         ghost: 'text-foreground hover:text-muted-foreground active:font-bold',
         // Figma Style=Text, Color=Secondary：淺色字，hover 變深，按下變粗
         'ghost-muted': 'text-muted-foreground hover:text-foreground active:font-bold',
+        // Figma Style=icon, Color=Red：只有圖示的刪除／移除按鈕，hover 變點綴色（和 size="icon-sm" 一起用）
+        'ghost-danger': 'text-foreground hover:text-destructive',
         // 以下兩種 Figma 沒有，是 shadcn 內建的，盡量不要用
         outline: 'border-border bg-background hover:bg-muted hover:text-foreground shadow-xs',
         link: 'text-primary underline-offset-4 hover:underline',
@@ -66,7 +68,8 @@ export const buttonVariants = cva(
         // 以下尺寸 Figma 沒有，保留給 shadcn 內建元件（例如對話框的關閉鈕）使用
         default: 'h-9 gap-1.5 px-2.5 text-sm',
         icon: 'size-9',
-        'icon-sm': 'size-8',
+        // Figma Style=icon（node 688:2667）：只有圖示，高 34px、左右 8px、上下 6px、圖示 24px
+        'icon-sm': 'h-[34px] px-2 py-1.5',
       },
     },
     compoundVariants: [

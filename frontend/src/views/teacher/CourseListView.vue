@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TextLink from '@/components/common/TextLink.vue'
 /**
  * 老師：我的課程。對應 Figma「P09_Teacher_Home」（node 692:3019）、「P09_AddCourse」、
  * 「P09_Teacher_Home_Empty」（找不到課程）。
@@ -80,13 +81,7 @@ const remove = useConfirmAction((course: CourseSummary) => coursesApi.remove(cou
       >
         <template v-if="isTeacher" #empty-action>
           {{ t('common.tryPrefix')
-          }}<button
-            type="button"
-            class="rounded underline underline-offset-4 outline-none hover:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            @click="openForm(null)"
-          >
-            {{ t('courses.addCourse') }}
-          </button>
+          }}<TextLink inline @click="openForm(null)">{{ t('courses.addCourse') }}</TextLink>
         </template>
         <div class="flex flex-col gap-2">
           <CourseCard
@@ -105,7 +100,7 @@ const remove = useConfirmAction((course: CourseSummary) => coursesApi.remove(cou
                 <EditIcon />
               </Button>
               <Button
-                variant="ghost"
+                variant="ghost-danger"
                 size="icon-sm"
                 :aria-label="t('courses.deleteAria', { name: course.name })"
                 @click="remove.ask(course)"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppBanner from '@/components/common/AppBanner.vue'
 /**
  * 新增活動。對應 Figma「P11-1_Teacher_NewActivity」（node 750:2131）、
  * 「P11-1_Teacher_NewActivity_Loading」（node 1022:2995）。
@@ -127,7 +128,7 @@ const turnOptions = computed(() =>
       >
         <SpinnerIcon class="animate-spin" /> {{ t('setup.generating') }}
       </p>
-      <p v-if="formError" role="alert" class="text-body text-destructive">{{ formError }}</p>
+      <AppBanner v-if="formError" type="error">{{ formError }}</AppBanner>
       <div class="flex justify-end">
         <Button type="submit" :disabled="create.isPending.value">
           {{ create.isPending.value ? t('common.processing') : t('setup.generate') }}

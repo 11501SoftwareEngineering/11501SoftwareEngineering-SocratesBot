@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppBanner from '@/components/common/AppBanner.vue'
 /**
  * 老師／助教：全班觀點。對應 Figma「P13-1_Teacher_Result」（摘要審閱）、「P13-2_Teacher_Result」（學生報告）、
  * 「P13_StudentReport」（學生報告細節）。
@@ -172,9 +173,7 @@ function askGenerate() {
     <p v-if="generate.isPending.value" role="status" class="mt-2 text-body text-muted-foreground">
       {{ t('perspective.generatingHint') }}
     </p>
-    <p v-if="generateError" role="alert" class="mt-2 text-body text-destructive">
-      {{ generateError }}
-    </p>
+    <AppBanner v-if="generateError" type="error" class="mt-2">{{ generateError }}</AppBanner>
 
     <dl class="mt-4 grid gap-4 sm:grid-cols-3">
       <StatTile

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppBanner from '@/components/common/AppBanner.vue'
 /**
  * 老師首頁右邊的「AI 模型與用量」。對應 Figma「P09_Teacher_Home」（node 692:3019）右半邊：
  *   本月用量（右上「API 設定」連到 P14）、總 Token、請求次數、輸入、輸出、本月花費
@@ -11,7 +12,7 @@ import { aiApi, aiKeys, formatUsd } from '@/api/ai'
 import { topicKeys, topicsApi } from '@/api/topics'
 import { ExternalIcon, SettingIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
-import ModelSelect from '@/components/ai/ModelSelect.vue'
+import AppSelect from '@/components/form/AppSelect.vue'
 import { getApiErrorMessage } from '@/lib/utils'
 import { cardClass } from '@/lib/ui'
 import { useI18n } from 'vue-i18n'
@@ -22,6 +23,10 @@ const queryClient = useQueryClient()
 const usage = useQuery({ queryKey: aiKeys.usage, queryFn: aiApi.usage })
 const settings = useQuery({ queryKey: aiKeys.settings, queryFn: aiApi.settings })
 const models = useQuery({ queryKey: topicKeys.models, queryFn: topicsApi.models })
+/** 下拉選單的選項（模型 id → 名稱） */
+const modelOptions = computed(() =>
+  (models.data.value ?? []).map((m) => ({ value: m.model_id, label: m.name })),
+)
 
 const number = (n: number | undefined) => (n === undefined ? '—' : n.toLocaleString('en-US'))
 const tiles = computed(() => {
@@ -57,12 +62,9 @@ const setModel = useMutation({
           >
         </Button>
       </div>
-      <p
-        v-if="settings.data.value && !settings.data.value.configured"
-        class="text-body text-destructive"
-      >
+      <AppBanner v-if="settings.data.value && !settings.data.value.configured" type="info">
         {{ t('ai.noKey') }}
-      </p>
+      </AppBanner>
       <dl class="grid grid-cols-2 gap-3">
         <div v-for="tile in tiles" :key="tile.label" class="rounded-lg bg-background px-3 py-2">
           <dt class="text-body text-muted-foreground">{{ tile.label }}</dt>
@@ -73,13 +75,14 @@ const setModel = useMutation({
           <dd class="text-h2-title text-foreground">{{ formatUsd(usage.data.value?.cost_usd) }}</dd>
         </div>
       </dl>
-      <ModelSelect
+      <AppSelect
         :label="t('ai.defaultModel')"
-        :models="models.data.value ?? []"
+        :options="modelOptions"
+        :placeholder="t('ai.selectModel')"
         :model-value="settings.data.value?.default_model?.id ?? ''"
         :disabled="setModel.isPending.value"
         :error="error"
-        @update:model-value="(id) => setModel.mutate(id)"
+        @update:model-value="(id: string) => setModel.mutate(id)"
       />
       <RouterLink
         :to="{ name: 'TeacherAiSettings', hash: '#model-prices' }"

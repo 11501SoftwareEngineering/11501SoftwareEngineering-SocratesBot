@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppBanner from '@/components/common/AppBanner.vue'
 /**
  * 老師：AI 用量與金鑰。對應 Figma「P14_Teacher_AI」（node 750:2506）、「P14_NoKey」（1022:3121）、
  * 「P14_RemoveKey」（750:2599）。
@@ -16,7 +17,7 @@ import { topicKeys, topicsApi } from '@/api/topics'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import PageTitle from '@/components/common/PageTitle.vue'
 import StatusTag from '@/components/common/StatusTag.vue'
-import ModelSelect from '@/components/ai/ModelSelect.vue'
+import AppSelect from '@/components/form/AppSelect.vue'
 import { RefreshIcon, SpinnerIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,6 +31,10 @@ const queryClient = useQueryClient()
 const usage = useQuery({ queryKey: aiKeys.usage, queryFn: aiApi.usage })
 const settings = useQuery({ queryKey: aiKeys.settings, queryFn: aiApi.settings })
 const models = useQuery({ queryKey: topicKeys.models, queryFn: topicsApi.models })
+/** 下拉選單的選項（模型 id → 名稱） */
+const modelOptions = computed(() =>
+  (models.data.value ?? []).map((m) => ({ value: m.model_id, label: m.name })),
+)
 
 const num = (n: number | null | undefined) => (n == null ? '—' : n.toLocaleString('en-US'))
 const hasUsage = computed(() => !!usage.data.value?.request_count)
@@ -151,9 +156,9 @@ function submitKey() {
           </Button>
         </div>
       </div>
-      <p v-if="usage.error.value" role="alert" class="text-body text-destructive">
+      <AppBanner v-if="usage.error.value" type="error">
         {{ getApiErrorMessage(usage.error.value, t('ai.usageError')) }}
-      </p>
+      </AppBanner>
       <dl class="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <div v-for="t in tiles" :key="t.label" class="rounded-lg bg-background px-4 py-3">
           <dt class="text-body text-muted-foreground">{{ t.label }}</dt>
@@ -182,14 +187,15 @@ function submitKey() {
       </table>
 
       <div class="flex flex-wrap items-end gap-4">
-        <ModelSelect
+        <AppSelect
           class="w-full max-w-[420px]"
           :label="t('ai.defaultModel')"
-          :models="models.data.value ?? []"
+          :options="modelOptions"
+          :placeholder="t('ai.selectModel')"
           :model-value="defaultModelId"
           :disabled="setModel.isPending.value"
           :error="modelError"
-          @update:model-value="(id) => setModel.mutate(id)"
+          @update:model-value="(id: string) => setModel.mutate(id)"
         />
         <a
           href="#model-prices"
@@ -232,9 +238,7 @@ function submitKey() {
         <p v-if="keyError" id="api-key-error" role="alert" class="text-body text-destructive">
           {{ keyError }}
         </p>
-        <p v-else-if="keyNotice" role="status" class="text-body text-primary-dark">
-          {{ keyNotice }}
-        </p>
+        <AppBanner v-else-if="keyNotice" type="success">{{ keyNotice }}</AppBanner>
         <div class="flex justify-end gap-3">
           <Button
             v-if="settings.data.value?.configured"

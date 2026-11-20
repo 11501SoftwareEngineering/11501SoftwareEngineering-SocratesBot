@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import TextLink from '@/components/common/TextLink.vue'
+import AppBanner from '@/components/common/AppBanner.vue'
 /**
  * 學生：我的課程。對應 Figma「P05_Student_Home」（node 171:234）、「P05_JoinCourse」。
  * API：GET /courses、POST /courses/join、DELETE /courses/{courseId}/member（退出課程）
@@ -55,7 +57,7 @@ const leave = useConfirmAction((course: CourseSummary) => coursesApi.leave(cours
         <Button @click="joinOpen = true"><AddRingIcon /> {{ t('courses.join') }}</Button>
       </template>
     </SectionHeading>
-    <p v-if="notice" role="status" class="mt-2 text-body-lg text-foreground">{{ notice }}</p>
+    <AppBanner v-if="notice" type="success" class="mt-2">{{ notice }}</AppBanner>
     <SearchInput v-model="keyword" :label="t('courses.search')" class="mt-2" />
 
     <QueryState
@@ -69,13 +71,7 @@ const leave = useConfirmAction((course: CourseSummary) => coursesApi.leave(cours
     >
       <template #empty-action>
         {{ t('common.tryPrefix')
-        }}<button
-          type="button"
-          class="rounded underline underline-offset-4 outline-none hover:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          @click="joinOpen = true"
-        >
-          {{ t('courses.join') }}
-        </button>
+        }}<TextLink inline @click="joinOpen = true">{{ t('courses.join') }}</TextLink>
       </template>
       <div class="grid gap-4 md:grid-cols-2">
         <CourseCard
@@ -87,7 +83,7 @@ const leave = useConfirmAction((course: CourseSummary) => coursesApi.leave(cours
         >
           <template #actions>
             <Button
-              variant="ghost"
+              variant="ghost-danger"
               size="icon-sm"
               :aria-label="t('courses.leaveAria', { name: course.name })"
               @click="leave.ask(course)"

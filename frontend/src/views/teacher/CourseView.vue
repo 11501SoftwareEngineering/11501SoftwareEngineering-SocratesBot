@@ -30,7 +30,8 @@ import SectionHeading from '@/components/common/SectionHeading.vue'
 import TabNav from '@/components/common/TabNav.vue'
 import ActivityCard from '@/components/course/ActivityCard.vue'
 import MemberCard from '@/components/course/MemberCard.vue'
-import { AddRingIcon, CopyIcon, TrashIcon, UserDeleteIcon } from '@/components/icons'
+import { AddRingIcon, TrashIcon, UserDeleteIcon } from '@/components/icons'
+import CopyButton from '@/components/common/CopyButton.vue'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useConfirmAction } from '@/composables/useConfirmAction'
@@ -54,18 +55,9 @@ const isTeacher = computed(() => role.value === 'teacher')
 const can = (p: TaPermission) => isTeacher.value || permissions.value.includes(p)
 
 // ---------- 課程代碼 ----------
-const copied = ref(false)
-async function copyCode() {
-  const code = course.value?.invite_code ?? topicsQuery.data.value?.invite_code
-  if (!code) return
-  try {
-    await navigator.clipboard.writeText(code)
-    copied.value = true
-    setTimeout(() => (copied.value = false), 2000)
-  } catch {
-    copied.value = false
-  }
-}
+const inviteCode = computed(
+  () => course.value?.invite_code ?? topicsQuery.data.value?.invite_code ?? '',
+)
 
 // ---------- 探究活動 ----------
 const { keyword, results: topics } = useSearch(
@@ -193,22 +185,13 @@ const breadcrumbs = computed(() => [
     >
       <template #after-title>
         <span class="flex items-center gap-2 text-header text-foreground">
-          {{
-            t('courses.inviteCodeLabel', {
-              code: course?.invite_code ?? topicsQuery.data.value?.invite_code ?? '',
-            })
-          }}
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            :aria-label="copied ? t('course.codeCopied') : t('course.copyCode')"
-            @click="copyCode"
-          >
-            <CopyIcon />
-          </Button>
-          <span v-if="copied" role="status" class="text-body text-muted-foreground">{{
-            t('common.copied')
-          }}</span>
+          {{ t('courses.inviteCodeLabel', { code: inviteCode }) }}
+          <CopyButton
+            v-if="inviteCode"
+            :text="inviteCode"
+            :label="t('course.copyCode')"
+            :done-label="t('course.codeCopied')"
+          />
         </span>
       </template>
     </PageTitle>
@@ -259,7 +242,7 @@ const breadcrumbs = computed(() => [
             >
               <template v-if="isTeacher" #actions>
                 <Button
-                  variant="ghost"
+                  variant="ghost-danger"
                   size="icon-sm"
                   :aria-label="t('activity.deleteAria', { title: topic.title })"
                   @click="removeTopic.ask(topic)"
@@ -298,7 +281,7 @@ const breadcrumbs = computed(() => [
             >
               <template v-if="isTeacher" #actions>
                 <Button
-                  variant="ghost"
+                  variant="ghost-danger"
                   size="icon-sm"
                   :aria-label="t('course.removeStudentAria', { name: m.name })"
                   @click="removeStudent.ask(m)"
@@ -345,7 +328,7 @@ const breadcrumbs = computed(() => [
               >
                 <template #actions>
                   <Button
-                    variant="ghost"
+                    variant="ghost-danger"
                     size="icon-sm"
                     :aria-label="t('course.removeTaAria', { name: m.name })"
                     @click="removeTa.ask(m)"

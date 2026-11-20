@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import AppBanner from '@/components/common/AppBanner.vue'
+import LongTextField from '@/components/form/LongTextField.vue'
 /**
  * 全班觀點 →「摘要審閱」。對應 Figma「P13-1_Teacher_Result」（node 171:211）：
  *   版本列：草稿／已審閱／已發布 · Ver. 02 · 日期
@@ -143,15 +145,12 @@ const date = computed(() =>
         <p v-if="!canEdit" class="text-body-lg text-muted-foreground">
           {{ summary.viewpoint_summary }}
         </p>
-        <label v-if="canEdit" for="viewpoint-summary" class="sr-only">{{
-          t('report.viewpointSummary')
-        }}</label>
-        <textarea
+        <LongTextField
           v-if="canEdit"
-          id="viewpoint-summary"
           v-model="text"
-          rows="4"
-          class="w-full resize-y rounded border border-input bg-background px-2 py-1 text-body-lg text-muted-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          :label="t('report.viewpointSummary')"
+          hide-label
+          :rows="4"
         />
         <div v-if="canEdit && dirty" class="flex items-center gap-3">
           <Button variant="secondary" :disabled="busy" @click="save.mutate()">{{
@@ -207,6 +206,6 @@ const date = computed(() =>
         >
       </div>
     </div>
-    <p v-if="error" role="alert" class="text-body text-destructive">{{ error }}</p>
+    <AppBanner v-if="error" type="error">{{ error }}</AppBanner>
   </div>
 </template>
