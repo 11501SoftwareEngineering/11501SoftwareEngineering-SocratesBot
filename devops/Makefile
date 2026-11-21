@@ -22,6 +22,10 @@ backend-prod-build:
 backend-prod:
 		docker-compose -f ./prod/docker-compose.backend.yml up -d
 
+.PHONY:backend-prod-down
+backend-prod-down:
+		docker-compose -f ./prod/docker-compose.backend.yml down
+
 .PHONY:frontend-prod-build
 frontend-prod-build:
 		docker-compose -f ./prod/docker-compose.frontend.yml up -d --build
@@ -30,3 +34,7 @@ frontend-prod-build:
 .PHONY:nginx-prod
 nginx-prod:
 		docker-compose -f ./prod/docker-compose.nginx.yml up -d
+
+.PHONY:nginx-prod-down
+nginx-prod-down:
+		docker-compose -f ./prod/docker-compose.nginx.yml down
