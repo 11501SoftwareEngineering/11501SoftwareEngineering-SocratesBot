@@ -41,12 +41,23 @@ class StreamMessageRequest(BaseModel):
         return cleaned
 
 
-class StreamDone(BaseModel):
+class StreamDoneEvent(BaseModel):
+    """JSON data of the terminal SSE event; reply text is a separate event."""
+
     message_id: UUID
-    text: str
     completed_turns: int
-    is_completed: bool
-    awaiting_end_consent: bool
+    is_completed: bool = Field(
+        description="True only for a completed dialogue; readiness alone does not complete it."
+    )
+    awaiting_end_consent: bool = Field(
+        description="Whether the client should offer the ending choice. This is not report eligibility."
+    )
+
+
+class StreamDone(StreamDoneEvent):
+    """Internal service result, projected into text plus StreamDoneEvent on the wire."""
+
+    text: str
 
 
 class EndDialogueRequest(BaseModel):

@@ -253,7 +253,7 @@ version: 0.2
 - 授權: 老師、助教、學生
 - 輸入資料: 無
 - 成功回應: `course_id`, `name`, `invite_code`, `my_role`, `my_permissions`, `topics`[`topic_id`, `title`, `description`, `topic_status`（內容見上方表格）, `age_band`, `max_turns`, 依身分另含下列欄位]
-    - 學生: 只列 `conversation`、`summary` 階段的題目；另含 `session_status`（未進入時為 null）, `session_id`
+    - 學生: 只列 `conversation`、`summary` 階段的題目；另含 `session_status`（此列表為 `IN_PROGRESS` / `COMPLETED`，未進入時為 null；不同於 Session API 的小寫 outcome）, `session_id`
     - 老師與助教: `answered_count`, `student_count`
 - 錯誤:
     - 非課程成員或查無此課程 (404)
@@ -284,33 +284,45 @@ version: 0.2
 
 ## 題目設定階段
 
+目前候選版本的實際 API、SSE、錯誤碼與時序圖見 [AI backend contract](AI_BACKEND_CONTRACT.md)。以下標註「尚未實作」的欄位或權限不是可用功能；後續修正不得只修改文件來掩蓋程式缺口。
+
 ### 取得題目設定
-- 功能說明: 開啟題目設定頁（`setup` 階段可編輯，之後唯讀），尚未設定的欄位為 null
+- 功能說明: 開啟題目設定頁（`setup` 階段可編輯，之後唯讀），null 值的欄位會省略（包含 setup 內的欄位），前端須接受缺少可選 key
 - 呼叫方式: GET /topics/{topicId}/setup
-- 授權: 設定權限
+- 授權: 設定權限（目前程式仍要求全域老師及課程老師；助教支援待 BE-01 修正）
 - 輸入資料: 無
 - 成功回應: `topic_id`, `course_id`, `topic_status`, `model_id`, `setup`{八欄設定物件，欄位見上表}
 - 錯誤:
     - 無權限 (403)
     - 查無此題目 (404)
 
+### AI 產生題目設定建議
+- 呼叫方式: POST /topics/{topicId}/setup/generate
+- 授權: 目前仍限老師及課程老師檢查；助教設定權限缺口另追蹤
+- 輸入資料: `age_band`, `max_turns`, `content_language`, `course_description`, `model_id`
+- 成功回應: `topic_id`, `course_id`, `topic_status`, `model_id`, `setup`，以及 `assessments`, `clarification_questions`, `suggestions`, `warnings`
+- 僅回傳建議，不儲存設定、語言或模型；PUT setup 目前也不採用建議的模型／語言
+- 錯誤: 非 setup (400)、未授權 (401／403)、題目不存在 (404)、輸入或模型目錄不合法／語意需修訂 (422)、模型失敗 (502／503)、模型逾時 (504)
+- `422.detail` 可能是請求驗證陣列，也可能是模型建議修訂的字串
+
 ### AI 依回饋修訂題目設定
-- 功能說明: 「確認活動設定」頁的「重新產生」按鈕按下後呼叫，依老師回饋重新產生八欄設定
+- 功能說明: 「確認活動設定」頁的「重新產生」按鈕按下後呼叫，依老師回饋重新產生八欄設定及回饋；只回傳建議，不自動儲存
 - 呼叫方式: POST /topics/{topicId}/setup/refine
-- 授權: 設定權限
+- 授權: 設定權限（目前程式仍要求全域老師及課程老師；助教支援待 BE-01 修正）
 - 輸入資料: `setup`, `feedback`
 - 成功回應: 同「取得題目設定」
 - 錯誤:
-    - 欄位不符規則 (422)
+    - 欄位不符規則，或模型要求修訂描述 (422)
     - 無權限 (403)
     - 查無此題目 (404)
     - 題目已不在設定階段 (400)
     - AI 服務失敗 (502／503)
+    - 模型逾時 (504)
 
 ### AI 重新產生開場訊息
-- 功能說明: 「確認活動設定」頁開場訊息欄的「重新產生」按鈕按下後呼叫，依目前設定（含手動修改）重新產生 `opening_message`
+- 功能說明: 「確認活動設定」頁開場訊息欄的「重新產生」按鈕按下後呼叫，依目前設定（含手動修改）重新產生並儲存 `opening_message` 與 revision；不一併儲存其他畫面欄位
 - 呼叫方式: POST /topics/{topicId}/setup/opening-message
-- 授權: 設定權限
+- 授權: 設定權限（目前程式仍要求全域老師及課程老師；助教支援待 BE-01 修正）
 - 輸入資料: `setup`
 - 成功回應: `opening_message`
 - 錯誤:
@@ -319,11 +331,13 @@ version: 0.2
     - 查無此題目 (404)
     - 題目已不在設定階段 (400)
     - AI 服務失敗 (502／503)
+    - 模型逾時 (504)
+    - 生成期間設定被其他請求修改 (409)
 
 ### 儲存題目設定
 - 功能說明: 「確認活動設定」頁的「儲存草稿」按鈕按下後呼叫，儲存 `setup` 階段的八欄設定
 - 呼叫方式: PUT /topics/{topicId}/setup
-- 授權: 設定權限
+- 授權: 設定權限（目前程式仍要求全域老師及課程老師；助教支援待 BE-01 修正）
 - 輸入資料: `setup`
 - 成功回應:「取得題目設定」的回應, `message`
 - 錯誤:
@@ -358,13 +372,13 @@ version: 0.2
     - 非課程成員或查無此題目 (404)
 
 ### 建立對話 Session
-- 功能說明: 學生第一次進入題目時建立本人 Session，固定題目設定、內容語言、模型及設定版本。已有 Session 時回傳該 Session
+- 功能說明: 首次進入時建立本人 Session；已有 Session 時回傳同一筆及其目前 outcome，不會重開已結束的對話。發布後鎖定題目設定，不代表此 API 另存完整設定快照
 - 呼叫方式: POST /topics/{topicId}/sessions
-- 授權: 學生
+- 授權: 已登入且為課程成員（目前並未限定課程學生身分）
 - 輸入資料: 無
-- 成功回應: `session_id`, `topic_id`, `session_status`（已有 Session 時為該對話目前的狀態）
+- 成功回應: `session_id`, `topic_id`, `session_status`（`open` / `completed` / `abandoned` / `closed_by_summary`）
 - 錯誤:
-    - 非課程學生 (403)
+    - 非課程成員 (403)
     - 查無此題目，或題目仍在 `setup` (404)
     - 題目已進入 `summary`，且本人還沒有 Session (400)
 
@@ -375,55 +389,66 @@ version: 0.2
 - 輸入資料: 無
 - 成功回應: `messages`[`message_id`, `sender`（`ai` / `student`）, `content`, `created_at`], `session_status`, `max_turns`, `completed_turns`, `goal_reached`, `awaiting_end_consent`
 - 錯誤:
-    - 非此對話擁有者 (403)
-    - 查無此對話 (404)
+    - 查無此對話或非本人 (404)
 
 ### 發送回答並串流接收 AI 回覆 (SSE)
-- 功能說明: 學生送出回答，以 `text/event-stream` 接收 AI 回覆。同一筆重試沿用相同 `request_id`，後端不得重複儲存、扣回合或計費
+- 功能說明: 學生送出回答，以 `text/event-stream` 接收 AI 回覆。同一筆重試沿用相同 `request_id` 與 content。已提交的回覆會重播，不再呼叫模型或新增回合；失敗／跨 worker 的請求不保證 provider 只計費一次
 - 呼叫方式: POST /sessions/{sessionId}/messages/stream
 - 授權: 本人
 - 輸入資料: `content`（最多 6000 字元，不可空白）, `request_id`
 - 成功回應: 串流事件
-    - `data` 事件: 可直接接續的文字片段
+    - 未命名事件（標準事件類型 `message`）: 整段回覆文字，多個 data 行以 LF 接合；不是每個網路 chunk 一個事件。模型與交易完成後才開始 SSE
     - `done` 事件: `message_id`, `completed_turns`, `is_completed`, `awaiting_end_consent`
 - 錯誤:
     - 訊息內容為空或超過上限 (422)
-    - 非此對話擁有者 (403)
-    - 查無此對話 (404)
+    - 查無此對話或非本人 (404)
     - 對話已完成、已達回合上限，或題目已進入 `summary` (400)
-    - 同一 Session 有其他請求進行中，待其完成後再送出 (400)
-    - AI 服務失敗 (502／503)
+    - 同一 Session 有其他請求進行中，或生成期間狀態已變更 (409)
+    - 超過上下文預算 (413)
+    - AI 服務失敗或 tokenizer 不支援 (502／503)
+    - SSE 開始前的錯誤為 JSON HTTP 回應，先檢查 status/content-type
 
 ### 結束或繼續對話
-- 功能說明: 達成探究目標時學生同意結束或選擇繼續；或退出探究（標記 ABANDONED，不列完成、不產生報告）
+- 功能說明: 達成探究目標時學生同意結束或選擇繼續；或退出探究（outcome 標記 `abandoned`，不列完成、不產生報告）
 - 呼叫方式: POST /sessions/{sessionId}/end
 - 授權: 本人
 - 輸入資料: `action`（`complete` / `continue` / `abandon`）
 - 成功回應: `session_id`, `session_status`, `message`
 - 錯誤:
     - 動作值無效 (422)
-    - 非此對話擁有者 (403)
-    - 查無此對話 (404)
+    - 查無此對話或非本人 (404)
     - 對話已結束（已完成或已退出），無法再變更 (400)
-    - 尚未達成探究目標就要求 `complete`，可繼續對話後再送出 (400)
+    - 尚未達成探究目標就要求 `complete`，或其他回覆仍在進行中 (409)
+
+`continue` 清除 consent 但保留已達成的 goal，不增加回合上限。`complete` 不會排程報告，必須另呼叫 POST report。未達標且用完回合目前仍不能完成／產生報告；提早結束報告是待團隊批准的另案，不是現有 API。
+
+### 啟動本人個人報告
+- 呼叫方式: POST /sessions/{sessionId}/report
+- 授權: 本人；outcome 必須為 `completed`
+- 輸入資料: 無
+- 成功回應: HTTP 200，`report_status`, `report`
+- 無 attempt、最新失敗或 pending/processing lease 過期：新增 attempt 並排程。仍有效的 pending/processing 或 ready：直接沿用，不強制重新生成
+- 錯誤: 未授權 (401／403)、查無此對話或非本人 (404)、尚未完成 (409)、UUID 驗證錯誤 (422)
+- 啟動後以 GET 同一路徑輪詢；GET 本身不啟動生成
 
 ### 取得本人個人報告
 - 功能說明: 對話完成後取得本人結構化報告；報告準備中時回傳處理狀態供前端輪詢
 - 呼叫方式: GET /sessions/{sessionId}/report
 - 授權: 本人
 - 輸入資料: 無
-- 成功回應: `report_status`（`pending` / `processing` / `ready` / `failed`）, `report`（`ready` 時才有值）包含
-    - 識別及完成資訊: `report_id`, `version`, `session_id`, `topic_id`, `anonymous_id`, `completed_at`, `completed_turns`, `completion_reason`
+- 成功回應: `report_status`（`pending` / `processing` / `ready` / `failed`）, `report`（最新可用的 ready 內容，沒有則 null；最新 attempt 失敗／處理中仍可能帶較早的 ready 內容）包含
+    - 目前識別及完成資訊: `report_id`, `version`（目前固定 1）, `session_id`, `topic_id`, `completed_turns`, `completion_reason`（目前為 completed）
+    - 原規格的 `anonymous_id`, `completed_at` 尚未實作，另追蹤 BE-03，前端不可假設存在
     - `viewpoint_summary`, `final_viewpoint`, `viewpoint_status`
     - `reasons`, `strongest_reason`, `challenges`[`challenge`, `responded`], `revision_or_defense`, `focus_connection`, `other_perspectives`, `open_questions`
     - `evidence_status`（`sufficient` / `partial` / `insufficient`）, `limitations`
     - `timeline`[`turn`, `question`, `evidence`, `viewpoint_before`, `viewpoint_after`, `change_type`, `attribution`（`explicit` / `sequence_only` / `none`）]
-    - 證據引用格式: `message_id`, `turn`, `quote`
+    - 目標證據引用格式為 `message_id`, `turn`, `quote`，但目前尚未落實型別與查核，另追蹤 AI-09；目前 timeline.evidence 可為字串
     - 不包含學生姓名
 - 錯誤:
-    - 非此對話擁有者 (403)
-    - 查無此對話 (404)
-    - 對話尚未完成 (400)
+    - 查無此對話或非本人 (404)
+    - 對話尚未完成 (409)
+    - 已完成但尚未建立 report attempt (404)
 
 ### 開始本人個人報告
 - 功能說明: 對話完成後開始產生本人報告，或回傳已經在跑、已經完成的那一筆，不重複產生。沒有報告、最近一次失敗、或處理逾時（租約已過）時新增一筆 `pending` 並排程產生；重試時若先前已有 `ready` 內容，仍一併帶回。前端開始後以「取得本人個人報告」輪詢
@@ -437,7 +462,16 @@ version: 0.2
 
 ---
 
+### 教師重試個人報告
+- 呼叫方式: POST /topics/{topicId}/reports/{sessionId}
+- 授權: 目前為全域老師且具課程 instructor 身分
+- 無 request body；回應與本人 report 相同
+- 與學生 POST 的 reuse/retry 規則相同，不會強制重新生成 ready 報告；只有新增 attempt 才取新 progress snapshot
+- 錯誤: 未授權／無權限 (401／403)、題目或屬於該題目的 Session 不存在 (404)、尚未完成 (409)、UUID 不合法 (422)
+
 ## 全班報告與摘要
+
+目前教學報告列表實際回應為 counts 與 `reports`[{`report_status`, `report`, `student_display_name`}]；下列 `summary_version`, `groups`, `group_ids` 是尚未完成的 Stage3 需求，並非現有 API 保證。助教讀取目前也會被全域老師檢查拒絕。
 
 ### 取得教學端學生報告
 - 功能說明: 教學端查看題目的各項人數與學生報告，每份報告附學生註冊姓名

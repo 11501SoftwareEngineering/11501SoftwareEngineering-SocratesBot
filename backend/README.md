@@ -197,7 +197,7 @@ Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 tr
 
 ## 個人報告的 progress 快照
 
-- `report_attempts.generation_meta.progress` 在建立 attempt 時寫入當下的 `sessions.generation_meta.progress`。之後對話再變動，報告的依據不會改變。教師重新產生報告時會取新的快照。
+- `report_attempts.generation_meta.progress` 在建立 attempt 時寫入當下的 `sessions.generation_meta.progress`。之後對話再變動，報告的依據不會改變。只有建立新 attempt 時才會取新快照；教師 retry 對 ready 或有效的執行中 attempt 會沿用，不強制重新產生。
 - 沒有快照的 attempt（舊資料，或從未有 progress 的對話）只根據對話紀錄產生報告，快照欄位為 `NULL`。
 
 ## 尚未實作與刻意的設計選擇
@@ -208,7 +208,7 @@ Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 tr
 
 ## 已知限制（部署前需處理）
 
-- **tokenizer 對照不完整**：`app/services/token_budget.py` 的 `MODEL_ENCODINGS` 只有 `gpt-4o` 系列與 `gpt-6.2-sol`。預設模型 `openai/gpt-6-luna` 以及模型目錄中的其他模型都沒有對照，對話的上下文預算計算會拋出 `UnsupportedModelTokenizerError`，回 503。部署前需要補上這些模型的對照，並以實際 tokenizer 驗證，不能直接沿用其他模型的對照。
+- **tokenizer 估計限制**：目前八個 catalog 模型皆有 o200k_base 對照，因此預設 Luna 的缺少對照錯誤已修正。此對照仍為估計，未證明與 provider token 計數完全相同；openai/gpt-6-sol 尚未加入 catalog／對照。
 - 既有 session 的 progress 補算只在它的下一個新回合發生；既有 report attempt 不會回補快照。
 
 ## 課程設定（Stage 1）
@@ -218,3 +218,5 @@ Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 tr
 - 背景或排除事項未指定時，回應的 `warnings` 會提醒教師在核准前確認。
 - 課程設定超過 45 秒，回 504，教師的輸入保留在前端。
 - 客戶端中止回 499 尚未實作。FastAPI 不會因為客戶端斷線而取消 handler，需要另外設計。
+
+API transport, lifecycle and retry contracts: [integration guide](../docs/AI_BACKEND_CONTRACT.md).
