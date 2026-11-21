@@ -1,3 +1,4 @@
+import { readCookie } from '@/lib/cookies'
 import { apiClient } from './client'
 
 /**
@@ -114,9 +115,17 @@ export const authApi = {
   register(payload: RegisterPayload) {
     return apiClient.post('/auth/register', payload)
   },
-  /** 登出（清掉後端的 refresh cookie）。失敗也沒關係，前端照樣清除登入狀態 */
+  /**
+   * 登出：後端撤銷 refresh session 並清掉 cookie。失敗也沒關係，前端照樣清除登入狀態。
+   * 後端規定登出要帶 X-CSRF-Token header，值等於 csrf_token cookie（double-submit CSRF，
+   * 見 backend/app/middleware/csrf.py）；沒帶或不一樣會回 403，refresh session 就不會被撤銷。
+   */
   logout() {
-    return apiClient.post('/auth/logout', null)
+    // csrf_token：後端登入時設定的 cookie（不是 HttpOnly，前端讀得到；backend/app/core/cookies.py）
+    const csrf = readCookie('csrf_token')
+    return apiClient.post('/auth/logout', null, {
+      headers: csrf ? { 'X-CSRF-Token': csrf } : undefined,
+    })
   },
   async getMe() {
     const res = await apiClient.get<UserResponse>('/users/me')
