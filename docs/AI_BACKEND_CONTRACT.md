@@ -1,6 +1,6 @@
 # AI backend API contract and sequences
 
-Contract revision 8 (local teacher-closure proposal), 21 November 2026. Reconciled against PR #272 implementation `cf2c335` (including its dependency stack). Paths have the `/api/v1` prefix. This is a PR contract, not a statement that these changes are deployed.
+Contract revision 8 (PR #272 teacher closure), 21 November 2026. Reconciled against PR #272 implementation `cf2c335` (including its dependency stack). Paths have the `/api/v1` prefix. This is a PR contract, not a statement that these changes are deployed.
 
 - [PR #272 documentation preview](https://11501SoftwareEngineering.github.io/11501SoftwareEngineering-SocratesBot/pr-preview/pr-272/docs/) follows the published PR head after its docs workflow succeeds.
 - [Main documentation](https://11501SoftwareEngineering.github.io/11501SoftwareEngineering-SocratesBot/docs/) follows the main deployment workflow; it does not include unmerged PR changes. Documentation deployment does not prove the backend service has been deployed.
@@ -406,9 +406,9 @@ Rollout must include the Chunk06 database migration for the new ending lifecycle
 Evidence: implementation `cf2c335` passed584 API/unit/migration checks and32 real-Postgres integration tests. Documentation correction `459b816` passed12 focused export/example checks locally and SonarCloud remotely. This expanded guide changes prose only; no new runtime behavior or live-model quality claim. The full HTTP acceptance journey and latest preview deployment verification remain separate outstanding work.
 
 
-## Teacher-controlled Stage2 closure (local proposal, not deployed)
+## Teacher-controlled Stage2 closure (PR #272, not deployed)
 
-This user-approved policy supersedes the requirement to rely on every student ending their own dialogue. New branch `codex/ai-teacher-stage2-closure` above rebased PR272 (`19e99d9`). These endpoints are not in main or the published PR preview until this proposal is published and deployed. No frontend changes or new database migration; existing topic phase, session endings and persisted job tables are reused.
+This user-approved policy supersedes the requirement to rely on every student ending their own dialogue. Teacher-closure commits `35c8e1b` and `201cad9` are included in PR #272 above its rebased `19e99d9` revision. PR preview availability depends on its docs workflow; these endpoints are not a deployed-main contract. No frontend changes or new database migration; existing topic phase, session endings and persisted job tables are reused.
 
 ### Query counts before confirmation
 

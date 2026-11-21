@@ -686,11 +686,11 @@ Inconclusive reports retain the full report structure, with `evidence_status=ins
 產生期間以有效 lease 阻擋新 session（409），既有個人報告仍可讀取。ready 提交前再次確認無開放對話且來源報告未變；失敗保留原已發布版本。保留原有審核、發布、撤回端點與 DTO，原生詳細結果及來源映射只存在私有 JSON。完整流程見 [AI_BACKEND_CONTRACT](AI_BACKEND_CONTRACT.md#native-stage3-class-synthesis)。
 
 
-## 教師結束 Stage2（本地提案，尚未部署）
+## 教師結束 Stage2（PR #272，尚未部署）
 
 - GET `/topics/{topicId}/conversation-status`：教師查詢 `open_dialogue_count`、`stage2_closed`、`confirmation_required`、`preparation_status`。僅計已建立且 open 的對話，不計未進入學生；讀取不觸發工作。
 - POST `/topics/{topicId}/end-conversation`：body `{"confirm_open_dialogues": true}`。若未確認且仍有 open 對話，409 detail 回傳 code 與最新數量，沒有結束副作用。
 - 確認後原子結束 open 對話：outcome=ended、reason=teacher_ended_stage2，保留 goal。教師不受三次回答下限限制；topic 立即進入 summary，技術失敗也不重新開放。
 - HTTP200 表示已關閉且工作已排程，不代表摘要就緒。後端先等待個人報告再自動統整；GET summary 輪詢工作狀態，原有審閱／發布流程不變。重複關閉沿用有效或 ready 工作，失敗／逾時可重試。
 - 零回答：個人報告為 ready/insufficient，明示未提交回答；不呼叫模型、不計入全班分母。全班皆無回答時仍有 denominator0 的誠實證據不足草稿。
-- 新端點沿用全域 teacher + course instructor 授權。完整 payload、錯誤、競態、恢復與前端流程見 [teacher closure contract](AI_BACKEND_CONTRACT.md#teacher-controlled-stage2-closure-local-proposal-not-deployed)。本提案不修改前端；前端需輪詢／重讀現有狀態才能導頁。
+- 新端點沿用全域 teacher + course instructor 授權。完整 payload、錯誤、競態、恢復與前端流程見 [teacher closure contract](AI_BACKEND_CONTRACT.md#teacher-controlled-stage2-closure-pr-272-not-deployed)。本提案不修改前端；前端需輪詢／重讀現有狀態才能導頁。
