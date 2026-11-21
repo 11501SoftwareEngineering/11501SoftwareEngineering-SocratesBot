@@ -77,13 +77,43 @@ _REPLY_SCHEMA: dict[str, Any] = {
     "required": ["reply", "goal_reached"],
 }
 
+CONTEXT_SUMMARY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {"summary": {"type": "string"}},
+    "required": ["summary"],
+}
+
 
 class ModelClient(Protocol):
-    async def complete_json(self, *, instructions: str, material: str) -> dict: ...
+    async def complete_json(
+        self,
+        *,
+        instructions: str,
+        material: str,
+        model: str | None = None,
+        max_tokens: int | None = None,
+    ) -> dict: ...
 
     async def complete_reply(
-        self, *, instructions: str, material: str
+        self,
+        *,
+        instructions: str,
+        material: str,
+        model: str | None = None,
+        max_tokens: int | None = None,
     ) -> tuple[str, bool]: ...
+
+    async def complete_object(
+        self,
+        *,
+        name: str,
+        schema: dict[str, Any],
+        instructions: str,
+        material: str,
+        model: str | None = None,
+        max_tokens: int | None = None,
+    ) -> dict: ...
 
 
 class OpenAIChatClient:
@@ -97,6 +127,7 @@ class OpenAIChatClient:
         material: str,
         model: str | None = None,
         api_key: str | None = None,
+        max_tokens: int | None = None,
     ) -> dict:
         return await self._post(
             name="inquiry_setup",
@@ -105,6 +136,7 @@ class OpenAIChatClient:
             material=material,
             model=model,
             api_key=api_key,
+            max_tokens=max_tokens,
         )
 
     async def complete_object(
@@ -114,22 +146,33 @@ class OpenAIChatClient:
         schema: dict[str, Any],
         instructions: str,
         material: str,
+        model: str | None = None,
+        max_tokens: int | None = None,
     ) -> dict:
         return await self._post(
             name=name,
             schema=schema,
             instructions=instructions,
             material=material,
+            model=model,
+            max_tokens=max_tokens,
         )
 
     async def complete_reply(
-        self, *, instructions: str, material: str
+        self,
+        *,
+        instructions: str,
+        material: str,
+        model: str | None = None,
+        max_tokens: int | None = None,
     ) -> tuple[str, bool]:
         parsed = await self._post(
             name="dialogue_reply",
             schema=_REPLY_SCHEMA,
             instructions=instructions,
             material=material,
+            model=model,
+            max_tokens=max_tokens,
         )
         reply = parsed.get("reply")
         goal_reached = parsed.get("goal_reached")
@@ -146,6 +189,7 @@ class OpenAIChatClient:
         material: str,
         model: str | None = None,
         api_key: str | None = None,
+        max_tokens: int | None = None,
     ) -> dict:
         key = (
             api_key
@@ -168,6 +212,8 @@ class OpenAIChatClient:
                 },
             },
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
         response: httpx.Response | None = None
         for attempt in (1, 2):
             try:

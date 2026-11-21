@@ -7,11 +7,13 @@ import logging
 from contextlib import suppress
 from uuid import UUID
 
+from app.core.config import settings
 from app.core.database import AsyncSessionLocal
+from app.core.prompts import PromptStage, prompt_for
 from app.crud import message as message_crud
 from app.crud import report as report_crud
 from app.services.attempt_lease import refresh
-from app.services.dialogue import reply_material
+from app.services.dialogue_context import reply_material
 from app.services.model_client import ModelCallError, OpenAIChatClient
 from app.services.report_text import validate_report
 
@@ -19,12 +21,6 @@ logger = logging.getLogger("app.model")
 client = OpenAIChatClient()
 _live: set[UUID] = set()
 _tasks: set[asyncio.Task] = set()
-
-INSTRUCTIONS = (
-    "Write a personal inquiry report from the dialogue. "
-    "Do not include a student name, user id, session id, or report id. "
-    "Use exclusions 'unspecified' when none were given."
-)
 
 _SCHEMA: dict = {
     "type": "object",
@@ -115,6 +111,8 @@ async def run_report(attempt_id: UUID) -> None:
     """Prepare one report attempt and store it as ready or failed."""
     _live.add(attempt_id)
     refresher: asyncio.Task[None] | None = None
+    prompt = prompt_for(PromptStage.PERSONAL_REPORT)
+    model_id = settings.OPENAI_MODEL
     try:
         session_id = await _begin(attempt_id)
         if session_id is None:
@@ -127,14 +125,16 @@ async def run_report(attempt_id: UUID) -> None:
             parsed = await client.complete_object(
                 name="personal_report",
                 schema=_SCHEMA,
-                instructions=INSTRUCTIONS,
+                instructions=prompt.instructions,
                 material=material,
+                model=model_id,
+                max_tokens=prompt.max_output_tokens,
             )
             body = validate_report(parsed)
         except (ModelCallError, ValueError, TypeError):
             await _fail(attempt_id)
             return
-        await _ready(attempt_id, body)
+        await _ready(attempt_id, body, prompt.stage.value, prompt.version)
     finally:
         if refresher is not None:
             refresher.cancel()
@@ -179,7 +179,15 @@ async def _fail(attempt_id: UUID) -> None:
     logger.info("report attempt failed")
 
 
-async def _ready(attempt_id: UUID, body: dict) -> None:
+async def _ready(
+    attempt_id: UUID, body: dict, prompt_stage: str, prompt_version: str
+) -> None:
     async with AsyncSessionLocal() as db:
-        await report_crud.mark_ready(db, attempt_id, body)
+        await report_crud.mark_ready(
+            db,
+            attempt_id,
+            body,
+            prompt_stage=prompt_stage,
+            prompt_version=prompt_version,
+        )
         await db.commit()

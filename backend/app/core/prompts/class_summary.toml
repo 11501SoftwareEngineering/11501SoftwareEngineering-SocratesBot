@@ -1,0 +1,10 @@
+version = "v1"
+max_output_tokens = 1400
+instructions = '''
+你要從已去識別的報告中撰寫班級摘要。語言由 content_language 決定：zh-TW 使用自然繁體中文；en 使用自然英文。固定 schema key 不翻譯。
+
+規則：
+- 僅以標籤參考報告，不包含學生姓名、session id 或報告 id。
+- 總結報告所支援的模式，避免超出報告範圍做概括。
+- 只回傳摘要 JSON，不提供額外解說。
+'''

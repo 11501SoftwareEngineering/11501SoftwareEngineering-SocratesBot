@@ -1,7 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, literal, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import DialogueOutcome, MessageSender, SessionStatus
@@ -56,6 +57,15 @@ async def count_student_turns(db: AsyncSession, session_id: UUID) -> int:
     return int(await db.scalar(statement) or 0)
 
 
+async def count_messages(db: AsyncSession, session_id: UUID) -> int:
+    statement = (
+        select(func.count())
+        .select_from(DialogueMessage)
+        .where(DialogueMessage.session_id == session_id)
+    )
+    return int(await db.scalar(statement) or 0)
+
+
 async def save_exchange(
     db: AsyncSession,
     *,
@@ -64,6 +74,8 @@ async def save_exchange(
     request_id: UUID,
     reply: str,
     goal_reached: bool,
+    prompt_stage: str,
+    prompt_version: str,
 ) -> UUID:
     now = datetime.now(UTC)
     db.add(
@@ -79,6 +91,10 @@ async def save_exchange(
         session_id=session_id,
         sender=MessageSender.AI,
         content=reply,
+        generation_meta={
+            "prompt_stage": prompt_stage,
+            "prompt_version": prompt_version,
+        },
         created_at=now + timedelta(microseconds=1),
     )
     db.add(ai_message)
@@ -90,6 +106,21 @@ async def save_exchange(
             .values(goal_reached=True, awaiting_end_consent=True)
         )
     return ai_message.id
+
+
+async def merge_session_meta(
+    db: AsyncSession, session_id: UUID, **entries: object
+) -> None:
+    """Merge top-level keys into sessions.generation_meta, keeping the other keys."""
+    await db.execute(
+        update(Session)
+        .where(Session.id == session_id)
+        .values(
+            generation_meta=func.coalesce(
+                Session.generation_meta, literal({}, JSONB)
+            ).op("||")(literal(entries, JSONB))
+        )
+    )
 
 
 async def save_end(
