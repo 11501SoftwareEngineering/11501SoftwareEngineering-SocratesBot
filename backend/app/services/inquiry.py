@@ -42,7 +42,7 @@ from app.services.model_client import (
     ModelTimeoutError,
     OpenAIChatClient,
 )
-from app.services.teacher_ai_settings import openrouter_api_key
+from app.services.teacher_ai_settings import effective_default_model, openrouter_api_key
 from app.services.teacher_input import topic_issue, topic_issue_message
 from app.services.topics import get_instructed_topic
 
@@ -82,6 +82,7 @@ def _response(topic: Topic) -> InquirySetupResponse:
         course_id=topic.course_id,
         topic_status=topic.stage,
         model_id=topic.model_id,
+        content_language=topic.content_language,
         setup=_fields_of(topic),
     )
 
@@ -91,12 +92,14 @@ def _suggestion(
     generated: GeneratedInquiry,
     model_id: str | None,
     feedback: InquiryFeedback,
+    language: str,
 ) -> InquirySetupResponse:
     return InquirySetupResponse(
         topic_id=topic.id,
         course_id=topic.course_id,
         topic_status=topic.stage,
         model_id=model_id,
+        content_language=language,
         setup=InquiryFields.model_validate(generated.model_dump()),
         **feedback.model_dump(),
     )
@@ -313,7 +316,7 @@ async def get_inquiry_setup(
     Raises:
         HTTPException: 404 if the topic is missing; 403 if not an instructor.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     return _response(topic)
 
 
@@ -338,8 +341,10 @@ async def create_inquiry_topic(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=topic_issue_message(issue, len(payload.course_description.strip())),
         )
-    language = settings.DEFAULT_LANGUAGE_CODE
-    model_id = settings.OPENAI_MODEL
+    language = payload.content_language or settings.DEFAULT_LANGUAGE_CODE
+    model_id = payload.model_id or await effective_default_model(db, course.created_by)
+    if payload.model_id is not None:
+        await _require_catalog_model(db, model_id)
     api_key = await openrouter_api_key(db, user.id)
     prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
     generated, feedback = await _design(
@@ -410,6 +415,22 @@ def _setup_warnings(generated: GeneratedInquiry) -> list[str]:
     return [_SETUP_WARNING] if unspecified else []
 
 
+async def _require_catalog_model(db: AsyncSession, model_id: str) -> None:
+    if await inquiry_model_crud.get_inquiry_model(db, model_id) is None:
+        raise HTTPException(status_code=422, detail="Invalid model id")
+
+
+async def _apply_selection(
+    db: AsyncSession, topic: Topic, payload: SaveInquiryRequest
+) -> None:
+    # Called after the setup row lock. Omitted selections preserve stored values.
+    if payload.model_id is not None:
+        await _require_catalog_model(db, payload.model_id)
+        topic.model_id = payload.model_id
+    if payload.content_language is not None:
+        topic.content_language = payload.content_language
+
+
 async def _store_setup(db: AsyncSession, topic: Topic, setup: InquiryFields) -> Topic:
     """Write the eight fields on screen. The caller commits."""
     topic = await topic_crud.save_inquiry(
@@ -441,9 +462,10 @@ async def save_inquiry_setup(
         HTTPException: 404 if the topic is missing; 403 if not an instructor;
             400 if the topic is not in setup.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     try:
         topic = await _locked_setup(db, topic.id)
+        await _apply_selection(db, topic, payload)
         topic = await _store_setup(db, topic, payload.setup)
         prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
         await topic_crud.record_inquiry_change(
@@ -471,6 +493,7 @@ async def publish_inquiry(
     topic = await get_instructed_topic(db, teacher, topic_id)
     try:
         topic = await _locked_setup(db, topic.id)
+        await _apply_selection(db, topic, payload)
         topic = await _store_setup(db, topic, payload.setup)
         missing = first_incomplete_field(
             age_band=topic.age_band,
@@ -511,7 +534,7 @@ async def generate_inquiry(
             400 if the topic is not in setup; 422 if the model is not in the
             catalog; 502 or 503 if the model call fails.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     await _require_setup(topic)
     catalog = await inquiry_model_crud.get_inquiry_model(db, payload.model_id)
     if catalog is None:
@@ -536,7 +559,9 @@ async def generate_inquiry(
         max_turns=payload.max_turns,
         language=payload.content_language,
     )
-    return _suggestion(topic, generated, catalog.model_id, feedback)
+    return _suggestion(
+        topic, generated, catalog.model_id, feedback, payload.content_language
+    )
 
 
 async def refine_inquiry(
@@ -548,7 +573,7 @@ async def refine_inquiry(
         HTTPException: 404 if the topic is missing; 403 if not an instructor;
             400 if the topic is not in setup; 502 or 503 if the model call fails.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     await _require_setup(topic)
     model_id = topic.model_id or settings.OPENAI_MODEL
     language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
@@ -571,7 +596,7 @@ async def refine_inquiry(
         max_turns=payload.setup.max_turns,
         language=language,
     )
-    return _suggestion(topic, generated, topic.model_id, feedback)
+    return _suggestion(topic, generated, topic.model_id, feedback, language)
 
 
 async def opening_message(
@@ -583,7 +608,7 @@ async def opening_message(
         HTTPException: 404 if the topic is missing; 403 if not an instructor;
             400 if the topic is not in setup; 502 or 503 if the model call fails.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     await _require_setup(topic)
     seen_at = topic.updated_at
     topic_id = topic.id

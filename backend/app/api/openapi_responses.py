@@ -534,6 +534,7 @@ _INQUIRY_DENIED = json_detail_examples(
     {
         "not_teacher": "Teacher privileges required",
         "not_instructor": "Course teacher required",
+        "missing_setup_permission": "Course teacher or TA with edit_topics permission required",
     },
 )
 _INQUIRY_MISSING = json_detail_example("Topic not found", "Topic not found")
@@ -625,6 +626,7 @@ INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
         "Inquiry was not published",
         {
             "incomplete": "Incomplete setup: topic",
+            "invalid_model": "Invalid model id",
             "invalid": [
                 {
                     "type": "missing",
