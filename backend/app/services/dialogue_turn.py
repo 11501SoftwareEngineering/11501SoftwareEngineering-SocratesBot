@@ -415,6 +415,13 @@ async def catch_up_progress(
     the same terms as new ones.
     """
     language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
+    ai_diagnostics.emit(
+        "progress_catch_up_started",
+        task="dialogue_status",
+        call_id=None,
+        model=model_id,
+        completed_turns=sum(m.sender == MessageSender.STUDENT for m in messages),
+    )
     raw = await _bounded_object(
         client,
         name="dialogue_status",

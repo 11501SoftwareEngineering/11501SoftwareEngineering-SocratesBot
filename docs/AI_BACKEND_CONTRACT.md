@@ -571,7 +571,7 @@ Provider-field reference: [OpenRouter usage accounting](https://openrouter.ai/do
 
 ## AI call debugging (usage and diagnostics follow-up)
 
-This follow-up implements only real usage and diagnostics. The reported Luna502 and relevance judgment are not repaired here. Status still has the existing1000 output-token cap; no model/prompt/validity/retry policy is changed. No paid model calls were made for this work. The supplied browser502 is insufficient to determine the historical cause.
+This follow-up implements only real usage and diagnostics. The reported Luna502 and relevance judgment are not repaired here. In PR274, status retains the1000 output-token cap; that PR changes no model/prompt/validity/retry policy. The separate hot-fix follow-up below increases status headroom. No paid model calls were made for this work. The supplied browser502 is insufficient to determine the historical cause.
 
 ### Correlation and normal logs
 
@@ -762,3 +762,30 @@ Include the backend commit SHA; time/timezone; HTTP status and diagnostic ID; ta
 Share only the relevant redacted structured events. Use a minimal synthetic dialogue to reproduce where possible. Do not paste API keys, authorization headers, complete environment files, provider reasoning, unreviewed response traces or real student details. A browser502 alone is useful as a symptom report but cannot identify truncation versus schema/evidence/provider failure.
 
 Implementation map for maintainers: `services/ai_diagnostics.py` formats events/traces; `services/model_client.py` instruments dispatch/envelope parsing; `services/dialogue_turn.py` identifies schema/evidence/validity outcomes; report/summary runners add job correlation; request logging middleware adds the HTTP ID; `core/database.py` controls SQL echo. Focused verification is `uv run --locked pytest tests/unit/test_ai_diagnostics.py tests/unit/test_model_client.py tests/unit/test_dialogue_turn.py -q` from `backend/`, using synthetic responses without paid calls.
+
+
+## Stage2 status truncation hot fix (local follow-up above PR274)
+
+Prompt `stage2_status-1.0.1` raises `max_output_tokens` from1000 to3000. Both per-turn status generation and legacy progress catch-up load this same prompt and therefore use the new cap. Selected activity model, status output schema, evidence validation, validity/planning behavior, HTTP response shapes and provider retry policy remain unchanged. The model client's4500 hard ceiling is unchanged;3000 is within it. No migration or frontend change is needed for this follow-up.
+
+### Reproduced failure and controlled comparison
+
+Using the supplied synthetic school AI-use topic, `openai/gpt-6-luna`, zh-TW, age16–18 and a10-turn cap:
+
+- A normal third-answer turn completed all three calls successfully at the old caps. This was not a universal per-turn failure.
+- The legacy progress catch-up path over the two earlier student answers returned provider HTTP200, `finish_reason=length`,1000 completion tokens (273 reasoning), and an unterminated JSON string. The backend parser raised `output_truncated`; existing dialogue error mapping returns HTTP502.
+- Repeating the catch-up with an otherwise identical request body and only cap3000 returned `finish_reason=stop`,1017 completion tokens (239 reasoning), complete JSON, valid StatusOut and valid exchange references. Output reserves are headroom, not a requirement to consume all3000 tokens.
+- Account/key credit checks succeeded and had available credit/quota; these replay requests were HTTP200, not402/429. Requests were well inside the12000-token context guard and finished before the60-second provider timeout. No model substitution was used.
+
+The original session's stored progress and server logs were unavailable. This establishes and fixes a real reproduced failure path; it does not prove the exact historical failure or eliminate every possible502/provider error. Other teachers' credentials can have different balances/limits.
+
+The regression fixtures in `backend/tests/fixtures/ai_status/` preserve the redacted actual truncated/complete responses from the synthetic replay. `test_status_truncation_regression.py` checks the502 mapping, rejects incomplete JSON, validates the successful response and exchange references, verifies catch-up uses the loaded cap, and ensures the larger reserve is checked before provider dispatch. No paid calls are needed to replay those tests.
+
+### Operational consequences and diagnostics
+
+- Requests already reserve status output through `estimate_total_request_tokens`; the new3000 reserve is automatically applied to both paths. Very large input/state can therefore reach the existing413 context guard earlier. No evidence is silently truncated to fit.
+- New content-free `progress_catch_up_started` logs identify the historical-progress path, with model and completed student-turn count. Its `call_id` is null because no provider call has started yet; follow the next status `call_started` under the same HTTP/job correlation.
+- A new status call should log prompt version `stage2_status-1.0.1` and `max_output_tokens=3000`. If it still shows1.0.0/1000, verify the deployed revision and restart the backend. Prompts load at process startup.
+- Existing truncated-output handling remains strict: no partial state/reply is accepted. No automatic extra inference or billing fallback is introduced.
+
+Focused reproduction command, from backend: `uv run --locked pytest tests/unit/test_status_truncation_regression.py -q`. Live confirmation and full regression results are recorded with the candidate handoff; the earlier diagnostic walkthrough's1000-token example remains a historical illustrative failure signature, not the new configured cap.
