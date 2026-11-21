@@ -10,10 +10,6 @@
 const mock = import.meta.env.VITE_USE_MOCK === 'true'
 
 export const features = {
-  /** AI 對話：POST /student/sessions/{id}/messages/stream、GET /student/sessions/{id}/messages */
-  chat: mock,
-  /** 語音輸入：POST /student/audio/transcribe */
-  voiceInput: mock,
   /** 結論與統計：GET/POST/DELETE /teacher/topics/{id}/conclusions、GET /teacher/topics/{id}/analytics、GET /student/topics/{id}/analytics */
   conclusions: mock,
   /** 編輯課程：PUT /teacher/courses/{id}（規格沒有，要跟後端確認） */

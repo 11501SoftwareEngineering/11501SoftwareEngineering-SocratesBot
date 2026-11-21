@@ -1,18 +1,21 @@
 <script setup lang="ts">
 /**
- * 新增／編輯課程。對應 Figma「AddCourse」（node 266:1436）。
+ * 新增／編輯課程。對應 Figma「P09_AddCourse」（node 266:1436）。
+ * API：POST /courses、PUT /courses/{courseId}
  * 傳入 course 就是編輯模式。
  */
 import { reactive, ref, watch } from 'vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
-import { teacherApi, teacherKeys, type TeacherCourse } from '@/api/teacher'
+import { courseKeys, coursesApi, type CourseSummary } from '@/api/courses'
 import FormDialog from '@/components/common/FormDialog.vue'
 import FormField from '@/components/common/FormField.vue'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/utils'
 
-const props = defineProps<{ course?: TeacherCourse | null }>()
+const props = defineProps<{
+  course?: Pick<CourseSummary, 'course_id' | 'name' | 'description'> | null
+}>()
 const open = defineModel<boolean>('open', { default: false })
 
 const queryClient = useQueryClient()
@@ -30,16 +33,13 @@ watch(open, (isOpen) => {
 
 const mutation = useMutation({
   mutationFn: async () => {
-    const payload = { name: form.name.trim(), description: form.description.trim() || null }
-    if (props.course) await teacherApi.updateCourse(props.course.course_id, payload)
-    else await teacherApi.createCourse(payload)
+    const payload = { name: form.name.trim(), description: form.description.trim() }
+    if (props.course) await coursesApi.update(props.course.course_id, payload)
+    else await coursesApi.create(payload)
   },
   onSuccess: () => {
     open.value = false
-    void queryClient.invalidateQueries({ queryKey: teacherKeys.courses })
-    if (props.course) {
-      void queryClient.invalidateQueries({ queryKey: teacherKeys.course(props.course.course_id) })
-    }
+    void queryClient.invalidateQueries({ queryKey: courseKeys.all })
   },
   onError: (error) => (formError.value = getApiErrorMessage(error, '儲存失敗，請稍後再試')),
 })

@@ -1,15 +1,18 @@
 <script setup lang="ts">
 /**
  * 輸入課程代碼加入課程。對應 Figma「JoinCourse」（node 266:2304）。
- * API：POST /student/courses/join
+ * API：POST /courses/join
  */
 import { ref, watch } from 'vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
-import { INVITE_CODE_LENGTH, studentApi, studentKeys } from '@/api/student'
+import { courseKeys, coursesApi } from '@/api/courses'
 import FormDialog from '@/components/common/FormDialog.vue'
 import FormField from '@/components/common/FormField.vue'
 import { Input } from '@/components/ui/input'
 import { getApiErrorMessage } from '@/lib/utils'
+
+/** 後端的課程代碼：8 個字元 */
+const INVITE_CODE_LENGTH = 8
 
 const open = defineModel<boolean>('open', { default: false })
 const emit = defineEmits<{ joined: [courseName: string] }>()
@@ -25,10 +28,10 @@ watch(open, (isOpen) => {
 })
 
 const mutation = useMutation({
-  mutationFn: () => studentApi.joinCourse(code.value.trim().toUpperCase()),
+  mutationFn: () => coursesApi.join(code.value.trim().toUpperCase()),
   onSuccess: (course) => {
     open.value = false
-    void queryClient.invalidateQueries({ queryKey: studentKeys.courses })
+    void queryClient.invalidateQueries({ queryKey: courseKeys.all })
     emit('joined', course.name)
   },
   onError: (err) => (error.value = getApiErrorMessage(err, '加入失敗，請稍後再試')),
