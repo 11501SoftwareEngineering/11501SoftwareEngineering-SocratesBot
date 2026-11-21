@@ -24,7 +24,7 @@ class TopicClosedError(Exception):
 
 
 class CourseAccessDeniedError(Exception):
-    """The user is not a member of the topic's course."""
+    """The user is not a student of the topic's course."""
 
 
 class SessionStore(Protocol):
@@ -38,8 +38,11 @@ class SessionStore(Protocol):
         """Return the topic stage, or None when the topic does not exist."""
         ...
 
-    async def is_course_member(self, user_id: UUID, course_id: UUID) -> bool:
-        """Return whether the user currently belongs to the course."""
+    async def is_course_student(self, user_id: UUID, course_id: UUID) -> bool:
+        """Return whether the user is currently a student of the course.
+
+        A TA or a teacher is not a student, so the answer is False for them.
+        """
         ...
 
     async def get_session_id(self, user_id: UUID, topic_id: UUID) -> UUID | None:
@@ -62,8 +65,8 @@ async def _course_id(store: SessionStore, topic_id: UUID) -> UUID:
     return course_id
 
 
-async def _require_member(store: SessionStore, user_id: UUID, course_id: UUID) -> None:
-    if not await store.is_course_member(user_id, course_id):
+async def _require_student(store: SessionStore, user_id: UUID, course_id: UUID) -> None:
+    if not await store.is_course_student(user_id, course_id):
         raise CourseAccessDeniedError("Course membership required")
 
 
@@ -93,8 +96,9 @@ async def create_or_enter_session(
     the topic is in conversation.
     """
     course_id = await _course_id(store, topic_id)
-    # Check permission even when an old session already exists.
-    await _require_member(store, user_id, course_id)
+    # Check permission even when an old session already exists. Only a student
+    # may enter, so a TA who was a student before keeps no way in.
+    await _require_student(store, user_id, course_id)
     stage = await store.get_topic_stage(topic_id)
     if stage == TopicStage.SETUP.value:
         raise TopicNotOpenError("Topic is still in setup")

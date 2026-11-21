@@ -526,3 +526,105 @@ def test_student_list_keeps_existing_session_on_setup_topic() -> None:
             assert session.id not in their_sessions
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("membership_role", "left", "expected"),
+    [
+        ("STUDENT", False, True),
+        ("TA", False, False),
+        ("STUDENT", True, False),
+    ],
+)
+def test_course_student_check_accepts_only_active_students(
+    membership_role: str, left: bool, expected: bool
+) -> None:
+    async def run() -> None:
+        async with session_test_db() as db:
+            course_a, _ = await create_course_and_topic(db)
+            course_b, _ = await create_course_and_topic(db)
+            member = await create_student(db)
+            outsider = await create_student(db)
+
+            db.add(
+                CourseMembership(
+                    course_id=course_a.id,
+                    user_id=member.id,
+                    role=membership_role,
+                    left_at=datetime.now(UTC) if left else None,
+                )
+            )
+            await db.flush()
+
+            assert (
+                await session_crud.is_course_student(
+                    db, user_id=member.id, course_id=course_a.id
+                )
+                is expected
+            )
+            assert not await session_crud.is_course_student(
+                db, user_id=member.id, course_id=course_b.id
+            )
+            assert not await session_crud.is_course_student(
+                db, user_id=outsider.id, course_id=course_a.id
+            )
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("has_session", [False, True])
+def test_service_rejects_a_ta_even_with_an_earlier_session(has_session: bool) -> None:
+    async def run() -> None:
+        async with session_test_db() as db:
+            course, topic = await create_course_and_topic(db, stage="conversation")
+            ta = await create_student(db)
+
+            db.add(CourseMembership(course_id=course.id, user_id=ta.id, role="TA"))
+            if has_session:
+                db.add(Session(topic_id=topic.id, user_id=ta.id))
+            await db.flush()
+
+            store = session_crud.SQLAlchemySessionStore(db)
+
+            with pytest.raises(CourseAccessDeniedError):
+                await create_or_enter_session(
+                    user_id=ta.id,
+                    topic_id=topic.id,
+                    store=store,
+                )
+
+            session_count = await db.scalar(select(func.count()).select_from(Session))
+            assert session_count == int(has_session)
+
+    asyncio.run(run())
+
+
+def test_service_rejects_a_student_who_left_without_creating_session() -> None:
+    async def run() -> None:
+        async with session_test_db() as db:
+            course, topic = await create_course_and_topic(db, stage="conversation")
+            student = await create_student(db)
+
+            db.add(
+                CourseMembership(
+                    course_id=course.id,
+                    user_id=student.id,
+                    role="STUDENT",
+                    left_at=datetime.now(UTC),
+                )
+            )
+            await db.flush()
+
+            store = session_crud.SQLAlchemySessionStore(db)
+
+            with pytest.raises(CourseAccessDeniedError):
+                await create_or_enter_session(
+                    user_id=student.id,
+                    topic_id=topic.id,
+                    store=store,
+                )
+
+            session_count = await db.scalar(select(func.count()).select_from(Session))
+            assert session_count == 0
+
+    asyncio.run(run())
