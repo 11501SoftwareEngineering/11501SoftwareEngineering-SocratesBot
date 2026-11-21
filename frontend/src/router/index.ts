@@ -112,7 +112,7 @@ const routes: RouteRecordRaw[] = [
       page(
         'courses/:courseId',
         'StudentCourse',
-        '問題列表',
+        '探究活動',
         () => import('@/views/student/CourseView.vue'),
       ),
       page(
@@ -120,12 +120,6 @@ const routes: RouteRecordRaw[] = [
         'StudentChat',
         '對話',
         () => import('@/views/student/ChatView.vue'),
-      ),
-      page(
-        'courses/:courseId/sessions/:sessionId/result',
-        'StudentResult',
-        '對話結果',
-        () => import('@/views/student/ResultView.vue'),
       ),
       page(
         'courses/:courseId/sessions/:sessionId/result/:tab(personal|chat|summary)?',
