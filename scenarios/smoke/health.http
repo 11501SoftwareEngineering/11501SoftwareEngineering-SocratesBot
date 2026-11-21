@@ -1,0 +1,20 @@
+# ============================================
+# Smoke: the backend, its database and Redis are healthy
+# ============================================
+
+# @title Check Health Status
+# @name health
+GET {{BASE_URL}}/health
+
+{{
+  test.status(200);
+
+  const { equal } = require('assert');
+
+  test('Health endpoint reports ok for the app, database and Redis', () => {
+    const data = JSON.parse(response.body);
+    equal(data.status, 'ok');
+    equal(data.database, 'ok');
+    equal(data.redis, 'ok');
+  });
+}}

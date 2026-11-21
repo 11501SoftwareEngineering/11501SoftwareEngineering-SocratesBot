@@ -1,0 +1,264 @@
+# ============================================
+# Shared setup for every user journey
+# ============================================
+# Each role gets a run-unique account, so a rerun never collides with the
+# accounts a previous run left behind. The seed teacher comes from the
+# journey's .env (TEACHER_ACCOUNT_ID / TEACHER_PASSWORD).
+#
+# Register and login responses carry no user id. Get one from the TA-assign
+# response or from the course member list.
+#
+# Every login request exports <role>Token, the full "Bearer ..." value of the
+# Authorization response header. httpyac keeps one cookie jar per run, and it
+# holds only the latest login's cookies. A request that must not carry any
+# earlier login's cookies needs "# @no-cookie-jar".
+
+@password = password1
+
+###
+
+# ============================================
+# Teacher (seed account)
+# ============================================
+# @name teacherLogin
+POST {{BASE_URL}}/auth/login
+Content-Type: application/json
+
+{
+    "account_id": "{{TEACHER_ACCOUNT_ID}}",
+    "password": "{{TEACHER_PASSWORD}}"
+}
+
+{{
+    test.status(200);
+
+    const { equal, ok } = require('assert');
+
+    test('Seed teacher logs in with the TEACHER role', () => {
+        const data = JSON.parse(response.body);
+        ok(data.role.includes('TEACHER'), 'role should include TEACHER');
+        equal(data.must_change_password, false);
+    });
+
+    test('Access token comes from the Authorization header', () => {
+        ok(String(response.headers['authorization']).startsWith('Bearer '));
+    });
+
+    exports.teacherToken = response.headers['authorization'];
+}}
+
+###
+
+# ============================================
+# Student A
+# ============================================
+# @name registerStudentA
+{{
+    exports.studentAAccount = `scn-sa-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}}
+POST {{BASE_URL}}/auth/register
+Content-Type: application/json
+
+{
+    "account_id": "{{studentAAccount}}",
+    "password": "{{password}}",
+    "name": "Scenario Student A"
+}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Student A registers as a USER', () => {
+        const data = JSON.parse(response.body);
+        equal(data.role, 'USER');
+        equal(data.account_id, studentAAccount);
+    });
+}}
+
+###
+
+# @name loginStudentA
+# @ref registerStudentA
+POST {{BASE_URL}}/auth/login
+Content-Type: application/json
+
+{
+    "account_id": "{{studentAAccount}}",
+    "password": "{{password}}"
+}
+
+{{
+    test.status(200);
+
+    const { deepEqual } = require('assert');
+
+    test('Student A logs in with the USER role', () => {
+        deepEqual(JSON.parse(response.body).role, ['USER']);
+    });
+
+    exports.studentAToken = response.headers['authorization'];
+}}
+
+###
+
+# ============================================
+# Student B
+# ============================================
+# @name registerStudentB
+{{
+    exports.studentBAccount = `scn-sb-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}}
+POST {{BASE_URL}}/auth/register
+Content-Type: application/json
+
+{
+    "account_id": "{{studentBAccount}}",
+    "password": "{{password}}",
+    "name": "Scenario Student B"
+}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Student B registers as a USER', () => {
+        const data = JSON.parse(response.body);
+        equal(data.role, 'USER');
+        equal(data.account_id, studentBAccount);
+    });
+}}
+
+###
+
+# @name loginStudentB
+# @ref registerStudentB
+POST {{BASE_URL}}/auth/login
+Content-Type: application/json
+
+{
+    "account_id": "{{studentBAccount}}",
+    "password": "{{password}}"
+}
+
+{{
+    test.status(200);
+
+    const { deepEqual } = require('assert');
+
+    test('Student B logs in with the USER role', () => {
+        deepEqual(JSON.parse(response.body).role, ['USER']);
+    });
+
+    exports.studentBToken = response.headers['authorization'];
+}}
+
+###
+
+# ============================================
+# The TA candidate
+# ============================================
+# @name registerTa
+{{
+    exports.taAccount = `scn-ta-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}}
+POST {{BASE_URL}}/auth/register
+Content-Type: application/json
+
+{
+    "account_id": "{{taAccount}}",
+    "password": "{{password}}",
+    "name": "Scenario TA"
+}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('The TA candidate registers as a USER', () => {
+        const data = JSON.parse(response.body);
+        equal(data.role, 'USER');
+        equal(data.account_id, taAccount);
+    });
+}}
+
+###
+
+# @name loginTa
+# @ref registerTa
+POST {{BASE_URL}}/auth/login
+Content-Type: application/json
+
+{
+    "account_id": "{{taAccount}}",
+    "password": "{{password}}"
+}
+
+{{
+    test.status(200);
+
+    const { deepEqual } = require('assert');
+
+    test('The TA candidate logs in with the USER role', () => {
+        deepEqual(JSON.parse(response.body).role, ['USER']);
+    });
+
+    exports.taToken = response.headers['authorization'];
+}}
+
+###
+
+# ============================================
+# The outsider
+# ============================================
+# @name registerOutsider
+{{
+    exports.outsiderAccount = `scn-out-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}}
+POST {{BASE_URL}}/auth/register
+Content-Type: application/json
+
+{
+    "account_id": "{{outsiderAccount}}",
+    "password": "{{password}}",
+    "name": "Scenario Outsider"
+}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('The outsider registers as a USER', () => {
+        const data = JSON.parse(response.body);
+        equal(data.role, 'USER');
+        equal(data.account_id, outsiderAccount);
+    });
+}}
+
+###
+
+# @name loginOutsider
+# @ref registerOutsider
+POST {{BASE_URL}}/auth/login
+Content-Type: application/json
+
+{
+    "account_id": "{{outsiderAccount}}",
+    "password": "{{password}}"
+}
+
+{{
+    test.status(200);
+
+    const { deepEqual } = require('assert');
+
+    test('The outsider logs in with the USER role', () => {
+        deepEqual(JSON.parse(response.body).role, ['USER']);
+    });
+
+    exports.outsiderToken = response.headers['authorization'];
+}}
