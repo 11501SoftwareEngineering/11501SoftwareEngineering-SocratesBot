@@ -1,0 +1,444 @@
+# ============================================
+# Topic lifecycle: from creation to a student entering a session
+# ============================================
+# A TA holding edit_topics creates a topic. The model fills the eight setup
+# fields, so those are only checked for shape (legal values, non-empty text).
+# The TA then saves setup fields with known values, which makes everything
+# after that deterministic. The teacher publishes, and the student sees the
+# topic and enters a session.
+#
+# This journey calls the model: the backend needs a usable LLM setup.
+
+# @import ../shared/common.http
+
+###
+
+# ============================================
+# Course, student and TA
+# ============================================
+# @name createCourse
+# @ref teacherLogin
+{{
+    exports.courseName = `Scenario topic course ${Date.now().toString(36)}`;
+}}
+POST {{BASE_URL}}/courses
+Authorization: {{teacherToken}}
+Content-Type: application/json
+
+{
+    "name": "{{courseName}}",
+    "description": "Created by the topic-lifecycle journey"
+}
+
+{{
+    test.status(200);
+
+    const data = JSON.parse(response.body);
+    exports.courseId = data.course_id;
+    exports.inviteCode = data.invite_code;
+}}
+
+###
+
+# @name joinStudent
+# @ref createCourse
+# @ref loginStudentA
+POST {{BASE_URL}}/courses/join
+Authorization: {{studentAToken}}
+Content-Type: application/json
+
+{
+    "invite_code": "{{inviteCode}}"
+}
+
+?? status == 200
+?? js response.parsedBody.my_role == student
+
+###
+
+# @name assignTa
+# @ref joinStudent
+# @ref loginTa
+POST {{BASE_URL}}/courses/{{courseId}}/tas
+Authorization: {{teacherToken}}
+Content-Type: application/json
+
+{
+    "account_id": "{{taAccount}}",
+    "permissions": ["edit_topics"]
+}
+
+{{
+    test.status(200);
+
+    const { deepEqual } = require('assert');
+
+    test('TA holds only edit_topics', () => {
+        deepEqual(JSON.parse(response.body).permissions, ['edit_topics']);
+    });
+}}
+
+###
+
+# ============================================
+# The TA creates the topic
+# ============================================
+# @name createTopic
+# @ref assignTa
+POST {{BASE_URL}}/courses/{{courseId}}/topics
+Authorization: {{taToken}}
+Content-Type: application/json
+
+{
+    "age_band": "university_plus",
+    "max_turns": 5,
+    "course_description": "How cities pay for and maintain shared public spaces such as parks and plazas."
+}
+
+{{
+    test.status(200);
+
+    const { equal, ok } = require('assert');
+
+    test('The topic starts in setup with legal, filled eight fields', () => {
+        const data = JSON.parse(response.body);
+        equal(data.topic_status, 'setup');
+        equal(data.course_id, courseId);
+        ok(['13-15', '16-18', 'university_plus'].includes(data.setup.age_band), 'age_band');
+        ok([5, 10, 15].includes(data.setup.max_turns), 'max_turns');
+        ok(typeof data.setup.topic === 'string' && data.setup.topic.length > 0, 'topic');
+        ok(typeof data.setup.core_question === 'string' && data.setup.core_question.length > 0, 'core_question');
+    });
+
+    exports.topicId = JSON.parse(response.body).topic_id;
+}}
+
+###
+
+# @name getSetupAsTa
+# @ref createTopic
+GET {{BASE_URL}}/topics/{{topicId}}/setup
+Authorization: {{taToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('The TA reads the setup it just created', () => {
+        const data = JSON.parse(response.body);
+        equal(data.topic_id, topicId);
+        equal(data.topic_status, 'setup');
+    });
+}}
+
+###
+
+# ============================================
+# The TA saves setup fields with known values
+# ============================================
+# @name saveSetup
+# @ref getSetupAsTa
+{{
+    exports.topicTitle = `Scenario topic ${Date.now().toString(36)}`;
+}}
+PUT {{BASE_URL}}/topics/{{topicId}}/setup
+Authorization: {{taToken}}
+Content-Type: application/json
+
+{
+    "setup": {
+        "age_band": "16-18",
+        "max_turns": 10,
+        "topic": "{{topicTitle}}",
+        "core_question": "Who should pay to keep public spaces in good shape?",
+        "inquiry_focus": "Compare public and private maintenance.",
+        "background_info": "Municipal budgets differ from city to city.",
+        "exclusions": "No partisan campaign material.",
+        "opening_message": "Which public space do you use most?"
+    }
+}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Saving confirms and stays in setup', () => {
+        const data = JSON.parse(response.body);
+        equal(data.message, 'Inquiry saved');
+        equal(data.topic_status, 'setup');
+    });
+}}
+
+###
+
+# @name getSetupAfterSave
+# @ref saveSetup
+GET {{BASE_URL}}/topics/{{topicId}}/setup
+Authorization: {{taToken}}
+
+{{
+    test.status(200);
+
+    const { deepEqual } = require('assert');
+
+    test('The saved fields read back exactly', () => {
+        deepEqual(JSON.parse(response.body).setup, {
+            age_band: '16-18',
+            max_turns: 10,
+            topic: topicTitle,
+            core_question: 'Who should pay to keep public spaces in good shape?',
+            inquiry_focus: 'Compare public and private maintenance.',
+            background_info: 'Municipal budgets differ from city to city.',
+            exclusions: 'No partisan campaign material.',
+            opening_message: 'Which public space do you use most?',
+        });
+    });
+}}
+
+###
+
+# ============================================
+# Before publishing, the student sees nothing
+# ============================================
+# @name studentTopicsBeforePublish
+# @ref getSetupAfterSave
+GET {{BASE_URL}}/courses/{{courseId}}/topics
+Authorization: {{studentAToken}}
+
+{{
+    test.status(200);
+
+    const { equal, ok } = require('assert');
+
+    test('A setup topic is hidden from the student', () => {
+        const data = JSON.parse(response.body);
+        equal(data.my_role, 'student');
+        ok(!data.topics.some((t) => t.topic_id === topicId));
+    });
+}}
+
+###
+
+# @name studentExplanationBeforePublish
+# @ref studentTopicsBeforePublish
+GET {{BASE_URL}}/topics/{{topicId}}/explanation
+Authorization: {{studentAToken}}
+
+?? status == 404
+
+###
+
+# ============================================
+# The teacher publishes
+# ============================================
+# @name publishTopic
+# @ref studentExplanationBeforePublish
+POST {{BASE_URL}}/topics/{{topicId}}/publish
+Authorization: {{teacherToken}}
+Content-Type: application/json
+
+{
+    "setup": {
+        "age_band": "16-18",
+        "max_turns": 10,
+        "topic": "{{topicTitle}}",
+        "core_question": "Who should pay to keep public spaces in good shape?",
+        "inquiry_focus": "Compare public and private maintenance.",
+        "background_info": "Municipal budgets differ from city to city.",
+        "exclusions": "No partisan campaign material.",
+        "opening_message": "Which public space do you use most?"
+    }
+}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Publishing moves the topic to conversation', () => {
+        const data = JSON.parse(response.body);
+        equal(data.message, 'Inquiry published');
+        equal(data.topic_status, 'conversation');
+    });
+}}
+
+###
+
+# ============================================
+# After publishing, the student sees the topic and enters a session
+# ============================================
+# @name studentTopicsAfterPublish
+# @ref publishTopic
+GET {{BASE_URL}}/courses/{{courseId}}/topics
+Authorization: {{studentAToken}}
+
+{{
+    test.status(200);
+
+    const { equal, ok } = require('assert');
+
+    test('The student now lists the topic, with no session yet', () => {
+        const item = JSON.parse(response.body).topics.find((t) => t.topic_id === topicId);
+        ok(item, 'topic should be listed');
+        equal(item.topic_status, 'conversation');
+        equal(item.title, topicTitle);
+        ok(item.session_status === null || item.session_status === undefined, 'no session yet');
+    });
+}}
+
+###
+
+# @name studentExplanationAfterPublish
+# @ref studentTopicsAfterPublish
+GET {{BASE_URL}}/topics/{{topicId}}/explanation
+Authorization: {{studentAToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('The student reads the topic background', () => {
+        const data = JSON.parse(response.body);
+        equal(data.topic_id, topicId);
+        equal(data.title, topicTitle);
+        equal(data.background, 'Municipal budgets differ from city to city.');
+    });
+}}
+
+###
+
+# @name enterSession
+# @ref studentExplanationAfterPublish
+POST {{BASE_URL}}/topics/{{topicId}}/sessions
+Authorization: {{studentAToken}}
+
+{{
+    test.status(200);
+
+    const { equal, ok } = require('assert');
+
+    // The spec names session_status but not its values. This endpoint answers with
+    // the dialogue outcome ('open'), while the topic list answers with the session
+    // status ('IN_PROGRESS'). Both are asserted as they are (docs/規格待確認事項.md, P9).
+    test('The student gets an open session for the topic', () => {
+        const data = JSON.parse(response.body);
+        equal(data.topic_id, topicId);
+        equal(data.session_status, 'open');
+        ok(data.session_id, 'session_id');
+    });
+
+    exports.sessionId = JSON.parse(response.body).session_id;
+}}
+
+###
+
+# @name enterSessionAgain
+# @ref enterSession
+POST {{BASE_URL}}/topics/{{topicId}}/sessions
+Authorization: {{studentAToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Entering again returns the same session', () => {
+        equal(JSON.parse(response.body).session_id, sessionId);
+    });
+}}
+
+###
+
+# @name studentTopicsWithSession
+# @ref enterSessionAgain
+GET {{BASE_URL}}/courses/{{courseId}}/topics
+Authorization: {{studentAToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    // Same session, other vocabulary: see P9 in docs/規格待確認事項.md.
+    test('The student topic list now carries the session', () => {
+        const item = JSON.parse(response.body).topics.find((t) => t.topic_id === topicId);
+        equal(item.session_id, sessionId);
+        equal(item.session_status, 'IN_PROGRESS');
+    });
+}}
+
+###
+
+# ============================================
+# Staff see the topic with counts
+# ============================================
+# @name teacherTopics
+# @ref studentTopicsWithSession
+GET {{BASE_URL}}/courses/{{courseId}}/topics
+Authorization: {{teacherToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('The teacher sees the topic with no answers and one student', () => {
+        const item = JSON.parse(response.body).topics.find((t) => t.topic_id === topicId);
+        equal(item.topic_status, 'conversation');
+        equal(item.answered_count, 0);
+        equal(item.student_count, 1);
+    });
+}}
+
+###
+
+# @name taTopics
+# @ref teacherTopics
+GET {{BASE_URL}}/courses/{{courseId}}/topics
+Authorization: {{taToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('The TA sees the same counts as the teacher', () => {
+        const data = JSON.parse(response.body);
+        equal(data.my_role, 'ta');
+        const item = data.topics.find((t) => t.topic_id === topicId);
+        equal(item.answered_count, 0);
+        equal(item.student_count, 1);
+    });
+}}
+
+###
+
+# ============================================
+# Cleanup: the teacher deletes the course
+# ============================================
+# @name deleteCourse
+# @ref taTopics
+DELETE {{BASE_URL}}/courses/{{courseId}}
+Authorization: {{teacherToken}}
+
+?? status == 204
+
+###
+
+# @name teacherCourseListAfterDelete
+# @ref deleteCourse
+GET {{BASE_URL}}/courses
+Authorization: {{teacherToken}}
+
+{{
+    test.status(200);
+
+    const { ok } = require('assert');
+
+    test('The deleted course is gone from the teacher\'s list', () => {
+        ok(!JSON.parse(response.body).some((c) => c.course_id === courseId));
+    });
+}}

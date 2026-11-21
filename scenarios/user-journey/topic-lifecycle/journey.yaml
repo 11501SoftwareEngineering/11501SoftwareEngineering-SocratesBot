@@ -1,0 +1,7 @@
+name: "Topic Lifecycle"
+description: "Positive end-to-end coverage for a topic, from creation by a TA to a student entering a session. Calls the model, so the backend needs a usable LLM setup."
+cases:
+  - name: "Topic Setup And Publish"
+    description: "A TA with edit_topics creates a topic and saves its setup, the teacher publishes it, the student sees it and enters a session, and staff see the counts."
+    path: "01-topic-setup-and-publish.http"
+    test: "teacherCourseListAfterDelete"
