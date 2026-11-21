@@ -52,10 +52,26 @@ def validate_progress(progress: dict[str, Any], current_exchange: int) -> Progre
     for name in MILESTONES:
         milestone = progress[name]
         evidence = milestone["evidenceExchange"]
-        if milestone["met"] and (evidence is None or evidence > current_exchange):
+        if milestone["met"] and (
+            type(evidence) is not int or not 1 <= evidence <= current_exchange
+        ):
             issues.append(f"{name} has no valid student-exchange evidence.")
         if not milestone["met"] and evidence is not None:
             issues.append(f"{name} is unmet but still cites evidence.")
+    for name in (
+        "definitions",
+        "reasons",
+        "assumptions",
+        "alternatives",
+        "counterexamples",
+        "revisionsOrDefences",
+    ):
+        for item in progress.get(name, []):
+            refs = item.get("evidenceExchanges", [])
+            if any(
+                type(ref) is not int or not 1 <= ref <= current_exchange for ref in refs
+            ):
+                issues.append(f"{name} cites an invalid student exchange.")
     response = progress["response"]
     examination = progress["examination"]
     if (
