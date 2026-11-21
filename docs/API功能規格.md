@@ -451,18 +451,9 @@ version: 0.2
     - 不包含學生姓名
 - 錯誤:
     - 查無此對話或非本人 (404)
-    - 對話outcome 非 completed/ended (409)
+    - outcome 非 completed/ended (409)
     - 可產生報告但尚未建立 report attempt (404)
 
-### 開始本人個人報告
-- 功能說明: 對話完成後開始產生本人報告，或回傳已經在跑、已經完成的那一筆，不重複產生。沒有報告、最近一次失敗、或處理逾時（租約已過）時新增一筆 `pending` 並排程產生；重試時若先前已有 `ready` 內容，仍一併帶回。前端開始後以「取得本人個人報告」輪詢
-- 呼叫方式: POST /sessions/{sessionId}/report
-- 授權: 本人
-- 輸入資料: 無
-- 成功回應: 與「取得本人個人報告」相同。`report_status` 為 `pending` / `processing` / `ready` / `failed`；第一次開始時 `report` 為 null
-- 錯誤:
-    - 查無此對話，或非此對話擁有者 (404)
-    - 對話尚未完成 (409)
 
 ---
 
