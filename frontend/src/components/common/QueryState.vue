@@ -22,6 +22,9 @@ import notFoundUrl from '@/assets/brand/not-found.svg'
 import { RefreshIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
 import { getApiErrorMessage } from '@/lib/utils'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -38,21 +41,21 @@ const props = withDefaults(
     loading: false,
     error: undefined,
     empty: false,
-    emptyText: '目前沒有資料',
-    errorText: '無法載入資料，請稍後再試',
     skeletonCount: 3,
   },
 )
 
 defineEmits<{ retry: [] }>()
 
-const errorMessage = computed(() => getApiErrorMessage(props.error, props.errorText))
+const errorMessage = computed(() =>
+  getApiErrorMessage(props.error, props.errorText ?? t('common.errorDefault')),
+)
 </script>
 
 <template>
   <!-- 載入中 -->
   <div v-if="loading" role="status" aria-live="polite" class="space-y-3">
-    <span class="sr-only">載入中…</span>
+    <span class="sr-only">{{ t('common.loading') }}</span>
     <slot name="loading">
       <div
         v-for="i in skeletonCount"
@@ -79,7 +82,7 @@ const errorMessage = computed(() => getApiErrorMessage(props.error, props.errorT
       <CircleAlert class="size-10 text-destructive" aria-hidden="true" />
       <p class="text-body-lg text-foreground">{{ errorMessage }}</p>
       <Button variant="secondary" @click="$emit('retry')">
-        重新載入
+        {{ t('common.reload') }}
         <RefreshIcon />
       </Button>
     </slot>
@@ -90,7 +93,7 @@ const errorMessage = computed(() => getApiErrorMessage(props.error, props.errorT
   <div v-else-if="empty" class="flex flex-col items-center gap-2 px-6 py-10 text-center">
     <slot name="empty">
       <img :src="notFoundUrl" alt="" width="156" height="232" class="h-[232px] w-[156px]" />
-      <p class="text-h1-title text-foreground">{{ emptyText }}</p>
+      <p class="text-h1-title text-foreground">{{ emptyText ?? t('common.emptyDefault') }}</p>
       <p v-if="$slots['empty-action']" class="text-h1-title text-foreground">
         <slot name="empty-action" />
       </p>

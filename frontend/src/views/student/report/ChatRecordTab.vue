@@ -4,11 +4,14 @@
  * 白色卡片裡依序列出這次的對話；AI 訊息下面有喇叭，可以用瀏覽器語音朗讀。
  *
  * 用法：<ChatRecordTab :messages="messages" />
- *   messages 的格式就是 GET /sessions/{sessionId}/messages 回傳的 `messages`。
+ *   messages 就是 GET /sessions/{sessionId}/messages 回傳的 `messages`。
  */
 import ChatBubble from '@/components/common/ChatBubble.vue'
 import SpeakButton from '@/components/common/SpeakButton.vue'
-import type { SessionMessage } from '@/data/sampleReport'
+import type { SessionMessage } from '@/api/sessions'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{
   messages: SessionMessage[]
@@ -20,7 +23,7 @@ defineProps<{
 <template>
   <ol
     class="flex flex-col gap-[22px] rounded-2xl bg-card px-4 py-2 shadow-elevated sm:px-5"
-    aria-label="對話紀錄"
+    :aria-label="t('report.chat')"
   >
     <li v-for="message in messages" :key="message.message_id" class="flex flex-col">
       <ChatBubble

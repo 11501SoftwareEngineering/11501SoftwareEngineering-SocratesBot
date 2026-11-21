@@ -6,6 +6,7 @@ import './assets/main.css'
 
 import App from './App.vue'
 import router from './router'
+import { i18n } from './i18n'
 import { queryClient } from './queryClient'
 
 async function enableMocking() {
@@ -38,6 +39,7 @@ async function bootstrap() {
   const pinia = createPinia()
   pinia.use(piniaPluginPersistedstate)
   app.use(pinia)
+  app.use(i18n)
   app.use(router)
   app.use(VueQueryPlugin, { queryClient })
   app.mount('#app')

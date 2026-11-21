@@ -7,6 +7,8 @@ import NewsCard from '../NewsCard.vue'
 import QueryState from '../QueryState.vue'
 import ChatInput from '../ChatInput.vue'
 import AppCheckbox from '../AppCheckbox.vue'
+import FormDialog from '../FormDialog.vue'
+import { setLocale } from '@/i18n'
 
 const router = createRouter({
   history: createMemoryHistory(),
@@ -135,6 +137,17 @@ describe('ChatInput', () => {
     expect(wrapper.emitted('send')).toBeUndefined()
     expect(wrapper.text()).toContain('剩餘回合數：0/5')
   })
+
+  it('Enter 送出；Shift+Enter 換行、輸入法選字中的 Enter 不送出', async () => {
+    const wrapper = mount(ChatInput, { props: { modelValue: '第一行\n第二行' } })
+    const textarea = wrapper.find('textarea')
+    await textarea.trigger('keydown', { key: 'Enter', shiftKey: true })
+    await textarea.trigger('keydown', { key: 'Enter', isComposing: true })
+    await textarea.trigger('keydown', { key: 'Enter', keyCode: 229 })
+    expect(wrapper.emitted('send')).toBeUndefined()
+    await textarea.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('send')?.[0]).toEqual(['第一行\n第二行'])
+  })
 })
 
 describe('AppCheckbox', () => {
@@ -152,5 +165,22 @@ describe('AppCheckbox', () => {
     const input = wrapper.find('input')
     expect(wrapper.find('label').attributes('for')).toBe(input.attributes('id'))
     expect(wrapper.find('label').text()).toBe('匿名分享')
+  })
+})
+
+describe('FormDialog', () => {
+  it('沒給按鈕文字時用目前語言的「取消／新增」', async () => {
+    const wrapper = mount(FormDialog, {
+      props: { title: 'T', open: true },
+      attachTo: document.body,
+    })
+    await new Promise((r) => setTimeout(r))
+    expect(document.body.textContent).toContain('取消')
+    expect(document.body.textContent).toContain('新增')
+    await setLocale('en')
+    await wrapper.vm.$nextTick()
+    expect(document.body.textContent).toContain('Cancel')
+    await setLocale('zh-TW')
+    wrapper.unmount()
   })
 })

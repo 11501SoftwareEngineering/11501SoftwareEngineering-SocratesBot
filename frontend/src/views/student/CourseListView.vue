@@ -1,90 +1,109 @@
 <script setup lang="ts">
+import TextLink from '@/components/common/TextLink.vue'
+import AppBanner from '@/components/common/AppBanner.vue'
 /**
- * 學生：我的課程。對應 Figma「Student_Home」（node 171:234）、「JoinCourse」。
- * API：GET /student/courses、POST /student/courses/join、DELETE /student/courses/{id}
+ * 學生：我的課程。對應 Figma「P05_Student_Home」（node 171:234）、「P05_JoinCourse」。
+ * API：GET /courses、POST /courses/join、DELETE /courses/{courseId}/member（退出課程）
+ *
+ * 課程卡片兩欄排列。只列學生身分的課；當助教的課在教學端（頁首「我的課程」），照 Prototype。
  */
-import { ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useQuery, useQueryClient } from '@tanstack/vue-query'
-import { studentApi, studentKeys, type Course } from '@/api/student'
+import { courseKeys, coursesApi, type CourseSummary } from '@/api/courses'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
-import ListCard from '@/components/common/ListCard.vue'
-import ListSection from '@/components/common/ListSection.vue'
 import QueryState from '@/components/common/QueryState.vue'
-import { AddRingIcon, SignOutIcon } from '@/components/icons'
+import SearchInput from '@/components/common/SearchInput.vue'
+import SectionHeading from '@/components/common/SectionHeading.vue'
+import CourseCard from '@/components/course/CourseCard.vue'
+import { AddRingIcon, LeaveIcon } from '@/components/icons'
 import JoinCourseDialog from '@/components/student/JoinCourseDialog.vue'
 import { Button } from '@/components/ui/button'
 import { useConfirmAction } from '@/composables/useConfirmAction'
 import { useSearch } from '@/composables/useSearch'
+import { pageClass } from '@/lib/ui'
+import { useAuthStore } from '@/stores/auth'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const queryClient = useQueryClient()
 const { data, isPending, error, refetch } = useQuery({
-  queryKey: studentKeys.courses,
-  queryFn: studentApi.getCourses,
+  queryKey: courseKeys.all,
+  queryFn: coursesApi.list,
 })
+
+const authStore = useAuthStore()
+watch(data, (list) => list && authStore.syncTaAssignments(list))
+const courses = computed(() => (data.value ?? []).filter((c) => c.my_role === 'student'))
+
 const { keyword, results } = useSearch(
-  () => data.value ?? [],
-  (c) => [c.name, c.invite_code, c.teacher_name],
+  () => courses.value,
+  (c) => [c.name, c.invite_code, c.description ?? '', c.teacher_name],
 )
 
 const joinOpen = ref(false)
 const notice = ref('')
 
-const leave = useConfirmAction((course: Course) => studentApi.leaveCourse(course.course_id), {
-  onSuccess: (course) => {
-    notice.value = `已退出「${course.name}」`
-    return queryClient.invalidateQueries({ queryKey: studentKeys.courses })
-  },
-  errorText: '退出失敗，請稍後再試',
+const leave = useConfirmAction((course: CourseSummary) => coursesApi.leave(course.course_id), {
+  onSuccess: () => queryClient.invalidateQueries({ queryKey: courseKeys.all }),
+  errorText: t('courses.leaveFailed'),
 })
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[960px] px-4 py-10 sm:py-12">
-    <ListSection v-model:search="keyword" title="我的課程" search-label="搜尋課程">
+  <div :class="pageClass">
+    <SectionHeading :title="t('common.myCourses')" :count="courses.length" :level="1">
       <template #actions>
-        <Button @click="joinOpen = true">加入課程 <AddRingIcon /></Button>
+        <Button @click="joinOpen = true"><AddRingIcon /> {{ t('courses.join') }}</Button>
       </template>
+    </SectionHeading>
+    <AppBanner v-if="notice" type="success" class="mt-2">{{ notice }}</AppBanner>
+    <SearchInput v-model="keyword" :label="t('courses.search')" class="mt-2" />
 
-      <p v-if="notice" role="status" class="mb-3 rounded-lg bg-primary/30 px-4 py-2 text-body">
-        {{ notice }}
-      </p>
-
-      <QueryState
-        :loading="isPending"
-        :error="error"
-        :empty="results.length === 0"
-        :empty-text="
-          keyword ? '找不到符合的課程' : '還沒有加入任何課程，請按「加入課程」輸入老師給的代碼'
-        "
-        error-text="無法取得課程列表"
-        @retry="refetch()"
-      >
-        <ListCard
+    <QueryState
+      class="mt-2"
+      :loading="isPending"
+      :error="error"
+      :empty="results.length === 0"
+      :empty-text="t('courses.notFound')"
+      :error-text="t('courses.loadError')"
+      @retry="refetch()"
+    >
+      <template #empty-action>
+        {{ t('common.tryPrefix')
+        }}<TextLink inline @click="joinOpen = true">{{ t('courses.join') }}</TextLink>
+      </template>
+      <div class="grid gap-4 md:grid-cols-2">
+        <CourseCard
           v-for="course in results"
           :key="course.course_id"
-          :title="course.name"
-          :meta="[`課程代碼: ${course.invite_code}`, course.teacher_name]"
+          :course="course"
           :to="{ name: 'StudentCourse', params: { courseId: course.course_id } }"
+          show-teacher
         >
           <template #actions>
             <Button
-              variant="destructive"
-              :aria-label="`退出 ${course.name}`"
+              variant="ghost-danger"
+              size="icon-sm"
+              :aria-label="t('courses.leaveAria', { name: course.name })"
               @click="leave.ask(course)"
             >
-              <span class="hidden sm:inline">退出課程</span> <SignOutIcon />
+              <LeaveIcon />
             </Button>
           </template>
-        </ListCard>
-      </QueryState>
-    </ListSection>
+        </CourseCard>
+      </div>
+    </QueryState>
 
-    <JoinCourseDialog v-model:open="joinOpen" @joined="(name) => (notice = `已加入「${name}」`)" />
+    <JoinCourseDialog
+      v-model:open="joinOpen"
+      @joined="(name) => (notice = t('courses.joined', { name }))"
+    />
     <ConfirmDialog
       v-model:open="leave.open"
-      title="確認退出課程?"
-      :description="`退出「${leave.target?.name}」後就不能再用課程代碼加入，要請老師把你加回來。`"
-      confirm-text="確認"
+      :title="t('courses.leaveTitle')"
+      :description="t('courses.leaveDescription', { name: leave.target?.name ?? '' })"
+      :confirm-text="t('courses.leave')"
       destructive
       :loading="leave.isPending"
       :error="leave.error"

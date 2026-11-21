@@ -30,6 +30,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 withDefaults(
   defineProps<{
@@ -50,8 +53,6 @@ withDefaults(
     confirmFirst?: boolean
   }>(),
   {
-    confirmText: '確定',
-    cancelText: '取消',
     destructive: false,
     loading: false,
     centered: false,
@@ -114,7 +115,7 @@ defineEmits<{ confirm: [] }>()
             :size="centered ? 'lg' : 'sm'"
             :class="confirmFirst && 'order-last'"
             :disabled="loading"
-            >{{ cancelText }}</Button
+            >{{ cancelText ?? t('common.cancel') }}</Button
           >
         </DialogClose>
         <Button
@@ -123,7 +124,7 @@ defineEmits<{ confirm: [] }>()
           :disabled="loading"
           @click="$emit('confirm')"
         >
-          {{ loading ? '處理中…' : confirmText }}
+          {{ loading ? t('common.processing') : (confirmText ?? t('common.confirm')) }}
         </Button>
       </DialogFooter>
     </DialogContent>

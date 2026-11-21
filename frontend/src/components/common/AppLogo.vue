@@ -9,6 +9,9 @@
  */
 import { computed } from 'vue'
 import logoIconUrl from '@/assets/brand/logo-icon.svg'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{ size?: number; iconOnly?: boolean }>(), {
   size: 130,
@@ -22,7 +25,7 @@ const iconWidth = computed(() => (props.iconOnly ? props.size : props.size * 0.5
 <template>
   <div
     role="img"
-    aria-label="問導魷"
+    :aria-label="t('common.appName')"
     class="flex shrink-0 items-center justify-center"
     :class="!iconOnly && 'rounded-2xl bg-background'"
     :style="{ width: `${size}px`, height: `${size}px` }"

@@ -8,6 +8,9 @@ import { cn } from '@/lib/utils'
 import { DialogClose, DialogContent, DialogPortal, useForwardPropsEmits } from 'reka-ui'
 import { Button } from '@/components/ui/button'
 import DialogOverlay from './DialogOverlay.vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineOptions({
   inheritAttrs: false,
@@ -46,7 +49,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       <DialogClose v-if="showCloseButton" data-slot="dialog-close" as-child>
         <Button variant="ghost" class="absolute top-4 right-4" size="icon-sm">
           <XIcon />
-          <span class="sr-only">Close</span>
+          <span class="sr-only">{{ t('common.close') }}</span>
         </Button>
       </DialogClose>
     </DialogContent>
