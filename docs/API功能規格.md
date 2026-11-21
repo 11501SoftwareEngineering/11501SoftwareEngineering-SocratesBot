@@ -376,7 +376,7 @@ version: 0.2
 - 呼叫方式: POST /topics/{topicId}/sessions
 - 授權: 已登入且為課程成員（目前並未限定課程學生身分）
 - 輸入資料: 無
-- 成功回應: `session_id`, `topic_id`, `session_status`（`open` / `completed` / `abandoned` / `closed_by_summary`）
+- 成功回應: `session_id`, `topic_id`, `session_status`（`open` / `completed` / `ended` / `abandoned` / `closed_by_summary`）
 - 錯誤:
     - 非課程成員 (403)
     - 查無此題目，或題目仍在 `setup` (404)
@@ -502,10 +502,10 @@ version: 0.2
     - 指定的版本不存在 (404)
 
 ### 產生摘要草稿
-- 功能說明: 以 `ready` 報告動態分群產生新摘要草稿，成功時存成新的一版，不自動發布，不影響學生已看到的版本。題目在 `conversation` 時第一次呼叫，會把 `topic_status` 轉為 `summary` 並結束學生對話（不可退回）
+- 功能說明: 以 `ready` 報告動態分群產生新摘要草稿，成功時存成新的一版，不自動發布，不影響學生已看到的版本。必須所有現有對話已結束，且每個可產生報告的對話最新報告均為 ready；成功儲存摘要後才把 topic_status 轉為 summary，不再關閉未結束的學生對話
 - 呼叫方式: POST /topics/{topicId}/summary
 - 授權:
-    - 題目在 `conversation`（會結束學生對話）: 僅老師
+    - 題目在 `conversation`（須先結束所有對話並完成報告）: 僅老師
     - 題目已在 `summary`（重新產生）: 老師、助教需 `edit_summary`
 - 輸入資料: 無
 - 成功回應: `topic_status`（`summary`）, `published_version`, `summary`（結構同上，`summary_status` 為 `draft`）
@@ -686,3 +686,12 @@ Inconclusive reports retain the full report structure, with `evidence_status=ins
 各階段優先使用題目已儲存的模型；未設定時使用 `OPENAI_MODEL`，包含 validity、status、planning、context/catch-up、個人報告與班級摘要。Stage1 generate 的明確模型選擇仍只影響該次產生，需 Save/Publish 才儲存。報告來源快照與摘要請求保留非機密模型資訊；重試已捕捉的請求不改用其他模型。
 
 課程擁有者的個人 key 優先，無個人 key 才使用單一伺服器 `OPENAI_API_KEY`；助教／學生觸發不改變付費者。無法解密或個人 key 呼叫失敗不轉用伺服器額度。憑證不寫入報告、來源快照或摘要 JSON。沒有 key rotation，也沒有新增前端欄位或端點。完整順序圖見 [AI backend contract](AI_BACKEND_CONTRACT.md#model-and-credential-routing-combined-chunk0708)。
+
+
+## Stage3 原生整合與報告就緒條件
+
+個人報告在各自對話完成／提前結束／回合上限後產生，學生不必等全班即可讀取。班級摘要 POST 必須等待所有現有對話結束，且所有 completed/ended 對話的最新報告為 ready；缺漏、pending/processing/failed 或不相容原生證據回409。舊報告可由教師既有重試端點重新產生。abandoned 與歷史 closed_by_summary 不屬於報告分母。
+
+最多50份報告；超出報告數、payload或token預算回413，無報告回400。分類只使用具立場與理由證據的報告；無法分類的報告仍計入分母，使用既有 ungrouped 欄位表示。群組人數與比例由後端計算，不接受模型計數。
+
+產生期間以有效 lease 阻擋新 session（409），既有個人報告仍可讀取。ready 提交前再次確認無開放對話且來源報告未變；失敗保留原已發布版本。保留原有審核、發布、撤回端點與 DTO，原生詳細結果及來源映射只存在私有 JSON。完整流程見 [AI_BACKEND_CONTRACT](AI_BACKEND_CONTRACT.md#native-stage3-class-synthesis)。

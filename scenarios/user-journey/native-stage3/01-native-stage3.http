@@ -1,0 +1,87 @@
+### Student does not wait for the class summary
+# @name individualReport
+# @no-cookie-jar
+GET {{BASE_URL}}/sessions/{{SESSION_ID}}/report
+Authorization: Bearer {{STUDENT_TOKEN}}
+
+{{
+    test.status(200);
+    const { equal, ok } = require('assert');
+    const data = JSON.parse(response.body);
+    equal(data.report_status, 'ready');
+    ok(data.report);
+}}
+
+### Every existing dialogue must be ended and its eligible report ready
+# @name startSynthesis
+# @no-cookie-jar
+POST {{BASE_URL}}/topics/{{TOPIC_ID}}/summary
+Authorization: Bearer {{TEACHER_TOKEN}}
+
+{{
+    test.status(200);
+    const { equal } = require('assert');
+    equal(JSON.parse(response.body).preparation_status, 'pending');
+}}
+
+### Run only after bounded polling shows the job ready
+# @name readDraft
+# @no-cookie-jar
+GET {{BASE_URL}}/topics/{{TOPIC_ID}}/summary
+Authorization: Bearer {{TEACHER_TOKEN}}
+
+{{
+    test.status(200);
+    const { equal, ok } = require('assert');
+    const data = JSON.parse(response.body);
+    equal(data.preparation_status, 'ready');
+    ok(data.summary.denominator > 0);
+    const count = data.summary.groups.reduce((n, group) => n + group.count, 0);
+    equal(count + data.summary.ungrouped_report_ids.length, data.summary.denominator);
+    exports.reviewBody = JSON.stringify({overview: data.summary.overview, viewpoint_summary: data.summary.viewpoint_summary});
+}}
+
+###
+# @name reviewDraft
+# @ref readDraft
+# @no-cookie-jar
+POST {{BASE_URL}}/topics/{{TOPIC_ID}}/summary/review
+Authorization: Bearer {{TEACHER_TOKEN}}
+Content-Type: application/json
+
+{{reviewBody}}
+
+?? status == 200
+
+###
+# @name publishReviewed
+# @ref reviewDraft
+# @no-cookie-jar
+POST {{BASE_URL}}/topics/{{TOPIC_ID}}/summary/publish
+Authorization: Bearer {{TEACHER_TOKEN}}
+
+?? status == 200
+
+###
+# @name studentPublished
+# @no-cookie-jar
+GET {{BASE_URL}}/topics/{{TOPIC_ID}}/summary/published
+Authorization: Bearer {{STUDENT_TOKEN}}
+
+{{
+    test.status(200);
+    const { ok, equal } = require('assert');
+    const data = JSON.parse(response.body).summary;
+    ok(data);
+    equal(Object.hasOwn(data, 'native_synthesis'), false);
+    equal(Object.hasOwn(data, 'sources'), false);
+    data.groups.forEach(group => equal(Object.hasOwn(group, 'report_ids'), false));
+}}
+
+###
+# @name withdraw
+# @no-cookie-jar
+POST {{BASE_URL}}/topics/{{TOPIC_ID}}/summary/withdraw
+Authorization: Bearer {{TEACHER_TOKEN}}
+
+?? status == 200

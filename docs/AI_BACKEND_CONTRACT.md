@@ -148,7 +148,7 @@ GET report never starts generation. It returns409 for ineligible outcomes,404 fo
 | Ready | Reuse; not forced regeneration |
 | Failed or expired pending/processing | Insert and schedule a new attempt |
 
-Teacher POST `/topics/{topicId}/reports/{sessionId}` uses the same retry/reuse rules. It is not “always generate another report.” Snapshot refresh occurs only on insertion. A latest failed/running attempt may coexist with an older ready body: `report_status` describes the newest attempt, while `report` is the latest available ready body or null. Stop normal polling on ready/failed and present appropriate recovery; no fixed server polling interval is promised.
+Teacher POST `/topics/{topicId}/reports/{sessionId}` uses the same retry/reuse rules, except that a ready report with missing/invalid native evidence or a mismatched inquiry can be regenerated for Stage3 compatibility. A valid native ready report is reused. It is not “always generate another report.” Snapshot refresh occurs only on insertion. A latest failed/running attempt may coexist with an older ready body: `report_status` describes the newest attempt, while `report` is the latest available ready body or null. Stop normal polling on ready/failed and present appropriate recovery; no fixed server polling interval is promised.
 
 ```json
 {"report_status":"pending","report":null}
@@ -210,3 +210,53 @@ sequenceDiagram
 ```
 
 An unreadable credential or missing ownership record stops before a provider request. Model failures preserve existing API error/job-failure contracts. There are no new request fields or frontend changes. Summary model/language are captured when enqueued; report model is captured with its source before inference. Retrying an existing captured request retains its model; a new attempt may resolve current configuration. Native Stage3 input/grouping changes remain a later chunk.
+
+
+## Native Stage3 class synthesis
+
+Individual reports are queued at each qualifying dialogue ending and are immediately readable by their owner when ready. They do not wait for class synthesis or teacher publication.
+
+POST `/topics/{topicId}/summary` requires **all existing dialogues for that topic to be non-open**, and the **latest attempt for every report-eligible dialogue (`completed` or `ended`) to be ready**. Pending, processing, failed or missing personal reports block with409; an older ready result does not bypass a newer failed/pending attempt. Abandoned and historical closed_by_summary sessions are not report-eligible and are not in the denominator. Students who never entered a session are not counted as open dialogues.
+
+Ready reports without matching native summary/source evidence must be regenerated using the existing teacher report retry endpoint. Source-digest or inquiry-setting mismatches return409 rather than silently omitting records or fabricating evidence. No ready cohort returns400. More than50 reports or an oversized payload/model request returns413. There is no automatic batching or truncation.
+
+A summary attempt freezes the selected report IDs, session IDs, source digests, converted native arguments, language and activity model. Model material contains temporary labels and evidence-grounded argument summaries, not raw transcripts or database IDs. The model proposes groups based on positions and reasons, with shared values, assumptions, internal differences and discussion questions. Backend validation rejects duplicate, unknown or ineligible membership and computes all counts/percentages. Inconclusive and unassigned reports remain in the denominator and appear as ungrouped in the existing public DTO; privately they form Still exploring. If all reports are unclassifiable, the backend creates an honest deterministic summary without calling the provider.
+
+During a live pending/processing summary lease, new session creation returns409; existing sessions remain readable. Topic locking serializes entry and synthesis. At ready commit, the backend rechecks open sessions and selected report IDs; a changed cohort fails the attempt instead of closing new dialogues or publishing a stale cohort. Failed/expired jobs do not permanently block session entry. Topic stage changes to summary only on successful ready commit. **Synthesis no longer changes open sessions to closed_by_summary.**
+
+Native results and source mappings remain private in attempt/version JSON. Existing teacher `overview`/`viewpoint_summary` fields contain the projected native content; existing groups/count fields remain unchanged. Text edits retain private provenance and invalidate review. Publish uses the latest reviewed version and excludes private fields; regeneration preserves an existing published version until explicit replacement. Known names/identifiers and generated temporary-label leakage are checked, but this is not a guarantee of perfect anonymity or correct philosophical interpretation. Teacher review remains necessary.
+
+Legacy pending summary requests from the old schema fail safely and must be restarted through POST summary. Existing published summaries remain readable. No database migration or frontend changes are required.
+
+```mermaid
+sequenceDiagram
+    participant Student
+    participant API as Backend
+    participant DB as Postgres
+    participant Model as OpenRouter
+    participant Teacher
+    Student->>API: Complete / finish early / final allowed answer
+    API->>DB: End this dialogue and queue personal report
+    API->>Model: Generate personal report
+    API->>DB: Store ready report
+    Student->>API: GET own report (no class wait)
+    Teacher->>API: POST topic summary
+    API->>DB: Lock topic; check no open dialogues and every eligible report ready
+    alt Open dialogue or missing/failed/incompatible report
+        API-->>Teacher: 409 with recovery instruction
+    else Cohort ready and within limits
+        API->>DB: Freeze native cohort; queue synthesis
+        Note over API,DB: New session entry blocked during active lease
+        alt At least one classifiable report
+            API->>Model: Inquiry, language, temporary report labels and arguments
+            Model-->>API: Qualitative groups and discussion material
+        else All reports unclassifiable
+            API->>API: Deterministic insufficient-evidence result
+        end
+        API->>API: Validate membership and compute counts
+        API->>DB: Recheck cohort; save private native draft; topic becomes summary
+        Teacher->>API: Edit / review / publish exact version
+        Student->>API: GET published class summary
+        API-->>Student: Anonymous aggregate projection
+    end
+```
