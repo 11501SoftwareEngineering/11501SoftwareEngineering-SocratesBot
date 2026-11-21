@@ -73,6 +73,7 @@ const routes: RouteRecordRaw[] = [
     ],
   ),
 
+  // 教學端（路徑照 Prototype）：老師與助教共用，助教依課程權限顯示功能
   section(
     '/teacher',
     ['TEACHER', 'STUDENT'],
@@ -84,21 +85,39 @@ const routes: RouteRecordRaw[] = [
         () => import('@/views/teacher/CourseListView.vue'),
       ),
       page(
+        'ai-settings',
+        'TeacherAiSettings',
+        'AI 用量與金鑰',
+        () => import('@/views/teacher/AiSettingsView.vue'),
+        { roles: ['TEACHER'] },
+      ),
+      page(
         'courses/:courseId',
         'TeacherCourse',
-        '問題列表',
+        '課程',
         () => import('@/views/teacher/CourseView.vue'),
       ),
       page(
+        'courses/:courseId/topics/new',
+        'TeacherNewActivity',
+        '新增活動',
+        () => import('@/views/teacher/NewActivityView.vue'),
+      ),
+      page(
+        'courses/:courseId/topics/:topicId/setup',
+        'TeacherActivitySetup',
+        '活動設定',
+        () => import('@/views/teacher/ActivitySetupView.vue'),
+      ),
+      page(
         'courses/:courseId/topics/:topicId',
-        'TeacherTopic',
-        '問題結果',
-        () => import('@/views/teacher/TopicView.vue'),
+        'TeacherPerspective',
+        '全班觀點',
+        () => import('@/views/teacher/PerspectiveView.vue'),
       ),
     ],
     { teaching: true },
   ),
-
   section(
     '/student',
     ['STUDENT'],
@@ -112,7 +131,7 @@ const routes: RouteRecordRaw[] = [
       page(
         'courses/:courseId',
         'StudentCourse',
-        '問題列表',
+        '探究活動',
         () => import('@/views/student/CourseView.vue'),
       ),
       page(
@@ -120,12 +139,6 @@ const routes: RouteRecordRaw[] = [
         'StudentChat',
         '對話',
         () => import('@/views/student/ChatView.vue'),
-      ),
-      page(
-        'courses/:courseId/sessions/:sessionId/result',
-        'StudentResult',
-        '對話結果',
-        () => import('@/views/student/ResultView.vue'),
       ),
       page(
         'courses/:courseId/sessions/:sessionId/result/:tab(personal|chat|summary)?',
@@ -148,7 +161,11 @@ const routes: RouteRecordRaw[] = [
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
-  scrollBehavior: () => ({ top: 0 }),
+  // 有 #錨點（例如 P14 的 #model-prices）時，等頁面資料載入後再捲過去
+  scrollBehavior: (to) =>
+    to.hash
+      ? new Promise((resolve) => setTimeout(() => resolve({ el: to.hash, top: 24 }), 400))
+      : { top: 0 },
 })
 
 router.beforeEach((to) => {
