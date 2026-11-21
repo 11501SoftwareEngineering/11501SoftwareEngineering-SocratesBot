@@ -705,3 +705,5 @@ Inconclusive reports retain the full report structure, with `evidence_status=ins
 HTTP 回應新增 `X-Request-ID`，CORS 已 expose，供前端回報502時定位。後端 `ai_event` 串接 HTTP request/call/job ID，記錄 task、model、prompt 版本/hash、輸出上限、provider status、finish_reason、token/reasoning 數、latency、generation/usage ID。可分辨截斷、JSON、schema、證據引用、provider、timeout；不變更現有 AI 回應/API error 行為。
 
 SQL_ECHO 預設 false。AI_TRACE_ENABLED 預設 false；僅 development 啟用時，原始回應（去除憑證與 reasoning 文字）寫入被 Git 忽略的 `.local/ai-traces`，每 worker1MB/3備份輪替。可能含學生文字，僅供授權測試資料及本機除錯，production 不啟用。完整定位步驟見 [AI debugging](AI_BACKEND_CONTRACT.md#ai-call-debugging-usage-and-diagnostics-follow-up)。此修正不調整1000 token上限或修復502本身。
+
+開發者操作步驟（含啟動指令、如何從 browser 取 X-Request-ID、PowerShell/Bash 搜尋、範例解析、trace 檔案與回報清單）見 [developer walkthrough](AI_BACKEND_CONTRACT.md#developer-walkthrough)。
