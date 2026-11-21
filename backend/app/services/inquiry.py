@@ -36,6 +36,7 @@ from app.schemas.inquiry import (
     SaveInquiryRequest,
     first_incomplete_field,
 )
+from app.services import ai_diagnostics
 from app.services import courses as courses_service
 from app.services.model_client import (
     ModelCallError,
@@ -188,7 +189,8 @@ def _validated[Parsed: (GeneratedInquiry, OpeningMessageDraft, DesignOutput)](
 ) -> Parsed:
     try:
         return schema.model_validate(raw)
-    except ValidationError:
+    except ValidationError as exc:
+        ai_diagnostics.validation_failure(schema.__name__, exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Inquiry generation failed",

@@ -9,12 +9,14 @@ from contextlib import suppress
 from uuid import UUID
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.prompts import PromptStage, prompt_for
 from app.crud import message as message_crud
 from app.crud import report as report_crud
+from app.services import ai_diagnostics
 from app.services.attempt_lease import refresh
 from app.services.model_client import ModelCallError, OpenAIChatClient
 from app.services.report_adapter import (
@@ -47,6 +49,7 @@ def schedule(attempt_id: UUID) -> None:
     task.add_done_callback(_tasks.discard)
 
 
+@ai_diagnostics.job_scope("report")
 async def run_report(attempt_id: UUID) -> None:
     """Prepare one report attempt and store it as ready or failed."""
     _live.add(attempt_id)
@@ -90,7 +93,14 @@ async def run_report(attempt_id: UUID) -> None:
                 )
             body, native = project_summary(parsed, source)
             body = validate_report(body, source=source)
-        except (ModelCallError, HTTPException, ValueError, TypeError):
+        except (ModelCallError, HTTPException, ValueError, TypeError) as exc:
+            if isinstance(exc, ValidationError):
+                ai_diagnostics.validation_failure("native_personal_report", exc)
+            ai_diagnostics.emit(
+                "job_validation_failed",
+                error_type=type(exc).__name__,
+                job_kind="report",
+            )
             await _fail(attempt_id)
             return
         await _ready(
@@ -176,6 +186,7 @@ async def _fail(attempt_id: UUID) -> None:
     async with AsyncSessionLocal() as db:
         await report_crud.mark_failed(db, attempt_id)
         await db.commit()
+    ai_diagnostics.emit("job_failed", job_kind="report", job_id=str(attempt_id))
     logger.info("report attempt failed")
 
 

@@ -26,6 +26,7 @@ from app.core.enums import MessageSender
 from app.core.prompts import PromptDefinition
 from app.models.message import DialogueMessage
 from app.models.topic import Topic
+from app.services import ai_diagnostics
 from app.services.dialogue_progress import (
     empty_progress,
     reset_milestones,
@@ -278,8 +279,9 @@ async def _bounded_object(client: ModelClient, **kwargs) -> dict:
 def _parse[T: BaseModel](model: type[T], raw: dict[str, Any]) -> T:
     try:
         return model.model_validate(raw)
-    except ValidationError:
-        raise ModelCallError(200) from None
+    except ValidationError as exc:
+        ai_diagnostics.validation_failure(model.__name__, exc)
+        raise ModelCallError(200, reason="schema_validation") from None
 
 
 async def run_turn(
@@ -313,6 +315,9 @@ async def run_turn(
     )
     validity = _parse(ValidityOut, validity_raw)
     base_progress = previous_progress or empty_progress()
+    ai_diagnostics.emit(
+        "validity_decision", validity=validity.validity, exchange=exchange
+    )
     if validity.validity == "NO":
         return TurnResult(
             reply=unrelated_reply(language),
@@ -348,7 +353,10 @@ async def run_turn(
     progress = status.progress.model_dump(by_alias=True)
     check = validate_progress(progress, exchange)
     if check.issues:
-        raise ModelCallError(200)
+        ai_diagnostics.emit(
+            "evidence_validation_failed", issues=check.issues, exchange=exchange
+        )
+        raise ModelCallError(200, reason="invalid_progress_evidence")
 
     planning_raw = await _bounded_object(
         client,
@@ -428,5 +436,8 @@ async def catch_up_progress(
     progress = _parse(StatusOut, raw).progress.model_dump(by_alias=True)
     exchanges = sum(message.sender == MessageSender.STUDENT for message in messages)
     if validate_progress(progress, exchanges).issues:
-        raise ModelCallError(200)
+        ai_diagnostics.emit(
+            "evidence_validation_failed", exchange=exchanges, phase="legacy_catch_up"
+        )
+        raise ModelCallError(200, reason="invalid_progress_evidence")
     return progress
