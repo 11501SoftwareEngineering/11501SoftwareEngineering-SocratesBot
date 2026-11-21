@@ -4,13 +4,44 @@
 
 > **只能對本機或開發環境執行。** Scenario 會註冊測試帳號、建立並刪除課程；需要 AI 的 journey 還會消耗 LLM 額度。不要把 `BASE_URL` 指到共用或正式環境。
 
+## 安裝 httpyac
+
+需要 httpyac 的 CLI。本 README 的指令以 6.16.7 驗證過。
+
+**macOS（Homebrew）**
+
+```sh
+brew install httpyac
+```
+
+**Windows（PowerShell）**
+
+httpyac 以 npm 套件發布，需要 Node.js 18 以上：
+
+```powershell
+# 已安裝 Node.js 18 以上可跳過這行
+winget install OpenJS.NodeJS.LTS
+
+# 安裝 Node.js 後重新開啟 PowerShell，讓 PATH 生效
+npm install --global httpyac
+```
+
+**其他系統（例如 Linux）**：已有 Node.js 18 以上時，`npm install --global httpyac`。
+
+**確認安裝成功**
+
+```sh
+httpyac --version
+```
+
 ## 前置條件
 
-1. 啟動 Postgres 與 Redis，並套用 migration：`make -C backend db-dev`、`make -C backend db-upgrade`
-2. 灌入開發假資料，取得 seed 老師 `dev-teacher`：`make -C backend seed`（帳密見 [測試資料](../../docs/測試資料.md)）
-3. 啟動後端：`make -C backend dev`
-4. 在要執行的 journey 資料夾，把 `.env.example` 複製成 `.env`（`.env` 已被 git 忽略）
-5. 需要 AI 的 journey（`topic-lifecycle`、`negative-topic-lifecycle`）還需要後端有可用的 LLM 設定：伺服器的 `OPENAI_API_KEY`，或老師自己的 key。未設定時只有這兩組會失敗，其餘不受影響
+1. 已安裝 httpyac（見上節）
+2. 啟動 Postgres 與 Redis，並套用 migration：`make -C backend db-dev`、`make -C backend db-upgrade`
+3. 灌入開發假資料，取得 seed 老師 `dev-teacher`：`make -C backend seed`（帳密見 [測試資料](../../docs/測試資料.md)）
+4. 啟動後端：`make -C backend dev`
+5. 在要執行的 journey 資料夾，把 `.env.example` 複製成 `.env`（`.env` 已被 git 忽略）
+6. 需要 AI 的 journey（`topic-lifecycle`、`negative-topic-lifecycle`）還需要後端有可用的 LLM 設定：伺服器的 `OPENAI_API_KEY`，或老師自己的 key。未設定時只有這兩組會失敗，其餘不受影響
 
 ## 環境變數
 
