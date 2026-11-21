@@ -698,3 +698,10 @@ Inconclusive reports retain the full report structure, with `evidence_status=ins
 - HTTP200 表示已關閉且工作已排程，不代表摘要就緒。後端先等待個人報告再自動統整；GET summary 輪詢工作狀態，原有審閱／發布流程不變。重複關閉沿用有效或 ready 工作，失敗／逾時可重試。
 - 零回答：個人報告為 ready/insufficient，明示未提交回答；不呼叫模型、不計入全班分母。全班皆無回答時仍有 denominator0 的誠實證據不足草稿。
 - 新端點沿用全域 teacher + course instructor 授權。完整 payload、錯誤、競態、恢復與前端流程見 [teacher closure contract](AI_BACKEND_CONTRACT.md#teacher-controlled-stage2-closure-pr-272-not-deployed)。本提案不修改前端；前端需輪詢／重讀現有狀態才能導頁。
+
+
+## AI 診斷日誌（usage/diagnostics 修正分支）
+
+HTTP 回應新增 `X-Request-ID`，CORS 已 expose，供前端回報502時定位。後端 `ai_event` 串接 HTTP request/call/job ID，記錄 task、model、prompt 版本/hash、輸出上限、provider status、finish_reason、token/reasoning 數、latency、generation/usage ID。可分辨截斷、JSON、schema、證據引用、provider、timeout；不變更現有 AI 回應/API error 行為。
+
+SQL_ECHO 預設 false。AI_TRACE_ENABLED 預設 false；僅 development 啟用時，原始回應（去除憑證與 reasoning 文字）寫入被 Git 忽略的 `.local/ai-traces`，每 worker1MB/3備份輪替。可能含學生文字，僅供授權測試資料及本機除錯，production 不啟用。完整定位步驟見 [AI debugging](AI_BACKEND_CONTRACT.md#ai-call-debugging-usage-and-diagnostics-follow-up)。此修正不調整1000 token上限或修復502本身。

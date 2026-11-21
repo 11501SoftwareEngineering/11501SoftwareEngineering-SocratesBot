@@ -23,6 +23,7 @@ def test_usage_read_is_authenticated_teacher_only(auth_client, store, monkeypatc
             "/api/v1/users/me/ai/usage", headers={"Authorization": bearer_from(login)}
         )
         assert response.status_code == expected
+        assert len(response.headers["X-Request-ID"]) == 32
         if expected == 200:
             assert read.await_args.args[1] == user.id
             assert len(response.json()["by_stage"]) == 4
