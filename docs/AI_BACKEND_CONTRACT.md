@@ -766,7 +766,7 @@ Implementation map for maintainers: `services/ai_diagnostics.py` formats events/
 
 ## Stage2 status truncation hot fix (local follow-up above PR274)
 
-Prompt `stage2_status-1.0.1` raises `max_output_tokens` from1000 to3000. Both per-turn status generation and legacy progress catch-up load this same prompt and therefore use the new cap. Selected activity model, status output schema, evidence validation, validity/planning behavior, HTTP response shapes and provider retry policy remain unchanged. The model client's4500 hard ceiling is unchanged;3000 is within it. No migration or frontend change is needed for this follow-up.
+Prompt `stage2_status-1.0.1` raises `max_output_tokens` from1000 to3000. Both per-turn status generation and legacy progress catch-up load this same prompt and therefore use the new cap. Selected activity model, status output schema, evidence validation, planning behavior, HTTP response shapes and provider retry policy remain unchanged. The model client's4500 hard ceiling is unchanged;3000 is within it. No migration or frontend change is needed for this follow-up.
 
 ### Reproduced failure and controlled comparison
 
@@ -794,3 +794,13 @@ Focused reproduction command, from backend: `uv run --locked pytest tests/unit/t
 Live candidate confirmation (`b7fa1dc`): the actual updated prompt completed catch-up with1157 completion tokens and a full three-call Luna turn (validity/status/planning); all returned stop and passed the backend checks. Nine paid calls across baseline/control/candidate cost approximatelyUS$0.0039. All nine returned provider HTTP200; no402/429/timeout occurred. No source files were edited during each live batch. This is a focused reliability check, not certification of all dialogue quality or all future provider failures.
 
 Offline verification for the hot-fix implementation:639 API/unit/migration checks passed, with7 inherited mock warnings; Ruff/format passed. OpenAPI was regenerated and its JSON hash is unchanged. No database schema changed; final-head remote CI will run after publication approval.
+
+## Stage2 relevance gate correction (PR275)
+
+Prompt `stage2_validity-1.0.2` accepts relevant answers even when they give no reason. Relevant partial answers, uncertainty, disagreement and challenges to the question's premise also return YES. Only off-topic/diverting answers return NO. Previously the prompt required an explicit reason and could send a relevant student answer to the fixed off-topic response. For example, responding to AI misinformation concerns with「那是 AI 太笨，等 AI 模型夠聰明就好」challenges the premise and should proceed to status/planning.
+
+Relevance does not grant reasoning credit: status still records only explicit student evidence and the server still requires the existing readiness milestones. This changes the gate instruction only; the gate still receives the current question and answer, not the full transcript. Its model,700-token cap, YES/NO schema and public API remain unchanged. Restart after upgrading and confirm `stage2_validity-1.0.2` in the validity call's diagnostic event.
+
+Verification: the deterministic turn regression checks that a scripted YES with no supplied reason reaches status/planning while leaving the reason milestone false and goal unreached; the existing NO regression checks the off-topic branch. These mocks do not establish live classification quality. No live-model evaluation of this new prompt was performed. The earlier live truncation tests used validity1.0.1 and must not be read as evaluation of1.0.2.
+
+Suggested live checks for the same AI-misinformation question: the quoted premise challenge,「我不知道怎麼設界線」and「應該允許」should return YES;「今天晚餐吃什麼」should return NO. Preserve the actual model/prompt version and diagnostics when evaluating. This correction addresses false off-topic rejection separately from the reproduced502 truncation.

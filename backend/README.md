@@ -249,3 +249,5 @@ Developer handoff: the [step-by-step diagnostics walkthrough](../docs/AI_BACKEND
 
 
 Stage2 truncation follow-up: status prompt `stage2_status-1.0.1` provides3000 output-token headroom for both new-turn status and old-dialogue progress catch-up (formerly1000). Restart the backend after upgrading; confirm version/cap in `call_started` logs. `progress_catch_up_started` identifies catch-up. Read the [measured reproduction and compatibility notes](../docs/AI_BACKEND_CONTRACT.md#stage2-status-truncation-hot-fix-local-follow-up-above-pr274). The captured-response regression test uses mocks and makes no paid requests.
+
+Stage2 relevance follow-up: validity prompt `stage2_validity-1.0.2` accepts relevant answers without reasons, including uncertainty and premise challenges. Status still evaluates evidence and goal readiness. See [gate correction and verification limits](../docs/AI_BACKEND_CONTRACT.md#stage2-relevance-gate-correction-pr275). Restart to load the new prompt.
