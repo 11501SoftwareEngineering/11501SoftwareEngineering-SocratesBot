@@ -111,3 +111,20 @@ async def set_default_model(
         default_model=DefaultModelResponse(id=model.model_id, name=model.name),
         message="Default model updated",
     )
+
+
+async def effective_default_model(db: AsyncSession, teacher_id: uuid.UUID) -> str:
+    """Use the course owner's saved catalog model, otherwise the server default.
+
+    A stale saved selection fails explicitly instead of silently changing models.
+    Server fallback remains valid without a catalog row for legacy deployments.
+    """
+    row = await settings_crud.get_settings(db, teacher_id)
+    selected = None if row is None else row.default_model_id
+    if selected is None:
+        return settings.OPENAI_MODEL
+    if await settings_crud.get_inquiry_model(db, selected) is None:
+        raise HTTPException(
+            status_code=422, detail="Saved default model is unavailable"
+        )
+    return selected

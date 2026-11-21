@@ -121,6 +121,7 @@ class InquirySetupResponse(BaseModel):
     course_id: UUID
     topic_status: str
     model_id: str | None = None
+    content_language: str | None = None
     setup: InquiryFields
     assessments: list[FieldAssessment] | None = None
     clarification_questions: list[str] | None = None
@@ -138,7 +139,23 @@ class CreatedInquiryResponse(InquirySetupResponse):
     warnings: list[str] = Field(default_factory=list)
 
 
-class SaveInquiryRequest(BaseModel):
+class InquirySelection(BaseModel):
+    """Optional selections: omitted means preserve/default; explicit null is invalid."""
+
+    model_id: str | None = Field(default=None, min_length=1, max_length=128)
+    content_language: str | None = Field(default=None, min_length=1, max_length=16)
+
+    @field_validator("model_id", "content_language", mode="before")
+    @classmethod
+    def selected_text(cls, value: object) -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                "selection must be nonblank text; omit to preserve the setting"
+            )
+        return value.strip()
+
+
+class SaveInquiryRequest(InquirySelection):
     setup: InquiryFields
 
     @model_validator(mode="after")
@@ -147,7 +164,7 @@ class SaveInquiryRequest(BaseModel):
         return self
 
 
-class CreateInquiryTopicRequest(BaseModel):
+class CreateInquiryTopicRequest(InquirySelection):
     age_band: AgeBandValue
     max_turns: TurnCap
     course_description: str = Field(min_length=1, max_length=6000)

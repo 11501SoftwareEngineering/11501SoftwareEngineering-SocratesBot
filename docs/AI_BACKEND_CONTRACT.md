@@ -6,25 +6,25 @@ Contract revision 1, 21 November 2026. Local candidate based on `f015e190b9daf92
 
 Use the application's existing authentication/CSRF flow. These endpoints require an active authenticated account; 401 means authentication is required, and 403 can mean the password-change gate. Teacher-only routes additionally enforce their role/course checks. UUID/body validation returns 422 with a list under `detail`; application rejections commonly use a string under `detail`. Stage1 semantic rejection also uses 422 with a string. Do not assume every 422 has the same detail type.
 
-Student history, reply, end and personal-report operations return **404**, not 403, for a missing or other-owner session. Session entry checks course membership separately and returns 403 for a nonmember. Documented TA setup permissions are not fully implemented yet (BE-01); this chunk does not broaden them. Teaching report routes also still require the global teacher role.
+Student history, reply, end and personal-report operations return **404**, not 403, for a missing or other-owner session. Session entry checks course membership separately and returns 403 for a nonmember. Setup read/save/generate/refine/opening allow the course teacher or a course TA with `edit_topics`. Publish remains restricted to the course teacher. Teaching report routes also still require the global teacher role.
 
 ## Teacher setup
 
 | Operation | Input | Persistence and response |
 | --- | --- | --- |
-| POST `/courses/{courseId}/topics` | `age_band`, `max_turns`, `course_description` | Creates a setup topic after successful generation. Returns identifiers, setup and teacher feedback. |
+| POST `/courses/{courseId}/topics` | `age_band`, `max_turns`, `course_description`; optional `model_id`, `content_language` | Creates a setup topic after successful generation. Returns identifiers, setup and teacher feedback. |
 | GET `/topics/{topicId}/setup` | None | Saved setup. Null-valued keys are omitted, including nested setup keys; tolerate missing optional fields. |
 | POST `/topics/{topicId}/setup/generate` | `age_band`, `max_turns`, `content_language`, `course_description`, `model_id` | Returns a suggestion plus feedback. Does not save fields, language or model. The model must be in the catalog. |
 | POST `/topics/{topicId}/setup/refine` | `setup`, `feedback` | Returns a suggestion plus feedback, without saving it. Uses the topic's effective model/language. |
-| PUT `/topics/{topicId}/setup` | `setup` | Saves the displayed eight fields. Does not adopt a suggestion's language/model selection. |
+| PUT `/topics/{topicId}/setup` | `setup`; optional `model_id`, `content_language` | Saves displayed fields and explicit selections. Omitted selections preserve stored values; null/blank selections are rejected. |
 | POST `/topics/{topicId}/setup/opening-message` | `setup` | Returns **and saves** the new opening and records a revision. It does not save unrelated displayed fields. A concurrent write causes 409. |
-| POST `/topics/{topicId}/publish` | `setup` | Saves and publishes atomically. Invalid publication rolls back. Only age, cap, topic and core question are currently required by the publication gate; blank opening is permitted. |
+| POST `/topics/{topicId}/publish` | `setup`; optional `model_id`, `content_language` | Saves fields/selections and publishes atomically. Invalid publication rolls back. Only age, cap, topic and core question are currently required by the publication gate; blank opening is permitted. |
 
 Generation/refinement feedback: `assessments`, `clarification_questions`, `suggestions`, `warnings`. These are returned guidance, not separately persisted feedback. Treat missing optional response fields as unavailable. Preserve the teacher's draft on failure; the server does not durably save a rejected generation request.
 
 Generation errors include 400 outside setup, 422 for request/semantic rejection, 502 for invalid provider output, 503 for unavailable service/incomplete substantive output, and 504 for the task timeout. See per-route OpenAPI for examples. Opening schema/language issues AI-03/04 remain outside this chunk.
 
-Stage1 uses the requesting teacher's stored OpenRouter key when available, otherwise the server key. Dialogue/report calls use server credentials. Configuring only a teacher key does not establish access for all stages. Saved teacher default selection and model/language adoption are unresolved in BE-02/POL-02; do not infer that save transfers them. No key belongs in a frontend payload, trace or example beyond the dedicated existing key-settings flow.
+Stage1 uses the requesting user's stored OpenRouter key when available, otherwise the server key. Dialogue/report calls use server credentials. Configuring only a teacher key does not establish access for all stages. For teacher- and TA-created activities, model selection is explicit creation override → course owner (`Course.created_by`) saved default → server default. Explicit and saved selections must exist in the catalog; stale saved defaults return422. Language defaults to server configuration. These defaults affect only new topics. Generate/refine return the effective language/model; to adopt a generated selection, send it explicitly on Save/Publish. Model/language changes are recorded in inquiry revisions. No key belongs in a frontend payload, trace or example beyond the dedicated existing key-settings flow.
 
 ```mermaid
 sequenceDiagram
@@ -49,7 +49,7 @@ sequenceDiagram
         API->>DB: Save opening and revision if not stale
         API-->>Teacher: opening_message
     end
-    Teacher->>API: PUT setup or POST publish with displayed setup
+    Teacher->>API: PUT setup or POST publish with setup and optional model/language
     API->>DB: Save; publish also enters conversation
     API-->>Teacher: Stored setup and status
 ```
