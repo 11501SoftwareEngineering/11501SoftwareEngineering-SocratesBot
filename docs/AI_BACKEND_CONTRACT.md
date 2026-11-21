@@ -502,3 +502,68 @@ sequenceDiagram
 ```
 
 Frontend must treat closed phase and job readiness separately, handle a stale-count409, stop accepting replies after terminal history/409, and display failed preparation with retry rather than success. A backend cannot push-navigation to every open tab by itself: frontend must refresh/poll the existing topic/history status or handle the rejected next reply. Implementing frontend screens is outside this branch.
+
+
+## Real usage metering (usage follow-up branch, not deployed)
+
+GET `/users/me/ai/usage` is implemented on `codex/ai-usage-metering` above PR272d6cf9e1. It supersedes the default-zero scaffold in open PR239; main0456421 and PR272 alone do not deliver real metering. This follow-up adds migration `b8e39a1547c2` (parent `8ad603f2c910`), which must run before the writer/reader is enabled. It does not import historical provider-account activity or reconstruct calls made before instrumentation.
+
+The endpoint requires the existing authenticated active global teacher role. It takes no body or teacher-ID parameter and returns only the current caller's ledger, for the current UTC calendar month `[month start, next month start)`. The course owner's identity is captured when resolving credentials; it applies to teacher/TA setup, student validity/status/planning, compression/catch-up, personal reports and class synthesis. Teacher-key/server-key priority is unchanged. Server-funded course calls still belong to the course teacher's usage view. Historical attribution does not change if ownership later changes.
+
+### Response and unknown values
+
+```json
+{
+  "month": "2026-11",
+  "request_count": 3,
+  "input_tokens": 1200,
+  "output_tokens": 400,
+  "total_tokens": 1600,
+  "cost_usd": 0.003,
+  "cost_source": "openrouter",
+  "updated_at": "2026-11-21T10:00:00Z",
+  "by_stage": [
+    {"stage":"setup","request_count":0,"input_tokens":0,"output_tokens":0,"total_tokens":0,"cost_usd":null},
+    {"stage":"dialogue","request_count":3,"input_tokens":1200,"output_tokens":400,"total_tokens":1600,"cost_usd":0.003},
+    {"stage":"report","request_count":0,"input_tokens":0,"output_tokens":0,"total_tokens":0,"cost_usd":null},
+    {"stage":"summary","request_count":0,"input_tokens":0,"output_tokens":0,"total_tokens":0,"cost_usd":null}
+  ]
+}
+```
+
+- `request_count` counts outbound request attempts, including retries and failures; it is not a dialogue-turn count. A normal turn can call validity, status and planning separately. Deterministic zero-answer reports/summaries and replayed stored replies make no provider call and add no usage.
+- `input_tokens`, `output_tokens`, `total_tokens` use provider `prompt_tokens`, `completion_tokens`, `total_tokens`, respectively. A total becomes null when any counted attempt lacks that field. No tokenizer estimates replace unknown values. An empty month/stage has0 known requests and0 tokens.
+- `cost_usd` sums the provider's account charge (`usage.cost`), not catalog estimates or upstream BYOK costs. It is null with no rows or any unknown cost; a provider-reported zero is a valid0. `cost_source=openrouter` only when the aggregate charge is available, otherwise null.
+- `by_stage` always has setup/dialogue/report/summary in that order, independently applying the same completeness rules. A missing cost in one stage need not hide another stage's known cost.
+- `updated_at` is the most recent record start/completion, null without rows. This is a metering view, not an invoice or provider-account balance.
+- Compatibility with PR239: the existing field names/order of stages remain, but token aggregates can now be null to distinguish unavailable counts from true zero. Frontend must display unavailable/partial data honestly.
+- Errors:401 authentication,403 teacher/password gate; unexpected database availability failures are server errors, not successful fabricated-zero results. UUID/body validation does not apply because there are no input identifiers or body.
+
+### Recording, failures and privacy
+
+Each actual send (including a retry) first commits a ledger row in an independent database session. It stores teacher identity, task/stage/model, teacher/server credential source and timestamp; never the key, prompt, transcript or raw model response. The provider response's usage is recorded before model-output parsing, so malformed/truncated/schema-invalid responses can still carry counted cost. Business transaction rollback does not undo the committed record.
+
+If the start write fails, no provider request is dispatched and the AI call fails as service unavailable. If completion persistence fails or the process stops after dispatch, the pre-existing row remains unknown and an operator gets a fixed `ai_usage_completion_unavailable` event identifier. No additional provider call is made to hide that recording failure. Transport errors/timeouts without reported usage remain unknown. This does not guarantee recovery of exact charges after a process/network failure, and no automatic generation-ID reconciliation is included.
+
+```mermaid
+sequenceDiagram
+    participant Caller as Teacher / student / background job
+    participant API as Backend
+    participant DB as Postgres
+    participant Model as OpenRouter
+    Caller->>API: Existing course AI operation
+    API->>API: Resolve course owner, model and credential
+    loop Each provider attempt including retry
+        API->>DB: Commit content-free usage row (independent transaction)
+        API->>Model: Existing chat completion request
+        Model-->>API: Response with usage or transport failure
+        API->>DB: Persist reported counts/cost or leave unknown
+    end
+    API->>API: Parse/validate model output
+    Note over API,DB: Usage remains if application rejects output or rolls back
+    Caller->>API: Teacher GET users/me/ai/usage
+    API->>DB: Read own ledger in current UTC month
+    API-->>Caller: Totals and four stages; null for unknown values
+```
+
+Provider-field reference: [OpenRouter usage accounting](https://openrouter.ai/docs/cookbook/administration/usage-accounting). No additional usage request parameter or paid accounting lookup is required. Key deletion preserves ledger history; deleting the teacher account removes its rows through the user foreign key.

@@ -229,3 +229,8 @@ API transport, lifecycle and retry contracts: [integration guide](../docs/AI_BAC
 使用原生 CentralReport 與動態觀點分組，模型只輸出定性群組，後端驗證成員與計算比例。無法分類的報告仍列入分母；全無足夠證據時直接產生結構化結果，不呼叫模型。私有原生結果保存在既有 JSON 欄位；既有教師編輯／審核／發布／撤回及學生 DTO 不變。詳見 docs/AI_BACKEND_CONTRACT.md。無新增 migration。
 
 測試：`pytest tests/unit/test_central_synthesis.py tests/unit/test_stage3_jobs.py tests/api/v1/test_summary_routes.py -q`。真實資料庫測試為 `tests/integration/test_native_stage3_postgres.py`，需要 disposable `SESSION_TEST_DATABASE_URL`。httpyac 手動驗收見 `scenarios/user-journey/native-stage3/README.md`，不能將未執行的 scenario 視為測試通過。
+
+
+### Teacher usage metering
+
+Usage follow-up requires Alembic revision `b8e39a1547c2`. GET `/api/v1/users/me/ai/usage` aggregates provider requests attributed to the authenticated course teacher in the current UTC month, including retries/failed output. Unknown token totals/cost are null, not zero. No historic provider-account backfill. See [API contract](../docs/AI_BACKEND_CONTRACT.md#real-usage-metering-usage-follow-up-branch-not-deployed) for ownership, failure semantics and examples. Ledger recording uses a separate DB connection; size the pool for request/job connections plus metering writes.

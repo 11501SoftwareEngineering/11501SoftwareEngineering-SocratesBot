@@ -563,13 +563,17 @@ version: 0.2
 皆在 /users/me/ai 路徑下，僅限 teacher 可用
 
 ### 取得 AI 用量
-- 功能說明: 取得本人本月 AI 用量
+
+> 實作狀態：本 usage 修正分支提供真實 provider-request ledger 與聚合，需合併及執行 migration `b8e39a1547c2` 才可採用；main 與 PR239 scaffold 不具備此能力。只包含啟用計量後由本系統發出的請求，不回補歷史／外部帳號用量。
+
+- 功能說明: 依 UTC 月份統計本人作為課程 owner 的 AI 請求（含 TA／學生觸發、背景報告、重試及失敗呼叫），來源為 provider 回傳值
 - 呼叫方式: GET /users/me/ai/usage
 - 輸入資料: 無
-- 成功回應: `month`, `total_tokens`, `input_tokens`, `output_tokens`, `request_count`, `by_stage`（分階段統計，格式見下）, `cost_usd`（無資料時為 null，不代表 0）, `cost_source`, `updated_at`
+- 成功回應: `month`, `total_tokens`, `input_tokens`, `output_tokens`, `request_count`, `by_stage`（分階段統計，格式見下）, `cost_usd`（無資料或任一請求成本未知時為 null；provider 明確回0才表示0）, `cost_source`, `updated_at`
     - `by_stage`: 陣列，固定 4 筆，依 `setup`、`dialogue`、`report`、`summary` 的順序；本月沒有用量的階段也要回傳（數量為 0、`cost_usd` 為 null）
         - `stage`: `setup`（活動設定）、`dialogue`（學生對話）、`report`（個人報告）、`summary`（全班統整）
-        - `request_count`, `total_tokens`, `input_tokens`, `output_tokens`: 整數
+        - `request_count`: 整數，實際 provider request 嘗試次數；同一學生回合可能有多個呼叫
+        - `total_tokens`, `input_tokens`, `output_tokens`: 整數或 null；任一請求缺該項 usage 時，該項總數為 null，不假裝是0
         - `cost_usd`: 該階段本月花費（美元）；無資料時為 null，不代表 0
     - `by_stage` 範例:
         ```json

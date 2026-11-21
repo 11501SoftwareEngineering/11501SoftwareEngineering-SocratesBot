@@ -76,3 +76,10 @@ class AgeBand(StrEnum):
 
 
 ALLOWED_MAX_TURNS = frozenset({5, 10, 15})
+
+
+class AiUsageStage(StrEnum):
+    SETUP = "setup"
+    DIALOGUE = "dialogue"
+    REPORT = "report"
+    SUMMARY = "summary"
