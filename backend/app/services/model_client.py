@@ -50,6 +50,88 @@ _INQUIRY_SCHEMA: dict[str, Any] = {
 }
 
 
+def _strict(properties: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": properties,
+        "required": list(properties),
+    }
+
+
+def _text() -> dict[str, Any]:
+    return {"type": "string"}
+
+
+def _text_list() -> dict[str, Any]:
+    return {"type": "array", "items": _text()}
+
+
+_ASSESSED = [
+    "theme",
+    "inquiryQuestion",
+    "inquiryFocus",
+    "necessaryContext",
+    "exclusions",
+    "openingMessage",
+]
+# Stage 1 output as the inquiry_design prompt describes it: an input check, and a
+# design only when the input is usable.
+_DESIGN_SCHEMA: dict[str, Any] = _strict(
+    {
+        "inputCheck": _strict(
+            {
+                "status": {"type": "string", "enum": ["usable", "needs_revision"]},
+                "message": _text(),
+            }
+        ),
+        "design": {
+            "anyOf": [
+                _strict(
+                    {
+                        "brief": _strict(
+                            {
+                                "learnerBand": {
+                                    "type": "string",
+                                    "enum": ["13-15", "16-18", "university_plus"],
+                                },
+                                "targetExchanges": {
+                                    "type": "integer",
+                                    "enum": [5, 10, 15],
+                                },
+                                **{name: _text() for name in _ASSESSED},
+                            }
+                        ),
+                        "assessments": {
+                            "type": "array",
+                            "items": _strict(
+                                {
+                                    "field": {"type": "string", "enum": _ASSESSED},
+                                    "status": {
+                                        "type": "string",
+                                        "enum": [
+                                            "sufficient",
+                                            "missing",
+                                            "ambiguous",
+                                            "conflicted",
+                                        ],
+                                    },
+                                    "note": _text(),
+                                }
+                            ),
+                        },
+                        "clarificationQuestions": _text_list(),
+                        "suggestions": _text_list(),
+                        "warnings": _text_list(),
+                    }
+                ),
+                {"type": "null"},
+            ]
+        },
+    }
+)
+
+
 def _outbound(instructions: str, material: str) -> tuple[str, str]:
     """Keep caller text inside a fence so it is data, not new instructions."""
     safe = material.replace("END_DATA", "END DATA").replace("BEGIN_DATA", "BEGIN DATA")
@@ -164,6 +246,26 @@ class OpenAIChatClient:
         return await self._post(
             name="inquiry_setup",
             schema=_INQUIRY_SCHEMA,
+            instructions=instructions,
+            material=material,
+            model=model,
+            api_key=api_key,
+            max_tokens=max_tokens,
+        )
+
+    async def complete_design(
+        self,
+        *,
+        instructions: str,
+        material: str,
+        model: str | None = None,
+        api_key: str | None = None,
+        max_tokens: int | None = None,
+    ) -> dict:
+        """Stage 1 course setup. The opening message keeps using complete_json."""
+        return await self._post(
+            name=DESIGN_SCHEMA_NAME,
+            schema=_DESIGN_SCHEMA,
             instructions=instructions,
             material=material,
             model=model,
