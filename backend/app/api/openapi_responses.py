@@ -10,6 +10,7 @@ from app.core.auth_policies import (
     LOGIN_RATE_LIMITED_DETAIL,
     NEW_PASSWORD_SAME_AS_CURRENT_DETAIL,
 )
+from app.schemas.dialogue import StreamDoneEvent
 
 
 def json_detail_example(description: str, detail: Any) -> dict[str, Any]:
@@ -406,6 +407,9 @@ TOPIC_EXPLANATION_RESPONSES: dict[int | str, dict[str, Any]] = {
 }
 
 SESSION_ENTRY_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: json_detail_example(
+        "New session cannot be created in summary", "Topic is in summary"
+    ),
     401: json_detail_example(
         AUTH_UNAUTHORIZED_DETAIL,
         AUTH_UNAUTHORIZED_DETAIL,
@@ -417,9 +421,9 @@ SESSION_ENTRY_RESPONSES: dict[int | str, dict[str, Any]] = {
             "password_change_required": "Password change required",
         },
     ),
-    404: json_detail_example(
-        "Topic not found",
-        "Topic not found",
+    404: json_detail_examples(
+        "Topic missing or still in setup",
+        {"missing": "Topic not found", "setup": "Topic is still in setup"},
     ),
 }
 
@@ -630,4 +634,132 @@ INQUIRY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {
             ],
         },
     ),
+}
+
+
+# These describe existing runtime branches; they do not change authorization or
+# lifecycle rules. Student ownership deliberately returns 404 rather than 403.
+_ACTIVE_RESPONSES = {
+    401: json_detail_example(AUTH_UNAUTHORIZED_DETAIL, AUTH_UNAUTHORIZED_DETAIL),
+    403: json_detail_example("Password change required", "Password change required"),
+}
+DIALOGUE_READ_RESPONSES = {
+    **_ACTIVE_RESPONSES,
+    404: json_detail_example("Missing session or another owner", "Session not found"),
+}
+DIALOGUE_STREAM_RESPONSES = {
+    **DIALOGUE_READ_RESPONSES,
+    200: {
+        "description": "One unnamed text event followed by a named done event. Errors before SSE starts are JSON. CR/CRLF in text normalize to LF.",
+        "content": {
+            "text/event-stream": {
+                "schema": {"type": "string"},
+                "example": 'data: What supports that view?\n\nevent: done\ndata: {"message_id":"44444444-4444-4444-4444-444444444444","completed_turns":1,"is_completed":false,"awaiting_end_consent":false}\n\n',
+            }
+        },
+        "x-sse-events": {
+            "message": {
+                "description": "Unnamed event; join data lines with LF to recover reply text.",
+                "schema": {"type": "string"},
+            },
+            "done": {
+                "description": "Terminal event whose data is JSON; not a second reply.",
+                "schema": StreamDoneEvent.model_json_schema(),
+            },
+        },
+    },
+    400: json_detail_examples(
+        "Dialogue cannot accept a new reply",
+        {"closed": "Dialogue is not accepting replies", "cap": "Turn cap reached"},
+    ),
+    409: json_detail_examples(
+        "Reply conflicts with concurrent state",
+        {
+            "busy": "Another reply is in progress",
+            "changed": "Dialogue changed while replying",
+            "ended_during_reply": "Dialogue is not accepting replies",
+        },
+    ),
+    413: json_detail_example(
+        "Context cannot fit the configured token budget; detail explains the limit",
+        "Latest message exceeds the dialogue context budget",
+    ),
+    502: json_detail_example("Provider or model output failure", "Model call failed"),
+    503: json_detail_examples(
+        "Provider unavailable or unsupported tokenizer",
+        {
+            "provider": "Model call failed",
+            "tokenizer": "Configured model tokenizer is not supported",
+        },
+    ),
+}
+DIALOGUE_END_RESPONSES = {
+    **DIALOGUE_READ_RESPONSES,
+    400: json_detail_example("Dialogue already ended", "Dialogue has already ended"),
+    409: json_detail_examples(
+        "Cannot apply end action yet",
+        {
+            "not_ready": "Inquiry goal is not met",
+            "busy": "Another reply is in progress",
+        },
+    ),
+}
+REPORT_START_RESPONSES = {
+    **DIALOGUE_READ_RESPONSES,
+    409: json_detail_example(
+        "Only outcome=completed can produce a report", "Dialogue is not completed"
+    ),
+}
+REPORT_READ_RESPONSES = {
+    **REPORT_START_RESPONSES,
+    404: json_detail_examples(
+        "Missing/other-owner session, or no report attempt",
+        {"session": "Session not found", "report": "Report not found"},
+    ),
+}
+TEACHING_REPORT_READ_RESPONSES = {
+    **_ACTIVE_RESPONSES,
+    403: json_detail_examples(
+        "Teacher access denied",
+        {
+            "password": "Password change required",
+            "role": "Teacher privileges required",
+            "course": "Course instructor required",
+        },
+    ),
+    404: json_detail_example("Topic not found", "Topic not found"),
+}
+TEACHING_REPORT_RETRY_RESPONSES = {
+    **TEACHING_REPORT_READ_RESPONSES,
+    404: json_detail_examples(
+        "Topic or matching session missing",
+        {"topic": "Topic not found", "session": "Session not found"},
+    ),
+    409: REPORT_START_RESPONSES[409],
+}
+
+# Stage1 now distinguishes semantic rejection (string detail) from request
+# validation (list detail). Opening generation also uses the same timeout mapper.
+_STAGE1_VALIDATION = json_detail_examples(
+    "Invalid request or course description needs revision",
+    {
+        "validation": [
+            {
+                "type": "missing",
+                "loc": ["body", "course_description"],
+                "msg": "Field required",
+            }
+        ],
+        "semantic": "Please revise the course description. Name the topic.",
+    },
+)
+_STAGE1_TIMEOUT = json_detail_example(
+    "Model generation timed out",
+    "Course setup took longer than 45 seconds and was stopped. Your input was kept; try again or shorten the description.",
+)
+TOPIC_CREATE_RESPONSES.update({422: _STAGE1_VALIDATION, 504: _STAGE1_TIMEOUT})
+INQUIRY_GENERATE_RESPONSES.update({422: _STAGE1_VALIDATION, 504: _STAGE1_TIMEOUT})
+# generate/refine do not write and cannot hit the opening write's stale guard.
+INQUIRY_SUGGEST_RESPONSES = {
+    key: value for key, value in INQUIRY_GENERATE_RESPONSES.items() if key != 409
 }

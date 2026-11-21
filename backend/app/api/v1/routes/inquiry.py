@@ -13,6 +13,7 @@ from app.api.openapi_responses import (
     INQUIRY_PUBLISH_RESPONSES,
     INQUIRY_SETUP_READ_RESPONSES,
     INQUIRY_SETUP_WRITE_RESPONSES,
+    INQUIRY_SUGGEST_RESPONSES,
 )
 from app.schemas.inquiry import (
     GenerateInquiryRequest,
@@ -53,7 +54,7 @@ async def get_inquiry_setup(
     current_user: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InquirySetupResponse:
-    """Read the saved inquiry."""
+    """Read saved fields; null-valued keys are omitted, including inside setup."""
     return await inquiry_service.get_inquiry_setup(db, current_user, topicId)
 
 
@@ -77,7 +78,7 @@ async def save_inquiry_setup(
     "/topics/{topicId}/setup/generate",
     response_model=InquirySetupResponse,
     response_model_exclude_none=True,
-    responses=INQUIRY_GENERATE_RESPONSES,
+    responses=INQUIRY_SUGGEST_RESPONSES,
 )
 async def generate_inquiry(
     topicId: UUID,
@@ -93,7 +94,7 @@ async def generate_inquiry(
     "/topics/{topicId}/setup/refine",
     response_model=InquirySetupResponse,
     response_model_exclude_none=True,
-    responses=INQUIRY_GENERATE_RESPONSES,
+    responses=INQUIRY_SUGGEST_RESPONSES,
 )
 async def refine_inquiry(
     topicId: UUID,

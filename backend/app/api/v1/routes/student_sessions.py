@@ -10,11 +10,17 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ActiveUser, get_db
+from app.api.openapi_responses import (
+    DIALOGUE_END_RESPONSES,
+    DIALOGUE_READ_RESPONSES,
+    DIALOGUE_STREAM_RESPONSES,
+)
 from app.schemas.dialogue import (
     DialogueHistoryResponse,
     EndDialogueRequest,
     EndDialogueResponse,
     StreamDone,
+    StreamDoneEvent,
     StreamMessageRequest,
 )
 from app.services import dialogue as dialogue_service
@@ -24,17 +30,14 @@ router = APIRouter(tags=["dialogue"])
 
 
 def _sse(done: StreamDone) -> Iterator[str]:
-    lines = done.text.splitlines() or [""]
+    # SSE uses CR/LF framing, not Python's broader Unicode splitlines rules.
+    # Keep trailing empty lines so the decoded text retains its final newline.
+    lines = done.text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     for line in lines:
         yield f"data: {line}\n"
     yield "\n"
     payload = json.dumps(
-        {
-            "message_id": str(done.message_id),
-            "completed_turns": done.completed_turns,
-            "is_completed": done.is_completed,
-            "awaiting_end_consent": done.awaiting_end_consent,
-        }
+        StreamDoneEvent.model_validate(done.model_dump()).model_dump(mode="json")
     )
     yield f"event: done\ndata: {payload}\n\n"
 
@@ -42,6 +45,7 @@ def _sse(done: StreamDone) -> Iterator[str]:
 @router.get(
     "/sessions/{sessionId}/messages",
     response_model=DialogueHistoryResponse,
+    responses=DIALOGUE_READ_RESPONSES,
 )
 async def read_dialogue_messages(
     sessionId: UUID,
@@ -56,14 +60,25 @@ async def read_dialogue_messages(
     )
 
 
-@router.post("/sessions/{sessionId}/messages/stream")
+@router.post(
+    "/sessions/{sessionId}/messages/stream",
+    response_class=StreamingResponse,
+    responses=DIALOGUE_STREAM_RESPONSES,
+)
 async def stream_dialogue_reply(
     sessionId: UUID,
     payload: StreamMessageRequest,
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> StreamingResponse:
-    """Send one student turn and stream the model reply."""
+    """Return one unnamed text event, then a named `done` JSON event.
+
+    Inference and persistence finish before the SSE response starts; this is not
+    token-by-token provider streaming. Failures before that point are JSON HTTP
+    errors. Retry the same logical submission with the same request_id/content:
+    a committed reply is replayed without another model call. A request_id is not
+    a guarantee of exactly-once provider billing after an ambiguous failure.
+    """
     done = await dialogue_service.send_reply(
         db,
         OpenAIChatClient(),
@@ -78,6 +93,7 @@ async def stream_dialogue_reply(
 @router.post(
     "/sessions/{sessionId}/end",
     response_model=EndDialogueResponse,
+    responses=DIALOGUE_END_RESPONSES,
 )
 async def end_dialogue(
     sessionId: UUID,
@@ -85,7 +101,12 @@ async def end_dialogue(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> EndDialogueResponse:
-    """Complete, continue, or abandon this dialogue."""
+    """Complete only after goal achievement, continue, or abandon.
+
+    Continue clears consent but retains goal achievement. Complete does not start
+    report generation: call POST /sessions/{sessionId}/report separately.
+    Abandoned and closed_by_summary dialogues are not report-eligible.
+    """
     return await dialogue_service.end_dialogue(
         db,
         user_id=current_user.id,
