@@ -159,3 +159,22 @@ def test_inquiry_fingerprint_ignores_spacing_but_not_settings():
         {**brief, "theme": "  " + brief["theme"] + "  "}
     )
     assert inquiry_key(brief) != inquiry_key({**brief, "targetExchanges": 15})
+
+
+@pytest.mark.parametrize("field", ["theme", "inquiryQuestion", "inquiryFocus"])
+def test_native_conversion_accepts_full_setup_text_limit(field):
+    from app.schemas.inquiry import InquiryFields
+
+    data = metadata()
+    brief = data["report_source"]["material"]["approvedInquiryBrief"]
+    brief[field] = "x" * 8000
+    setup_field = {
+        "theme": "topic",
+        "inquiryQuestion": "core_question",
+        "inquiryFocus": "inquiry_focus",
+    }[field]
+    InquiryFields.model_validate({setup_field: brief[field]})
+    data["source_digest"] = source_digest(data["report_source"])
+    converted = from_native(str(uuid4()), data)
+    assert getattr(converted, field) == brief[field]
+    assert validate_reports([converted.model_dump()])[0] == converted

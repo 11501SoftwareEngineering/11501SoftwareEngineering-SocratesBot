@@ -254,26 +254,63 @@ async def test_teacher_retry_regenerates_only_incompatible_ready_report(
     from app.services import reports
 
     current = topic()
-    session = SimpleNamespace(id=uuid4(), topic_id=current.id)
+    session = SimpleNamespace(
+        id=uuid4(), topic_id=current.id, outcome="ended", generation_meta={}
+    )
     db = AsyncMock()
     db.get.return_value = session
     monkeypatch.setattr(reports, "_instructor_topic", AsyncMock(return_value=current))
-    monkeypatch.setattr(
-        reports.report_crud,
-        "list_for_session",
-        AsyncMock(
-            return_value=[
-                SimpleNamespace(
-                    id=uuid4(),
-                    status="ready",
-                    generation_meta={} if legacy else metadata(),
-                )
-            ]
-        ),
+    row = SimpleNamespace(
+        id=uuid4(), status="ready", generation_meta={} if legacy else metadata()
     )
-    start = AsyncMock()
-    monkeypatch.setattr(reports, "_start", start)
+    monkeypatch.setattr(
+        reports.report_crud, "list_for_session", AsyncMock(return_value=[row])
+    )
+    inserted, scheduled = AsyncMock(return_value=SimpleNamespace(id=uuid4())), Mock()
+    monkeypatch.setattr(reports.report_crud, "insert_pending", inserted)
+    monkeypatch.setattr(reports.report_runner, "schedule", scheduled)
+    monkeypatch.setattr(reports, "_payload", AsyncMock(return_value={}))
     await reports.start_teacher_retry(
         db, teacher=object(), topic_id=current.id, session_id=session.id
     )
-    start.assert_awaited_once_with(db, session, replace_ready=legacy)
+    assert inserted.await_count == int(legacy)
+    assert scheduled.call_count == int(legacy)
+
+
+async def test_teacher_retry_rechecks_ready_report_after_session_lock(monkeypatch):
+    from app.services import reports
+
+    current = topic()
+    session = SimpleNamespace(
+        id=uuid4(), topic_id=current.id, outcome="ended", generation_meta={}
+    )
+    db = AsyncMock()
+    db.get.return_value = session
+    monkeypatch.setattr(reports, "_instructor_topic", AsyncMock(return_value=current))
+    rows = [SimpleNamespace(id=uuid4(), status="ready", generation_meta={})]
+
+    async def acquire_lock(*args, **kwargs):
+        # Another retry finished while this request waited for the session lock.
+        rows.append(
+            SimpleNamespace(id=uuid4(), status="ready", generation_meta=metadata())
+        )
+
+    db.execute.side_effect = acquire_lock
+    monkeypatch.setattr(
+        reports.report_crud,
+        "list_for_session",
+        AsyncMock(side_effect=lambda *args: list(rows)),
+    )
+    inserted, scheduled = AsyncMock(), Mock()
+    monkeypatch.setattr(reports.report_crud, "insert_pending", inserted)
+    monkeypatch.setattr(reports.report_runner, "schedule", scheduled)
+    payload = AsyncMock(return_value={"report_status": "ready"})
+    monkeypatch.setattr(reports, "_payload", payload)
+    result = await reports.start_teacher_retry(
+        db, teacher=object(), topic_id=current.id, session_id=session.id
+    )
+    assert result["report_status"] == "ready"
+    inserted.assert_not_awaited()
+    scheduled.assert_not_called()
+    db.commit.assert_not_awaited()
+    assert payload.await_args.args[2][-1] is rows[-1]

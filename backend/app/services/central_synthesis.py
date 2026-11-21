@@ -16,6 +16,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.inquiry import INQUIRY_TEXT_LIMIT
 from app.services.dialogue_progress import empty_progress, validate_progress
 from app.services.dialogue_turn import ProgressOut
 from app.services.report_adapter import NativeSummary, source_digest
@@ -35,9 +36,9 @@ class StrictModel(BaseModel):
 class CentralReport(StrictModel):
     id: str = Field(min_length=1, max_length=100)
     topicKey: str
-    theme: str = Field(max_length=300)
-    inquiryQuestion: str = Field(max_length=600)
-    inquiryFocus: str = Field(max_length=1200)
+    theme: str = Field(max_length=INQUIRY_TEXT_LIMIT)
+    inquiryQuestion: str = Field(max_length=INQUIRY_TEXT_LIMIT)
+    inquiryFocus: str = Field(max_length=INQUIRY_TEXT_LIMIT)
     outcome: Literal["complete", "partial", "interrupted", "inconclusive"]
     position: Text
     reasonedUncertainty: Text

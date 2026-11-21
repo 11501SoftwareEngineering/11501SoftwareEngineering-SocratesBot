@@ -11,7 +11,7 @@ from app.core.enums import AgeBand
 
 AgeBandValue = Literal["13-15", "16-18", "university_plus"]
 TurnCap = Literal[5, 10, 15]
-_TEXT = 8000
+INQUIRY_TEXT_LIMIT = 8000
 _AGE_BANDS = {band.value for band in AgeBand}
 _TURN_CAPS = {5, 10, 15}
 
@@ -41,12 +41,12 @@ class InquiryFields(BaseModel):
 
     age_band: str | None = None
     max_turns: int | None = None
-    topic: str | None = Field(default=None, max_length=_TEXT)
-    core_question: str | None = Field(default=None, max_length=_TEXT)
-    inquiry_focus: str | None = Field(default=None, max_length=_TEXT)
-    background_info: str | None = Field(default=None, max_length=_TEXT)
-    exclusions: str | None = Field(default="unspecified", max_length=_TEXT)
-    opening_message: str | None = Field(default=None, max_length=_TEXT)
+    topic: str | None = Field(default=None, max_length=INQUIRY_TEXT_LIMIT)
+    core_question: str | None = Field(default=None, max_length=INQUIRY_TEXT_LIMIT)
+    inquiry_focus: str | None = Field(default=None, max_length=INQUIRY_TEXT_LIMIT)
+    background_info: str | None = Field(default=None, max_length=INQUIRY_TEXT_LIMIT)
+    exclusions: str | None = Field(default="unspecified", max_length=INQUIRY_TEXT_LIMIT)
+    opening_message: str | None = Field(default=None, max_length=INQUIRY_TEXT_LIMIT)
 
     @field_validator(
         "topic",
@@ -190,7 +190,7 @@ class GenerateInquiryRequest(BaseModel):
 
 class RefineInquiryRequest(BaseModel):
     setup: InquiryFields
-    feedback: str = Field(min_length=1, max_length=_TEXT)
+    feedback: str = Field(min_length=1, max_length=INQUIRY_TEXT_LIMIT)
 
     @field_validator("feedback")
     @classmethod
@@ -224,7 +224,7 @@ class OpeningMessageDraft(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    opening_message: str = Field(min_length=1, max_length=_TEXT)
+    opening_message: str = Field(min_length=1, max_length=INQUIRY_TEXT_LIMIT)
 
     @field_validator("opening_message")
     @classmethod
@@ -278,12 +278,12 @@ class GeneratedInquiry(BaseModel):
 
     age_band: AgeBandValue
     max_turns: TurnCap
-    topic: str = Field(max_length=_TEXT)
-    core_question: str = Field(max_length=_TEXT)
-    inquiry_focus: str = Field(max_length=_TEXT)
-    background_info: str = Field(max_length=_TEXT)
-    exclusions: str = Field(max_length=_TEXT)
-    opening_message: str = Field(max_length=_TEXT)
+    topic: str = Field(max_length=INQUIRY_TEXT_LIMIT)
+    core_question: str = Field(max_length=INQUIRY_TEXT_LIMIT)
+    inquiry_focus: str = Field(max_length=INQUIRY_TEXT_LIMIT)
+    background_info: str = Field(max_length=INQUIRY_TEXT_LIMIT)
+    exclusions: str = Field(max_length=INQUIRY_TEXT_LIMIT)
+    opening_message: str = Field(max_length=INQUIRY_TEXT_LIMIT)
 
     @field_validator("topic", "core_question")
     @classmethod
