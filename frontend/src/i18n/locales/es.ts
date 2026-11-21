@@ -384,19 +384,16 @@ export default {
     summary: 'Resumen de la clase',
   },
   chat: {
+    finishEarly: 'Terminar antes',
+    finishEarlyTitle: '¿Terminar esta indagación antes de tiempo?',
+    finishEarlyDescription:
+      'Después ya no podrás responder. Tu informe personal se basará en el diálogo hasta ahora y se marcará lo que aún no se ha tratado.',
+    finishEarlyConfirm: 'Terminar antes',
+    finishEarlyFailed: 'No se pudo terminar. Inténtalo más tarde.',
     title: 'Indagación - {title}',
-    abandon: 'Abandonar',
-    abandonTitle: '¿Abandonar esta indagación?',
-    abandonDescription:
-      'Esta conversación no contará como completada y no se creará un informe. Puedes empezar de nuevo desde la página del curso.',
-    abandonConfirm: 'Abandonar',
-    abandonFailed: 'No se pudo abandonar. Inténtalo más tarde.',
     noReply: 'SocratesBot no respondió. Vuelve a enviarlo.',
     loadError: 'No se pudo abrir la conversación',
     log: 'Conversación',
-    finished: '¡Terminaste esta indagación!',
-    finishedTurnLimit: 'Usaste todos los turnos: ¡esta indagación terminó!',
-    finishedEarly: 'Terminaste esta indagación antes de tiempo.',
     goalReachedTitle: '¡Alcanzaste el objetivo de esta indagación!',
     goalReachedDescription:
       '¿Terminar ahora y obtener tu informe personal? También puedes seguir respondiendo; al acabarse los turnos igual recibirás un informe.',
@@ -406,9 +403,6 @@ export default {
     continueFailed: 'No se pudo continuar. Inténtalo más tarde.',
     closed: 'El docente cerró esta actividad',
     abandoned: 'Abandonaste esta indagación, así que ya no puedes responder',
-    preparingReport:
-      'SocratesBot está preparando tu informe para mostrar cómo cambió tu forma de pensar.',
-    viewReport: 'Ver mi informe',
     thinking: 'SocratesBot está pensando',
     placeholder: 'Escribe tu respuesta...',
     inputLabel: 'Tu respuesta',

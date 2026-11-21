@@ -7,16 +7,18 @@ import AppBanner from '@/components/common/AppBanner.vue'
  *   POST /topics/{topicId}/sessions                 第一次進入時建立 Session
  *   GET  /sessions/{sessionId}/messages             歷史訊息、回合數
  *   POST /sessions/{sessionId}/messages/stream      送出回答，SSE 逐段接收回覆
- *   POST /sessions/{sessionId}/end                  結束對話：complete／continue（達成目標時的選擇）、abandon（放棄）
+ *   POST /sessions/{sessionId}/end                  結束對話：complete／continue（達成目標時的選擇）、finish（提早結束）
  * 結束規則（後端 #267、負責人決定）：
  *   - AI 判斷達成目標（awaiting_end_consent）→ 跳出「結束／繼續」視窗；結束＝complete，繼續（或關掉視窗）＝continue
  *   - 回合用完 → 後端自動結束（session_status: ended、ending_reason: turn_limit），不用學生按
- *   - 學生回答 3 次後可以提早結束（finish）：按鈕怎麼擺還沒定，這裡先不做
+ *   - 學生回答 3 次後（can_finish_early）標題旁出現「提早結束」，先確認再送 finish
+ *   - 不提供「放棄」：沒回答滿 3 次的學生直接離開就好，對話留著之後可以回來（後端的 abandon 不用）
+ *   - 對話一結束（三種方式都一樣）直接跳到個人報告頁；已經結束的對話打開時也直接跳過去
  *   - completed、ended 後端都會自動開始產生報告；這裡還是會呼叫一次 startReport（可重複呼叫），相容還沒更新的後端
  * 語音輸入用瀏覽器內建的語音辨識（useSpeechInput）；AI 訊息下面的喇叭用瀏覽器語音朗讀。
  */
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { courseKeys } from '@/api/courses'
 import {
@@ -67,6 +69,11 @@ const sessionQuery = useQuery({
   retry: false,
 })
 const sessionId = computed(() => sessionQuery.data.value ?? '')
+/** 對話結束後直接到這裡 */
+const reportLink = computed(() => ({
+  name: 'StudentReport',
+  params: { courseId: courseId.value, sessionId: sessionId.value, tab: 'personal' },
+}))
 
 // 2. 歷史訊息
 const messagesQuery = useQuery({
@@ -85,6 +92,8 @@ const status = ref<DialogueStatus>('open')
 const endingReason = ref<EndingReason | null>(null)
 /** AI 判斷達成目標、等學生選擇 */
 const awaitingConsent = ref(false)
+/** 學生已經回答 3 次以上：可以提早結束 */
+const canFinishEarly = ref(false)
 /** 對話結束、可以看報告了（達成目標後結束，或回合用完／提早結束） */
 const finished = computed(() => status.value === 'completed' || status.value === 'ended')
 
@@ -98,6 +107,8 @@ watch(
     status.value = data.session_status
     endingReason.value = data.ending_reason ?? null
     awaitingConsent.value = data.session_status === 'open' && data.awaiting_end_consent
+    canFinishEarly.value = !!data.can_finish_early
+    if (data.session_status === 'completed' || data.session_status === 'ended') markFinished()
   },
   { immediate: true },
 )
@@ -133,13 +144,14 @@ function scrollToBottom() {
 watch(() => messages.value.length, scrollToBottom)
 
 /**
- * 對話結束：更新課程頁的活動狀態，並確保報告開始產生。
- * 新的後端結束時就會自動開始；舊的後端要呼叫 startReport 才會開始。可以重複呼叫，不會重做。
- * 這裡失敗不要緊：進個人報告頁時還會再呼叫一次。
+ * 對話結束：更新課程頁的活動狀態，確保報告開始產生，然後直接到個人報告頁。
+ * 新的後端結束時就會自動開始產生報告；舊的後端要呼叫 startReport 才會開始。可以重複呼叫，不會重做。
+ * 用 replace：按上一頁不會回到已經結束的對話頁。
  */
 function markFinished() {
   void queryClient.invalidateQueries({ queryKey: courseKeys.topics(courseId.value) })
   void sessionsApi.startReport(sessionId.value).catch(() => undefined)
+  void router.replace(reportLink.value)
 }
 
 async function handleSend(text: string) {
@@ -181,6 +193,7 @@ async function handleSend(text: string) {
         else if (done.is_completed) status.value = 'completed'
         endingReason.value = done.ending_reason ?? null
         awaitingConsent.value = status.value === 'open' && done.awaiting_end_consent
+        canFinishEarly.value = !!done.can_finish_early
       },
     })
     reply.pending = false
@@ -192,7 +205,6 @@ async function handleSend(text: string) {
     if (fresh && fresh.completed_turns > usedTurns.value) {
       queryClient.setQueryData(sessionKeys.messages(sessionId.value), fresh)
       pendingRequest = null
-      if (fresh.session_status === 'completed' || fresh.session_status === 'ended') markFinished()
       return
     }
     messages.value = messages.value.filter((m) => !m.message_id.endsWith(`-${stamp}`))
@@ -231,6 +243,7 @@ function applyEnd(result: EndResult) {
   status.value = result.session_status
   endingReason.value = result.ending_reason ?? null
   awaitingConsent.value = false
+  canFinishEarly.value = !!result.can_finish_early
   void queryClient.invalidateQueries({ queryKey: sessionKeys.messages(sessionId.value) })
 }
 const endNow = useMutation({
@@ -255,35 +268,25 @@ watch(consentOpen, (isOpen) => {
   }
 })
 
-// 6. 放棄探究：保留不算完成，回到課程頁（照 Prototype 的 P07）
-const abandonOpen = ref(false)
-const abandon = useMutation({
-  mutationFn: () => sessionsApi.end(sessionId.value, 'abandon'),
-  onSuccess: async () => {
-    abandonOpen.value = false
-    queryClient.removeQueries({ queryKey: ['topics', topicId.value, 'my-session'] })
-    await queryClient.invalidateQueries({ queryKey: courseKeys.topics(courseId.value) })
-    await router.push({ name: 'StudentCourse', params: { courseId: courseId.value } })
+// 6. 提早結束：回答滿 3 次後才能用，先確認再送 finish
+const finishOpen = ref(false)
+const finishError = ref('')
+function askFinish() {
+  finishError.value = ''
+  finishOpen.value = true
+}
+const finishEarly = useMutation({
+  mutationFn: () => sessionsApi.end(sessionId.value, 'finish'),
+  onSuccess: (result) => {
+    finishOpen.value = false
+    applyEnd(result)
+    if (finished.value) markFinished()
   },
-  onError: (err) => {
-    abandonOpen.value = false
-    sendError.value = getApiErrorMessage(err, t('chat.abandonFailed'))
-  },
+  onError: (err) => (finishError.value = getApiErrorMessage(err, t('chat.finishEarlyFailed'))),
 })
 
 const studentName = computed(() => authStore.user?.name ?? t('common.student'))
 const remaining = computed(() => Math.max(0, maxTurns.value - usedTurns.value))
-const finishedText = computed(() =>
-  endingReason.value === 'turn_limit'
-    ? t('chat.finishedTurnLimit')
-    : endingReason.value === 'student_requested_stop'
-      ? t('chat.finishedEarly')
-      : t('chat.finished'),
-)
-const reportLink = computed(() => ({
-  name: 'StudentReport',
-  params: { courseId: courseId.value, sessionId: sessionId.value, tab: 'personal' },
-}))
 </script>
 
 <template>
@@ -299,13 +302,13 @@ const reportLink = computed(() => ({
           },
         ]"
       >
-        <template v-if="sessionId && !finished && !closed" #after-title>
+        <template v-if="sessionId && canFinishEarly && !finished && !closed" #after-title>
           <Button
             variant="secondary"
             size="sm"
-            :disabled="isStreaming || abandon.isPending.value"
-            @click="abandonOpen = true"
-            >{{ t('chat.abandon') }}</Button
+            :disabled="isStreaming || finishEarly.isPending.value || endNow.isPending.value"
+            @click="askFinish"
+            >{{ t('chat.finishEarly') }}</Button
           >
         </template>
       </PageTitle>
@@ -336,24 +339,12 @@ const reportLink = computed(() => ({
         </ol>
 
         <div
-          v-if="finished || closed"
+          v-if="closed"
           :class="[cardClass, 'mt-4 flex flex-col items-center gap-4 p-6 text-center']"
         >
           <p class="text-h2-title text-foreground">
-            {{
-              finished
-                ? finishedText
-                : status === 'abandoned'
-                  ? t('chat.abandoned')
-                  : t('chat.closed')
-            }}
+            {{ status === 'abandoned' ? t('chat.abandoned') : t('chat.closed') }}
           </p>
-          <p v-if="finished" class="text-body-lg text-muted-foreground">
-            {{ t('chat.preparingReport') }}
-          </p>
-          <Button v-if="finished" as-child size="lg">
-            <RouterLink :to="reportLink">{{ t('chat.viewReport') }}</RouterLink>
-          </Button>
         </div>
       </QueryState>
       <div ref="listEnd" />
@@ -371,13 +362,13 @@ const reportLink = computed(() => ({
     />
 
     <ConfirmDialog
-      v-model:open="abandonOpen"
-      :title="t('chat.abandonTitle')"
-      :description="t('chat.abandonDescription')"
-      :confirm-text="t('chat.abandonConfirm')"
-      destructive
-      :loading="abandon.isPending.value"
-      @confirm="abandon.mutate()"
+      v-model:open="finishOpen"
+      :title="t('chat.finishEarlyTitle')"
+      :description="t('chat.finishEarlyDescription')"
+      :confirm-text="t('chat.finishEarlyConfirm')"
+      :loading="finishEarly.isPending.value"
+      :error="finishError"
+      @confirm="finishEarly.mutate()"
     />
 
     <div class="sticky bottom-0 z-10">

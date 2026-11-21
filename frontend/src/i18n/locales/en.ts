@@ -383,19 +383,16 @@ export default {
     summary: 'Class summary',
   },
   chat: {
+    finishEarly: 'Finish early',
+    finishEarlyTitle: 'Finish this inquiry early?',
+    finishEarlyDescription:
+      "You won't be able to answer after this. Your personal report will be based on the dialogue so far, and anything not yet discussed will be marked in it.",
+    finishEarlyConfirm: 'Finish early',
+    finishEarlyFailed: "Couldn't finish. Please try again later.",
     title: 'Inquiry - {title}',
-    abandon: 'Quit inquiry',
-    abandonTitle: 'Quit this inquiry?',
-    abandonDescription:
-      'This conversation will not count as completed and no report will be created. You can start again from the course page.',
-    abandonConfirm: 'Quit',
-    abandonFailed: 'Could not quit. Please try again later.',
     noReply: 'SocratesBot did not reply. Please send again.',
     loadError: 'Could not open the conversation',
     log: 'Conversation',
-    finished: 'This inquiry is complete!',
-    finishedTurnLimit: "You've used all the turns — this inquiry is complete!",
-    finishedEarly: 'You finished this inquiry early.',
     goalReachedTitle: "You've reached the goal of this inquiry!",
     goalReachedDescription:
       "End now and get your personal report? You can also keep answering — you'll still get a report when the turns run out.",
@@ -405,9 +402,6 @@ export default {
     continueFailed: "Couldn't continue. Please try again later.",
     closed: 'The teacher has closed this activity',
     abandoned: "You abandoned this inquiry, so you can't answer anymore",
-    preparingReport:
-      'SocratesBot is preparing your personal report to show how your thinking changed.',
-    viewReport: 'View my report',
     thinking: 'SocratesBot is thinking',
     placeholder: 'Type your answer...',
     inputLabel: 'Your answer',

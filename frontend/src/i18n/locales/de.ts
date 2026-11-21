@@ -389,19 +389,16 @@ export default {
     summary: 'Klassenzusammenfassung',
   },
   chat: {
+    finishEarly: 'Vorzeitig beenden',
+    finishEarlyTitle: 'Diese Untersuchung vorzeitig beenden?',
+    finishEarlyDescription:
+      'Danach können Sie nicht mehr antworten. Ihr persönlicher Bericht basiert auf dem bisherigen Dialog; noch nicht besprochene Punkte werden darin markiert.',
+    finishEarlyConfirm: 'Vorzeitig beenden',
+    finishEarlyFailed: 'Beenden fehlgeschlagen. Bitte später erneut versuchen.',
     title: 'Forschung - {title}',
-    abandon: 'Forschung abbrechen',
-    abandonTitle: 'Diese Forschung abbrechen?',
-    abandonDescription:
-      'Dieser Dialog gilt nicht als abgeschlossen und es wird kein persönlicher Bericht erstellt. Sie können auf der Kursseite neu beginnen.',
-    abandonConfirm: 'Abbrechen',
-    abandonFailed: 'Abbrechen fehlgeschlagen. Bitte später erneut versuchen.',
     noReply: 'SocratesBot hat nicht geantwortet. Bitte erneut senden.',
     loadError: 'Dialog konnte nicht geöffnet werden',
     log: 'Dialogverlauf',
-    finished: 'Diese Forschung ist abgeschlossen!',
-    finishedTurnLimit: 'Alle Runden sind verbraucht – diese Untersuchung ist abgeschlossen!',
-    finishedEarly: 'Sie haben diese Untersuchung vorzeitig beendet.',
     goalReachedTitle: 'Sie haben das Ziel dieser Untersuchung erreicht!',
     goalReachedDescription:
       'Jetzt beenden und den persönlichen Bericht erhalten? Sie können auch weiter antworten – wenn die Runden verbraucht sind, gibt es ebenfalls einen Bericht.',
@@ -411,9 +408,6 @@ export default {
     continueFailed: 'Fortsetzen fehlgeschlagen. Bitte später erneut versuchen.',
     closed: 'Die Lehrkraft hat die Antworten für diese Aktivität geschlossen',
     abandoned: 'Sie haben diese Untersuchung abgebrochen und können nicht mehr antworten',
-    preparingReport:
-      'SocratesBot erstellt Ihren persönlichen Bericht. Sehen Sie, wie sich Ihr Denken verändert hat.',
-    viewReport: 'Persönlichen Bericht ansehen',
     thinking: 'SocratesBot denkt nach',
     placeholder: 'Antwort eingeben...',
     inputLabel: 'Ihre Antwort',

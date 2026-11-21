@@ -383,19 +383,16 @@ export default {
     summary: '학급 정리',
   },
   chat: {
+    finishEarly: '일찍 마치기',
+    finishEarlyTitle: '이번 탐구를 일찍 마칠까요?',
+    finishEarlyDescription:
+      '마치면 더 이상 답할 수 없습니다. 지금까지의 대화로 개인 보고서를 만들고, 아직 다루지 못한 부분은 보고서에 표시됩니다.',
+    finishEarlyConfirm: '일찍 마치기',
+    finishEarlyFailed: '마치지 못했습니다. 잠시 후 다시 시도해 주세요',
     title: '탐구 - {title}',
-    abandon: '탐구 포기',
-    abandonTitle: '이 탐구를 포기할까요?',
-    abandonDescription:
-      '이 대화는 완료로 처리되지 않으며 개인 보고서도 만들어지지 않습니다. 강좌 페이지에서 다시 시작할 수 있습니다.',
-    abandonConfirm: '포기',
-    abandonFailed: '포기하지 못했습니다. 잠시 후 다시 시도해 주세요.',
     noReply: 'SocratesBot이 답하지 않았습니다. 다시 보내 주세요.',
     loadError: '대화를 열지 못했습니다',
     log: '대화 기록',
-    finished: '이번 탐구가 끝났습니다!',
-    finishedTurnLimit: '답변 횟수를 모두 사용해 이번 탐구가 끝났습니다!',
-    finishedEarly: '이번 탐구를 일찍 마쳤습니다.',
     goalReachedTitle: '이번 탐구의 목표를 달성했습니다!',
     goalReachedDescription:
       '지금 마치고 개인 보고서를 만들까요? 계속 답할 수도 있으며, 횟수를 모두 쓰면 그때도 보고서가 만들어집니다.',
@@ -405,9 +402,6 @@ export default {
     continueFailed: '계속하지 못했습니다. 잠시 후 다시 시도해 주세요',
     closed: '선생님이 이 활동의 답변을 마감했습니다',
     abandoned: '이 탐구를 포기해서 더 이상 답할 수 없습니다',
-    preparingReport:
-      'SocratesBot이 개인 보고서를 만들고 있습니다. 생각이 어떻게 바뀌었는지 살펴보세요.',
-    viewReport: '개인 보고서 보기',
     thinking: 'SocratesBot이 생각하고 있습니다',
     placeholder: '답변 입력...',
     inputLabel: '답변',

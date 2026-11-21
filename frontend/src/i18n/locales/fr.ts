@@ -385,19 +385,16 @@ export default {
     summary: 'Synthèse de la classe',
   },
   chat: {
+    finishEarly: 'Terminer plus tôt',
+    finishEarlyTitle: 'Terminer cette enquête plus tôt ?',
+    finishEarlyDescription:
+      "Vous ne pourrez plus répondre ensuite. Votre rapport personnel s'appuiera sur le dialogue actuel, et les points non abordés y seront signalés.",
+    finishEarlyConfirm: 'Terminer plus tôt',
+    finishEarlyFailed: 'Impossible de terminer. Réessayez plus tard.',
     title: 'Enquête - {title}',
-    abandon: 'Abandonner l’enquête',
-    abandonTitle: 'Abandonner cette enquête ?',
-    abandonDescription:
-      'Ce dialogue ne sera pas compté comme terminé et aucun rapport personnel ne sera créé. Vous pourrez recommencer depuis la page du cours.',
-    abandonConfirm: 'Abandonner',
-    abandonFailed: 'Impossible d’abandonner. Réessayez plus tard.',
     noReply: 'SocratesBot n’a pas répondu. Renvoyez votre message.',
     loadError: 'Impossible d’ouvrir le dialogue',
     log: 'Historique du dialogue',
-    finished: 'Cette enquête est terminée !',
-    finishedTurnLimit: 'Vous avez utilisé tous les tours : cette enquête est terminée !',
-    finishedEarly: 'Vous avez terminé cette enquête plus tôt.',
     goalReachedTitle: "Vous avez atteint l'objectif de cette enquête !",
     goalReachedDescription:
       'Terminer maintenant et obtenir votre rapport personnel ? Vous pouvez aussi continuer : un rapport sera tout de même créé à la fin des tours.',
@@ -407,9 +404,6 @@ export default {
     continueFailed: 'Impossible de continuer. Réessayez plus tard.',
     closed: 'L’enseignant a clôturé les réponses à cette activité',
     abandoned: 'Vous avez abandonné cette enquête : vous ne pouvez plus répondre',
-    preparingReport:
-      'SocratesBot prépare votre rapport personnel. Découvrez comment votre réflexion a évolué.',
-    viewReport: 'Voir le rapport personnel',
     thinking: 'SocratesBot réfléchit',
     placeholder: 'Saisissez votre réponse...',
     inputLabel: 'Votre réponse',

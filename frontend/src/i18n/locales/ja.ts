@@ -382,19 +382,16 @@ export default {
     summary: 'クラスのまとめ',
   },
   chat: {
+    finishEarly: '早めに終える',
+    finishEarlyTitle: '今回の探究を早めに終えますか？',
+    finishEarlyDescription:
+      '終えると回答できなくなります。ここまでの対話をもとに個人レポートを作成し、まだ話し合っていない部分はレポートに記載されます。',
+    finishEarlyConfirm: '早めに終える',
+    finishEarlyFailed: '終了できませんでした。しばらくしてからお試しください',
     title: '探究 - {title}',
-    abandon: '探究をやめる',
-    abandonTitle: 'この探究をやめますか？',
-    abandonDescription:
-      'この対話は完了扱いにならず、個人レポートも作られません。コースのページからやり直せます。',
-    abandonConfirm: 'やめる',
-    abandonFailed: 'やめられませんでした。しばらくしてからお試しください。',
     noReply: 'SocratesBot から返信がありません。もう一度送信してください。',
     loadError: '対話を開けませんでした',
     log: '対話の記録',
-    finished: '今回の探究は終わりました！',
-    finishedTurnLimit: '回答回数を使い切りました。今回の探究は終わりです！',
-    finishedEarly: '今回の探究を早めに終えました。',
     goalReachedTitle: '今回の探究の目標を達成しました！',
     goalReachedDescription:
       'ここで終えて個人レポートを作成しますか？回答を続けることもできます。回数を使い切ったときにもレポートが作成されます。',
@@ -404,9 +401,6 @@ export default {
     continueFailed: '続けられませんでした。しばらくしてからお試しください',
     closed: '先生がこのアクティビティの回答を締め切りました',
     abandoned: 'この探究は放棄したため、もう回答できません',
-    preparingReport:
-      'SocratesBot が個人レポートを作っています。考えがどう変わったか見てみましょう。',
-    viewReport: '個人レポートを見る',
     thinking: 'SocratesBot が考えています',
     placeholder: '回答を入力...',
     inputLabel: '回答',
