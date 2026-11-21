@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import ActiveUser, TeacherUser, get_db
 from app.api.openapi_responses import SUMMARY_PUBLISH_RESPONSES, json_detail_example
 from app.schemas.summary import (
+    ConversationStatusResponse,
+    EndConversationRequest,
     PublishedSummaryResponse,
     PublishSummaryResponse,
     ReviewSummaryResponse,
@@ -161,3 +163,45 @@ async def read_published_summary(
 ) -> PublishedSummaryResponse:
     """Return the published summary for a member of the course."""
     return await summary_service.read_published(db, user=current_user, topic_id=topicId)
+
+
+@router.get(
+    "/topics/{topicId}/conversation-status", response_model=ConversationStatusResponse
+)
+async def read_conversation_status(
+    topicId: UUID, teacher: TeacherUser, db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """Query open-dialogue count before showing the teacher confirmation."""
+    from app.services.conversation_closure import read_status
+
+    return await read_status(db, teacher=teacher, topic_id=topicId)
+
+
+@router.post(
+    "/topics/{topicId}/end-conversation",
+    response_model=ConversationStatusResponse,
+    responses={
+        400: {"description": "Activity still in setup."},
+        403: {"description": "Teacher role and course instructor membership required."},
+        404: {"description": "Topic not found."},
+        409: {
+            "description": "Confirmation required; detail contains code and current open_dialogue_count."
+        },
+    },
+)
+async def end_conversation(
+    topicId: UUID,
+    payload: EndConversationRequest,
+    teacher: TeacherUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Permanently end Stage2, queue personal reports, then automatically synthesize.
+
+    confirm_open_dialogues=true authorizes closing currently open dialogues.
+    Returns job status; use GET summary to poll the draft. No automatic publication.
+    """
+    from app.services.conversation_closure import close
+
+    return await close(
+        db, teacher=teacher, topic_id=topicId, confirm=payload.confirm_open_dialogues
+    )

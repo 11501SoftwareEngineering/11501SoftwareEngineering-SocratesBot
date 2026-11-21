@@ -46,53 +46,7 @@ async def _enqueue(db: AsyncSession, topic_id: UUID) -> None:
     latest = await summary_crud.latest_attempt(db, topic_id)
     if _attempt_running(latest):
         return
-    try:
-        rows = await summary_crud.ready_native_reports(db, topic_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if not rows:
-        raise HTTPException(status_code=400, detail="No ready reports")
-    if len(rows) > 50:
-        raise HTTPException(
-            status_code=413, detail="Stage3 supports at most 50 reports per topic"
-        )
-    try:
-        reports = [
-            from_native(row["report_id"], row["metadata"]).model_dump() for row in rows
-        ]
-        validated = validate_reports(reports)
-        if validated[0].topicKey != inquiry_key(brief_of(topic)):
-            raise ValueError("Inquiry revision mismatch")
-    except (ValueError, KeyError, TypeError) as exc:
-        raise HTTPException(
-            status_code=409,
-            detail="Regenerate personal reports with matching native evidence before class synthesis",
-        ) from exc
-    request = {
-        "schema_version": "native-central-request-v1",
-        "reports": reports,
-        "sources": [
-            {
-                "report_id": row["report_id"],
-                "session_id": row["session_id"],
-                "source_digest": row["metadata"]["source_digest"],
-            }
-            for row in rows
-        ],
-        "model_id": topic.model_id or settings.OPENAI_MODEL,
-        "content_language": topic.content_language or settings.DEFAULT_LANGUAGE_CODE,
-    }
-    try:
-        summary_runner.prepare_request(request)
-    except UnsupportedModelTokenizerError as exc:
-        raise HTTPException(
-            status_code=503, detail="Configured model tokenizer is not supported"
-        ) from exc
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=413,
-            detail="Stage3 request exceeds supported size or model budget",
-        ) from exc
+    request = await native_request(db, topic)
     created = await summary_crud.insert_attempt(
         db, topic_id=topic_id, request_json=request
     )
@@ -471,3 +425,68 @@ async def _instructor_topic(db: AsyncSession, teacher: User, topic_id: UUID) -> 
             status_code=status.HTTP_403_FORBIDDEN, detail="Course instructor required"
         )
     return topic
+
+
+async def native_request(
+    db: AsyncSession,
+    topic: Topic,
+    *,
+    allow_empty: bool = False,
+    model_id: str | None = None,
+    language: str | None = None,
+) -> dict:
+    """Freeze ready native evidence; caller owns topic lock and lifecycle checks."""
+    topic_id = topic.id
+    try:
+        rows = await summary_crud.ready_native_reports(db, topic_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not rows and not allow_empty:
+        raise HTTPException(status_code=400, detail="No ready reports")
+    if len(rows) > 50:
+        raise HTTPException(
+            status_code=413, detail="Stage3 supports at most 50 reports per topic"
+        )
+    try:
+        reports = [
+            from_native(row["report_id"], row["metadata"]).model_dump() for row in rows
+        ]
+        validated = validate_reports(reports) if reports else []
+        if validated and validated[0].topicKey != inquiry_key(brief_of(topic)):
+            raise ValueError("Inquiry revision mismatch")
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Regenerate personal reports with matching native evidence before class synthesis",
+        ) from exc
+    request = {
+        "schema_version": "native-central-request-v1",
+        "reports": reports,
+        "sources": [
+            {
+                "report_id": row["report_id"],
+                "session_id": row["session_id"],
+                "source_digest": row["metadata"]["source_digest"],
+            }
+            for row in rows
+        ],
+        "model_id": model_id or topic.model_id or settings.OPENAI_MODEL,
+        "content_language": language
+        or topic.content_language
+        or settings.DEFAULT_LANGUAGE_CODE,
+    }
+    if allow_empty:
+        request["allow_empty_cohort"] = True
+        request["inquiry"] = brief_of(topic)
+    try:
+        summary_runner.prepare_request(request)
+    except UnsupportedModelTokenizerError as exc:
+        raise HTTPException(
+            status_code=503, detail="Configured model tokenizer is not supported"
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=413,
+            detail="Stage3 request exceeds supported size or model budget",
+        ) from exc
+    return request

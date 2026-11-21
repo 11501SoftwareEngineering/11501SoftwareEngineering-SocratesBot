@@ -108,3 +108,91 @@ def test_native_cohort_publication_and_entry_gate(monkeypatch):
             assert await summary_crud.published_document(db, topic.id) is None
 
     asyncio.run(run())
+
+
+def test_teacher_cutoff_zero_answer_report_and_automatic_summary(monkeypatch):
+    from contextlib import asynccontextmanager
+
+    from sqlalchemy import func, select
+
+    from app.crud import message as message_crud
+    from app.services import conversation_closure, report_runner, reports
+
+    monkeypatch.setattr(report_runner, "schedule", lambda _id: None)
+    monkeypatch.setattr(summary_runner, "schedule", lambda _id: None)
+
+    async def run():
+        async with session_test_db() as db:
+            course, topic = await create_course_and_topic(db, stage="conversation")
+            db.add(CourseInstructor(course_id=course.id, teacher_id=course.created_by))
+            for key, value in vars(inputs()[1]).items():
+                setattr(topic, key, value)
+            student = await create_student(db)
+            session = Session(topic_id=topic.id, user_id=student.id, goal_reached=False)
+            db.add(session)
+            await db.flush()
+            teacher = await db.get(User, course.created_by)
+            status = await conversation_closure.read_status(
+                db, teacher=teacher, topic_id=topic.id
+            )
+            assert status["open_dialogue_count"] == 1
+            with pytest.raises(HTTPException) as caught:
+                await conversation_closure.close(
+                    db, teacher=teacher, topic_id=topic.id, confirm=False
+                )
+            assert caught.value.status_code == 409
+            result = await conversation_closure.close(
+                db, teacher=teacher, topic_id=topic.id, confirm=True
+            )
+            assert result["stage2_closed"] and result["ended_dialogue_count"] == 1
+            assert session.outcome == "ended" and not session.goal_reached
+            assert (
+                session.ending_reason == "teacher_ended_stage2"
+                and session.completed_at is None
+            )
+            # The same row reload used by an in-flight reply sees the terminal cutoff.
+            assert (await message_crud.lock_session(db, session.id)).outcome == "ended"
+            other = await create_student(db)
+            with pytest.raises(HTTPException) as entry:
+                await session_crud.insert_session_id(
+                    db, user_id=other.id, topic_id=topic.id
+                )
+            assert entry.value.status_code == 400
+            personal = await db.scalar(
+                select(ReportAttempt).where(ReportAttempt.session_id == session.id)
+            )
+            attempt = await summary_crud.latest_attempt(db, topic.id)
+
+            @asynccontextmanager
+            async def session_factory():
+                yield db
+
+            monkeypatch.setattr(report_runner, "AsyncSessionLocal", session_factory)
+            monkeypatch.setattr(summary_runner, "AsyncSessionLocal", session_factory)
+            await report_runner.run_report(personal.id)
+            await db.refresh(personal)
+            assert personal.status == "ready"
+            individual = await reports.read_student_report(
+                db, user_id=student.id, session_id=session.id
+            )
+            assert individual["report"]["evidence_status"] == "insufficient"
+            assert individual["report"]["completed_turns"] == 0
+            await summary_runner.run_summary(attempt.id)
+            await db.refresh(attempt)
+            assert attempt.status == "ready"
+            draft = await summary_crud.latest_summary(db, topic.id)
+            assert draft.body["denominator"] == 0 and draft.body["groups"] == []
+            assert draft.body["published"] is None
+            await conversation_closure.close(
+                db, teacher=teacher, topic_id=topic.id, confirm=False
+            )
+            assert (
+                await db.scalar(
+                    select(func.count())
+                    .select_from(ReportAttempt)
+                    .where(ReportAttempt.session_id == session.id)
+                )
+                == 1
+            )
+
+    asyncio.run(run())

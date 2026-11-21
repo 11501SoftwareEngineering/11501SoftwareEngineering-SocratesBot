@@ -1,6 +1,6 @@
 # AI backend API contract and sequences
 
-Contract revision 7, 21 November 2026. Reconciled against PR #272 implementation `cf2c335` (including its dependency stack). Paths have the `/api/v1` prefix. This is a PR contract, not a statement that these changes are deployed.
+Contract revision 8 (local teacher-closure proposal), 21 November 2026. Reconciled against PR #272 implementation `cf2c335` (including its dependency stack). Paths have the `/api/v1` prefix. This is a PR contract, not a statement that these changes are deployed.
 
 - [PR #272 documentation preview](https://11501SoftwareEngineering.github.io/11501SoftwareEngineering-SocratesBot/pr-preview/pr-272/docs/) follows the published PR head after its docs workflow succeeds.
 - [Main documentation](https://11501SoftwareEngineering.github.io/11501SoftwareEngineering-SocratesBot/docs/) follows the main deployment workflow; it does not include unmerged PR changes. Documentation deployment does not prove the backend service has been deployed.
@@ -107,7 +107,7 @@ Retry the same logical submission with the same `request_id` **and content**. On
 
 At the final allowed student answer, the backend commits the reply, progress, outcome `ended`, reason `turn_limit`, and pending report in one transaction. It requires no subsequent end request. Report model work starts after commit. A provider failure before reply persistence leaves the answer uncommitted; retry the same request ID. Browser closure is not an ending action.
 
-History, end and SSE done expose `report_eligible`, `ending_reason`, `can_finish_early`. SSE also exposes `session_status` and `goal_reached`. Use outcome/report_eligible to navigate, NOT is_completed alone: is_completed retains its completed-outcome meaning, and is false for ended sessions. At the cap consent is false even when the goal was achieved. End/history/SSE all preserve historical goal achievement. `ended_at` records any report-producing end; `completed_at` retains successful completion semantics. Report completion_reason is goal_reached/student_requested_stop/turn_limit (legacy completed remains readable).
+History, end and SSE done expose `report_eligible`, `ending_reason`, `can_finish_early`. SSE also exposes `session_status` and `goal_reached`. Use outcome/report_eligible to navigate, NOT is_completed alone: is_completed retains its completed-outcome meaning, and is false for ended sessions. At the cap consent is false even when the goal was achieved. End/history/SSE all preserve historical goal achievement. `ended_at` records any report-producing end; `completed_at` retains successful completion semantics. Report completion_reason is goal_reached/student_requested_stop/turn_limit/teacher_ended_stage2 (legacy completed remains readable).
 
 Repeated same terminal action returns200 without enqueuing another attempt. Finish after cap returns the existing ended result. Conflicting terminal actions return409. The session row lock serializes end and reply persistence across workers; if end wins, an in-flight model result cannot append to the closed transcript. Same-process busy replies return409. This does not guarantee exactly-once model billing.
 
@@ -224,9 +224,9 @@ POST `/topics/{topicId}/summary` requires **all existing dialogues for that topi
 
 Ready reports without matching native summary/source evidence must be regenerated using the existing teacher report retry endpoint. Source-digest or inquiry-setting mismatches return409 rather than silently omitting records or fabricating evidence. No ready cohort returns400. More than50 reports or an oversized payload/model request returns413. Unsupported model tokenization returns503. There is no automatic batching or truncation.
 
-A summary attempt freezes the selected report IDs, session IDs, source digests, converted native arguments, language and activity model. Model material contains temporary labels and evidence-grounded argument summaries, not raw transcripts or database IDs. The model proposes groups based on positions and reasons, with shared values, assumptions, internal differences and discussion questions. Backend validation rejects duplicate, unknown or ineligible membership and computes all counts/percentages. Inconclusive and unassigned reports remain in the denominator and appear as ungrouped in the existing public DTO; privately they form Still exploring. If all reports are unclassifiable, the backend creates an honest deterministic summary without calling the provider.
+A summary attempt freezes the selected report IDs, session IDs, source digests, converted native arguments, language and activity model. Model material contains temporary labels and evidence-grounded argument summaries, not raw transcripts or database IDs. The model proposes groups based on positions and reasons, with shared values, assumptions, internal differences and discussion questions. Backend validation rejects duplicate, unknown or ineligible membership and computes all counts/percentages. Participating inconclusive and unassigned reports remain in the denominator and appear as ungrouped in the existing public DTO; privately they form Still exploring. If all reports are unclassifiable, the backend creates an honest deterministic summary without calling the provider.
 
-During a live pending/processing summary lease, new session creation returns409; existing sessions remain readable. Topic locking serializes entry and synthesis. At ready commit, the backend rechecks open sessions and selected report IDs; a changed cohort fails the attempt instead of closing new dialogues or publishing a stale cohort. Failed/expired jobs do not permanently block session entry. Topic stage changes to summary only on successful ready commit. **Synthesis no longer changes open sessions to closed_by_summary.**
+During a live pending/processing summary lease, new session creation returns409; existing sessions remain readable. Topic locking serializes entry and synthesis. At ready commit, the backend rechecks open sessions and selected report IDs; a changed cohort fails the attempt instead of closing new dialogues or publishing a stale cohort. Failed/expired jobs do not permanently block session entry. For direct synthesis, topic stage changes to summary on successful ready commit. The explicit teacher closure operation below enters summary immediately, with preparation status indicating that reports/synthesis are still pending. **Synthesis no longer changes open sessions to closed_by_summary.**
 
 Native results and source mappings remain private in attempt/version JSON. Existing teacher `overview`/`viewpoint_summary` fields contain the projected native content; existing groups/count fields remain unchanged. Text edits retain private provenance and invalidate review. Publish uses the latest reviewed version and excludes private fields; regeneration preserves an existing published version until explicit replacement. Known names/identifiers and generated temporary-label leakage are checked, but this is not a guarantee of perfect anonymity or correct philosophical interpretation. Teacher review remains necessary.
 
@@ -354,7 +354,7 @@ Additions/clarifications:
 
 ### 5. Stage3: stricter readiness, background synthesis, same public projection
 
-POST `/topics/{topicId}/summary` remains the synthesis entry point. It now requires all existing topic dialogues non-open and the latest report attempt for **every** completed/ended session ready with compatible native evidence. A never-started student does not count as an open dialogue. An older ready body does not bypass a newer failed/pending attempt. Abandoned/historical closed-by-summary sessions are excluded. Ready inconclusive reports are included in the denominator.
+POST `/topics/{topicId}/summary` remains the synthesis entry point. It now requires all existing topic dialogues non-open and the latest report attempt for **every** completed/ended session ready with compatible native evidence. A never-started student does not count as an open dialogue. An older ready body does not bypass a newer failed/pending attempt. Abandoned/historical closed-by-summary sessions are excluded. Ready inconclusive reports with at least one student answer are included in the denominator. Zero-answer nonparticipants are excluded.
 
 A successful enqueue/reuse returns HTTP200, for example:
 
@@ -367,7 +367,7 @@ A successful enqueue/reuse returns HTTP200, for example:
 }
 ```
 
-This is not a completed draft. Existing topic/publication state can differ during regeneration. Poll GET `/topics/{topicId}/summary`: `preparation_status` reports pending/processing/ready/failed (null without an attempt); `summary` is the available stored version, and `published_version` independently identifies the student-visible version. Topic changes to summary only when a ready draft is committed. Background failures appear as failed status, not a retroactive HTTP error on the original POST.
+This is not a completed draft. Existing topic/publication state can differ during regeneration. Poll GET `/topics/{topicId}/summary`: `preparation_status` reports pending/processing/ready/failed (null without an attempt); `summary` is the available stored version, and `published_version` independently identifies the student-visible version. Direct synthesis changes the topic to summary when a ready draft is committed; explicit teacher closure enters summary immediately. Background failures appear as failed status, not a retroactive HTTP error on the original POST.
 
 | Start error | Meaning / recovery |
 |---|---|
@@ -404,3 +404,101 @@ Course owner's personal credential takes priority; otherwise the single server c
 Rollout must include the Chunk06 database migration for the new ending lifecycle; native Stage3 uses existing JSON storage and introduces no additional migration. Keep frontend outcome handling compatible with `ended`, poll job status independently from dialogue/goal state, and account for stricter Stage3 readiness and the temporary409 new-entry gate. Verify the deployed backend schema before adopting PR documentation.
 
 Evidence: implementation `cf2c335` passed584 API/unit/migration checks and32 real-Postgres integration tests. Documentation correction `459b816` passed12 focused export/example checks locally and SonarCloud remotely. This expanded guide changes prose only; no new runtime behavior or live-model quality claim. The full HTTP acceptance journey and latest preview deployment verification remain separate outstanding work.
+
+
+## Teacher-controlled Stage2 closure (local proposal, not deployed)
+
+This user-approved policy supersedes the requirement to rely on every student ending their own dialogue. New branch `codex/ai-teacher-stage2-closure` above rebased PR272 (`19e99d9`). These endpoints are not in main or the published PR preview until this proposal is published and deployed. No frontend changes or new database migration; existing topic phase, session endings and persisted job tables are reused.
+
+### Query counts before confirmation
+
+GET `/topics/{topicId}/conversation-status`, no body. Requires active global teacher and course instructor membership (same authorization as class synthesis). Returns:
+
+```json
+{
+  "topic_id": "11111111-1111-4111-8111-111111111111",
+  "topic_status": "conversation",
+  "open_dialogue_count": 4,
+  "stage2_closed": false,
+  "confirmation_required": true,
+  "ended_dialogue_count": 0,
+  "preparation_status": null
+}
+```
+
+`open_dialogue_count` counts existing sessions with outcome open; it does not count students who never entered. The read does not close sessions or start jobs. It is a current observation, not a reserved count. Common errors:401 unauthenticated,403 role/course access,404 topic missing,422 invalid UUID.
+
+### Confirm closure and automatically prepare Stage3
+
+POST `/topics/{topicId}/end-conversation`, body:
+
+```json
+{"confirm_open_dialogues": true}
+```
+
+The body is required; the boolean defaults to false when omitted from an object. With false, the backend rechecks the count under its locks and returns409 if there are still open dialogues, with no closure/job changes:
+
+```json
+{
+  "detail": {
+    "code": "open_dialogues_confirmation_required",
+    "open_dialogue_count": 4,
+    "message": "Confirm ending unfinished dialogues before closing Stage2"
+  }
+}
+```
+
+With true, confirmation authorizes ending the currently open sessions, including sessions created after the initial GET. Without open sessions, no override confirmation is needed. Setup activities return400. Other errors:401/403 authentication/authorization,404 topic missing,422 malformed request/path.
+
+Successful HTTP200 uses the same status structure: `topic_status=summary`, `stage2_closed=true`, `open_dialogue_count=0`, `confirmation_required=false`, `ended_dialogue_count` equals the number closed by this request, and preparation is pending (or an existing live/ready status on repeat). The backend does not synchronously return generated reports or a class draft.
+
+Transaction and job semantics:
+
+1. Lock topic (serializes new entry), then lock sessions (serializes reply commits). Recheck confirmation before mutations.
+2. End only open sessions with outcome `ended`, reason `teacher_ended_stage2`, server `ended_at`, and consent false. Preserve actual goal achievement and successful-completion metadata. The student three-answer finish minimum does not apply to teacher closure.
+3. Set topic phase to `summary` immediately, permanently closing Stage2. This means **summary phase is not evidence that a draft is ready or published**. Failed/expired jobs do not reopen dialogue entry.
+4. Queue missing/failed/expired eligible personal reports and one persisted summary preparation attempt in the transaction. Already-valid ready or live reports are reused. Schedule model work only after commit.
+5. The summary job waits for report completion, freezes native evidence using the selected model/language captured at closure, then runs normal classification and ready-cohort validation. It never silently drops a participating report that technically failed. Waiting is bounded to ten minutes; failure/expiry is recoverable through another explicit closure POST.
+6. Poll GET `/topics/{topicId}/summary` for pending/processing/ready/failed and the draft. GET conversation-status provides the open count/closed flag and current preparation state. Neither GET starts jobs. Existing teacher review/publish/withdraw APIs remain required.
+
+Replies committed before the cutoff are included. A model reply in flight when closure wins the session lock returns409 at persistence and cannot append to the closed transcript. Its provider cost may already have been incurred. Re-entering an existing ended session returns that terminal session; creating a new one is refused.
+
+Repeat closure reuses a live or ready summary job. After technical failure or lease expiry, it starts a replacement attempt while keeping Stage2 closed and reusing healthy reports. Incompatible legacy native evidence still requires teacher report regeneration using the existing report-retry endpoint; then retry closure. Regenerating an already-ready class draft intentionally continues to use POST summary, not repeated closure.
+
+### Zero answers and honest evidence
+
+Zero-answer sessions receive a deterministic ready personal report, without credentials/tokenizer/provider access. It has `evidence_status=insufficient`, an empty evidence timeline and a message such as "No student responses were submitted; there is no evidence to assess." It does not invent a position, reason or learning outcome. The report remains readable to the student.
+
+These sessions are excluded from group membership, ungrouped counts and the class-summary denominator. Students with one or more answers remain in the denominator even when their report is inconclusive. Exclusion is recorded in synthesis limitations. An all-zero or entirely empty cohort produces a deterministic evidence-insufficient draft with denominator0, no groups, no invented views and no model call; teacher review/publication remains separate.
+
+### Frontend sequence
+
+```mermaid
+sequenceDiagram
+    actor Teacher
+    participant UI as Frontend
+    participant API as Backend
+    participant DB as Postgres
+    participant Jobs as Report / summary jobs
+    Teacher->>UI: End Stage2 and prepare summary
+    UI->>API: GET conversation-status
+    API-->>UI: open_dialogue_count, closed flag, preparation status
+    opt Open dialogues exist
+        UI-->>Teacher: Warn with count; request confirmation
+        Teacher->>UI: Confirm
+    end
+    UI->>API: POST end-conversation (confirm_open_dialogues)
+    alt New/current open sessions and no confirmation
+        API-->>UI: 409 with current count; no closure
+    else Authorized closure
+        API->>DB: Lock topic/sessions; end open dialogues; phase summary; queue jobs; commit
+        API-->>UI: 200 closed=true, preparation_status=pending
+        API->>Jobs: Prepare/reuse personal reports, then synthesize
+        Note over UI,API: Students reload topic/history; close composer and show report preparation
+        UI->>API: GET summary (bounded polling)
+        API-->>UI: processing, ready draft, or failed
+        Teacher->>UI: Review and publish when ready
+    end
+```
+
+Frontend must treat closed phase and job readiness separately, handle a stale-count409, stop accepting replies after terminal history/409, and display failed preparation with retry rather than success. A backend cannot push-navigation to every open tab by itself: frontend must refresh/poll the existing topic/history status or handle the rejected next reply. Implementing frontend screens is outside this branch.

@@ -1,4 +1,4 @@
-"""Class-summary generation. Stage changes only in the ready commit."""
+"""Class synthesis, including report dependency waiting after teacher closure."""
 
 from __future__ import annotations
 
@@ -35,8 +35,20 @@ _SCHEMA = OUTPUT_SCHEMA
 
 
 def prepare_request(request: dict) -> tuple[list, dict, str]:
-    reports = validate_reports(request["reports"])
-    material = model_material(reports, request["content_language"])
+    if not request["reports"] and request.get("allow_empty_cohort"):
+        reports = []
+        material = {
+            "interfaceLanguage": request["content_language"],
+            "inquiry": {
+                "theme": request["inquiry"]["theme"],
+                "question": request["inquiry"]["inquiryQuestion"],
+                "focus": request["inquiry"]["inquiryFocus"],
+            },
+            "reports": [],
+        }
+    else:
+        reports = validate_reports(request["reports"])
+        material = model_material(reports, request["content_language"])
     encoded = json.dumps(material, ensure_ascii=False)
     prompt = prompt_for(PromptStage.CLASS_SUMMARY)
     if len(encoded.encode("utf-8")) > MAX_PAYLOAD_BYTES:
@@ -81,6 +93,8 @@ async def run_summary(attempt_id: UUID) -> None:
             refresh(summary_crud.extend_lease, attempt_id, _live)
         )
         try:
+            if request.get("schema_version") == "closed-stage2-v1":
+                request = await _wait_for_reports(attempt_id, request)
             reports, material, encoded = prepare_request(request)
             if material["reports"]:
                 parsed = await client.complete_object(
@@ -134,7 +148,10 @@ async def _begin(attempt_id: UUID) -> dict | None:
             await db.commit()
             return None
         request = dict(attempt.request_json or {})
-        if request.get("schema_version") != "native-central-request-v1":
+        if request.get("schema_version") not in {
+            "native-central-request-v1",
+            "closed-stage2-v1",
+        }:
             await summary_crud.mark_failed(db, attempt_id)
             await db.commit()
             return None
@@ -185,3 +202,16 @@ async def _ready(
             prompt_version=prompt_version,
         )
         await db.commit()
+
+
+async def _wait_for_reports(attempt_id: UUID, request: dict) -> dict:
+    from app.services.conversation_closure import prepare_closed_request
+
+    deadline = asyncio.get_running_loop().time() + 600
+    while asyncio.get_running_loop().time() < deadline:
+        async with AsyncSessionLocal() as db:
+            frozen = await prepare_closed_request(db, attempt_id, request)
+        if frozen is not None:
+            return frozen
+        await asyncio.sleep(1)
+    raise ValueError("Report preparation timed out; retry Stage2 transition")

@@ -34,6 +34,7 @@ class StrictModel(BaseModel):
 
 
 class CentralReport(StrictModel):
+    studentTurns: int = Field(default=1, ge=0, le=15)
     id: str = Field(min_length=1, max_length=100)
     topicKey: str
     theme: str = Field(max_length=INQUIRY_TEXT_LIMIT)
@@ -111,7 +112,9 @@ def from_native(report_id: str, metadata: dict) -> CentralReport:
     exchanges = {
         row["exchange"] for row in material["transcript"] if row["role"] == "user"
     }
-    if not exchanges or exchanges != set(range(1, len(exchanges) + 1)):
+    if exchanges != set(range(1, len(exchanges) + 1)) or (
+        not exchanges and summary.outcome != "inconclusive"
+    ):
         raise ValueError("Missing or invalid student exchanges")
     progress = ProgressOut.model_validate(
         material["finalProgress"] or empty_progress()
@@ -146,6 +149,7 @@ def from_native(report_id: str, metadata: dict) -> CentralReport:
     listed("revisionsOrDefences")
     return CentralReport(
         id=report_id,
+        studentTurns=len(exchanges),
         topicKey=inquiry_key(brief),
         theme=brief["theme"],
         inquiryQuestion=brief["inquiryQuestion"],
@@ -182,7 +186,8 @@ def from_native(report_id: str, metadata: dict) -> CentralReport:
 
 def classifiable(report: CentralReport) -> bool:
     return bool(
-        report.outcome not in {"interrupted", "inconclusive"}
+        report.studentTurns > 0
+        and report.outcome not in {"interrupted", "inconclusive"}
         and report.milestones["position"]
         and report.milestones["reason"]
         and report.position.strip()
@@ -253,12 +258,14 @@ def no_evidence_output(language: str) -> dict:
 
 
 def percentage(count: int, total: int) -> float:
-    return math.floor(count / total * 1000 + 0.5) / 10
+    return math.floor(count / total * 1000 + 0.5) / 10 if total else 0.0
 
 
 def finalize(raw: dict, reports: list[CentralReport], language: str) -> dict:
     """Private rich result plus existing DTO projection; no model arithmetic."""
-    reports = validate_reports([r.model_dump() for r in reports])
+    reports = validate_reports([r.model_dump() for r in reports]) if reports else []
+    nonparticipants = sum(r.studentTurns == 0 for r in reports)
+    denominator = len(reports) - nonparticipants
     output = CentralOutput.model_validate(raw)
     prose = [output.overview, *output.discussionQuestions, *output.limitations]
     for group in output.groups:
@@ -297,7 +304,7 @@ def finalize(raw: dict, reports: list[CentralReport], language: str) -> dict:
                 "id": f"group_{index}",
                 "kind": "viewpoint",
                 "count": count,
-                "percentage": percentage(count, len(reports)),
+                "percentage": percentage(count, denominator),
             }
         )
         public_groups.append(
@@ -306,11 +313,19 @@ def finalize(raw: dict, reports: list[CentralReport], language: str) -> dict:
                 "conditions": group.description,
                 "report_ids": members,
                 "count": count,
-                "percentage": percentage(count, len(reports)),
+                "percentage": percentage(count, denominator),
             }
         )
-    unassigned = [r.id for label, r in labels.items() if label not in seen]
+    unassigned = [
+        r.id for label, r in labels.items() if label not in seen and r.studentTurns > 0
+    ]
     limitations = list(output.limitations)
+    if nonparticipants:
+        limitations.append(
+            f"{nonparticipants} nonparticipant(s) submitted no responses and are excluded from counts."
+            if language == "en"
+            else f"{nonparticipants} 位學生未提交回答,不計入分母。"
+        )
     if any(classifiable(r) and label not in seen for label, r in labels.items()):
         limitations.append(
             "Some classifiable reports remain ungrouped; teacher review is required."
@@ -332,17 +347,17 @@ def finalize(raw: dict, reports: list[CentralReport], language: str) -> dict:
                 "assumptions": [],
                 "internalDifferences": [],
                 "count": len(unassigned),
-                "percentage": percentage(len(unassigned), len(reports)),
+                "percentage": percentage(len(unassigned), denominator),
             }
         )
     native = {
         "schema_version": "native-central-v1",
         "method": "central_llm",
         "reviewStatus": "needs_teacher_review",
-        "theme": reports[0].theme,
-        "inquiryQuestion": reports[0].inquiryQuestion,
-        "topicKey": reports[0].topicKey,
-        "totalReports": len(reports),
+        "theme": reports[0].theme if reports else "",
+        "inquiryQuestion": reports[0].inquiryQuestion if reports else "",
+        "topicKey": reports[0].topicKey if reports else "",
+        "totalReports": denominator,
         "eligibleReports": sum(classifiable(r) for r in reports),
         "completedReports": sum(r.outcome == "complete" for r in reports),
         "inProgressReports": 0,
@@ -370,7 +385,7 @@ def finalize(raw: dict, reports: list[CentralReport], language: str) -> dict:
     return {
         "overview": output.overview,
         "viewpoint_summary": "\n".join(details) or output.overview,
-        "denominator": len(reports),
+        "denominator": denominator,
         "groups": public_groups,
         "ungrouped_report_ids": unassigned,
         "native_synthesis": native,
