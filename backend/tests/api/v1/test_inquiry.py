@@ -364,7 +364,7 @@ def test_opening_message_is_stored(
     ):
         return {**GENERATED, "topic": "  ", "core_question": ""}
 
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", complete)
+    monkeypatch.setattr(OpenAIChatClient, "complete_opening", complete)
 
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/opening-message",
@@ -751,3 +751,48 @@ def test_teacher_or_ta_lists_inquiry_models_as_a_json_array(
             "output_price_usd": 0.5,
         }
     ]
+
+
+@pytest.mark.parametrize("language", ["en", "zh-TW", None])
+def test_opening_receives_effective_language(
+    auth_client, store, course_route_db, monkeypatch, language
+):
+    from app.core.config import settings
+
+    bearer, _ = _login(auth_client, store)
+    topic = _topic(content_language=language)
+    _ready(monkeypatch, topic)
+    call = AsyncMock(return_value={"opening_message": "A new opening?"})
+    monkeypatch.setattr(OpenAIChatClient, "complete_opening", call)
+    response = auth_client.post(
+        f"/api/v1/topics/{topic.id}/setup/opening-message",
+        headers={"Authorization": bearer},
+        json={"setup": {"topic": "Cities"}},
+    )
+    assert response.status_code == 200
+    assert (
+        f"content_language: {language or settings.DEFAULT_LANGUAGE_CODE}\n"
+        in call.call_args.kwargs["material"]
+    )
+
+
+@pytest.mark.parametrize(
+    "raw", [{}, {"opening_message": "  "}, {"opening_message": None}]
+)
+def test_invalid_opening_does_not_overwrite_saved_text(
+    auth_client, store, course_route_db, monkeypatch, raw
+):
+    bearer, _ = _login(auth_client, store)
+    topic = _topic(opening_message="Existing opening")
+    recorded = _ready(monkeypatch, topic)
+    monkeypatch.setattr(
+        OpenAIChatClient, "complete_opening", AsyncMock(return_value=raw)
+    )
+    response = auth_client.post(
+        f"/api/v1/topics/{topic.id}/setup/opening-message",
+        headers={"Authorization": bearer},
+        json={"setup": {"topic": "Cities"}},
+    )
+    assert response.status_code == 502
+    assert topic.opening_message == "Existing opening"
+    recorded.assert_not_awaited()

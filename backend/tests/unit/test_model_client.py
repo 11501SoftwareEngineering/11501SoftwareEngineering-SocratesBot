@@ -284,3 +284,29 @@ def test_default_model_is_a_valid_openrouter_id() -> None:
     field = type(settings).model_fields["OPENAI_MODEL"]
 
     assert field.default == "openai/gpt-6-luna"
+
+
+async def test_opening_has_own_schema_key_and_task_limits():
+    from app.services.model_client import limits_for
+
+    def handler(request):
+        body = json.loads(request.content)
+        schema = body["response_format"]["json_schema"]
+        assert schema["name"] == "inquiry_opening"
+        assert set(schema["schema"]["properties"]) == {"opening_message"}
+        assert schema["schema"]["required"] == ["opening_message"]
+        assert schema["schema"]["additionalProperties"] is False
+        assert body["max_tokens"] == 500
+        assert body["model"] == "test/model"
+        assert request.headers["authorization"] == "Bearer opening-test-key"
+        return _completion({"opening_message": "What would change your view?"})
+
+    result = await _client(handler).complete_opening(
+        instructions="Opening only",
+        material="content_language: en",
+        model="test/model",
+        api_key="opening-test-key",
+        max_tokens=2000,
+    )
+    assert result["opening_message"] == "What would change your view?"
+    assert limits_for("inquiry_opening").timeout_s == 45
