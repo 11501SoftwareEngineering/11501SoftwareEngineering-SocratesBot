@@ -49,7 +49,10 @@ export interface TeachingReport extends PersonalReport {
 /** GET /topics/{topicId}/reports 後端原始格式：每一筆是 { report_status, report, student_display_name } */
 interface TopicReportsResponse {
   class_size: number
+  /** 達成目標後結束的人數 */
   completed_count: number
+  /** 回合用完或提早結束的人數（後端 #267 新增；也有報告） */
+  ended_count?: number
   ready_count: number
   processing_count: number
   failed_count: number

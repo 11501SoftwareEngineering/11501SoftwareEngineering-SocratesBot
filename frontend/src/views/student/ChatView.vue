@@ -7,16 +7,25 @@ import AppBanner from '@/components/common/AppBanner.vue'
  *   POST /topics/{topicId}/sessions                 第一次進入時建立 Session
  *   GET  /sessions/{sessionId}/messages             歷史訊息、回合數
  *   POST /sessions/{sessionId}/messages/stream      送出回答，SSE 逐段接收回覆
- *   POST /sessions/{sessionId}/end                  放棄探究（abandon），之後回課程頁，照 Prototype
- * 只在回合用完時結束：AI 組還沒定「達成目標提早結束」的規則，所以不處理 awaiting_end_consent
- * （不顯示「要結束這次探究嗎？」，也不送 complete／continue）。
+ *   POST /sessions/{sessionId}/end                  結束對話：complete／continue（達成目標時的選擇）、abandon（放棄）
+ * 結束規則（後端 #267、負責人決定）：
+ *   - AI 判斷達成目標（awaiting_end_consent）→ 跳出「結束／繼續」視窗；結束＝complete，繼續（或關掉視窗）＝continue
+ *   - 回合用完 → 後端自動結束（session_status: ended、ending_reason: turn_limit），不用學生按
+ *   - 學生回答 3 次後可以提早結束（finish）：按鈕怎麼擺還沒定，這裡先不做
+ *   - completed、ended 後端都會自動開始產生報告；這裡還是會呼叫一次 startReport（可重複呼叫），相容還沒更新的後端
  * 語音輸入用瀏覽器內建的語音辨識（useSpeechInput）；AI 訊息下面的喇叭用瀏覽器語音朗讀。
  */
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { courseKeys } from '@/api/courses'
-import { sessionKeys, sessionsApi, type DialogueStatus, type SessionMessage } from '@/api/sessions'
+import {
+  sessionKeys,
+  sessionsApi,
+  type DialogueStatus,
+  type EndingReason,
+  type SessionMessage,
+} from '@/api/sessions'
 import ChatBubble from '@/components/common/ChatBubble.vue'
 import ChatInput from '@/components/common/ChatInput.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -73,7 +82,11 @@ const messages = ref<DisplayMessage[]>([])
 const maxTurns = ref(0)
 const usedTurns = ref(0)
 const status = ref<DialogueStatus>('open')
-const completed = computed(() => status.value === 'completed')
+const endingReason = ref<EndingReason | null>(null)
+/** AI 判斷達成目標、等學生選擇 */
+const awaitingConsent = ref(false)
+/** 對話結束、可以看報告了（達成目標後結束，或回合用完／提早結束） */
+const finished = computed(() => status.value === 'completed' || status.value === 'ended')
 
 watch(
   () => messagesQuery.data.value,
@@ -83,6 +96,8 @@ watch(
     maxTurns.value = data.max_turns ?? 0
     usedTurns.value = data.completed_turns
     status.value = data.session_status
+    endingReason.value = data.ending_reason ?? null
+    awaitingConsent.value = data.session_status === 'open' && data.awaiting_end_consent
   },
   { immediate: true },
 )
@@ -96,7 +111,7 @@ const closed = computed(
   () =>
     status.value === 'abandoned' ||
     status.value === 'closed_by_summary' ||
-    (topic.value?.topic_status === 'summary' && !completed.value),
+    (topic.value?.topic_status === 'summary' && !finished.value),
 )
 
 function retryLoad() {
@@ -118,9 +133,9 @@ function scrollToBottom() {
 watch(() => messages.value.length, scrollToBottom)
 
 /**
- * 對話完成：更新課程頁的活動狀態，並請後端開始產生個人報告。
- * 結束對話不會自動產生報告，一定要呼叫 startReport；這樣學生看「探究結束」畫面時報告已經在做了。
- * 這裡失敗不要緊：進個人報告頁時還會再呼叫一次（可以重複呼叫，不會重做）。
+ * 對話結束：更新課程頁的活動狀態，並確保報告開始產生。
+ * 新的後端結束時就會自動開始；舊的後端要呼叫 startReport 才會開始。可以重複呼叫，不會重做。
+ * 這裡失敗不要緊：進個人報告頁時還會再呼叫一次。
  */
 function markFinished() {
   void queryClient.invalidateQueries({ queryKey: courseKeys.topics(courseId.value) })
@@ -162,19 +177,22 @@ async function handleSend(text: string) {
       onDone: (done) => {
         reply.message_id = done.message_id
         usedTurns.value = done.completed_turns
-        if (done.is_completed) status.value = 'completed'
+        if (done.session_status) status.value = done.session_status
+        else if (done.is_completed) status.value = 'completed'
+        endingReason.value = done.ending_reason ?? null
+        awaitingConsent.value = status.value === 'open' && done.awaiting_end_consent
       },
     })
     reply.pending = false
     pendingRequest = null
-    if (completed.value) markFinished()
+    if (finished.value) markFinished()
   } catch (err) {
     // 斷線或失敗：用後端的紀錄校準（回覆可能其實已經存好了）
     const fresh = await sessionsApi.messages(sessionId.value).catch(() => null)
     if (fresh && fresh.completed_turns > usedTurns.value) {
       queryClient.setQueryData(sessionKeys.messages(sessionId.value), fresh)
       pendingRequest = null
-      if (fresh.session_status === 'completed') markFinished()
+      if (fresh.session_status === 'completed' || fresh.session_status === 'ended') markFinished()
       return
     }
     messages.value = messages.value.filter((m) => !m.message_id.endsWith(`-${stamp}`))
@@ -195,7 +213,49 @@ function handleMic() {
   speech.toggle()
 }
 
-// 5. 放棄探究：保留不算完成，回到課程頁（照 Prototype 的 P07）
+// 5. 達成目標：問學生要結束還是繼續。關掉視窗（Esc、點背景、按「繼續回答」）都算繼續
+const consentOpen = ref(false)
+const consentError = ref('')
+watch(
+  [awaitingConsent, isStreaming],
+  ([awaiting, streaming]) => {
+    if (awaiting && !streaming) {
+      consentError.value = ''
+      consentOpen.value = true
+    }
+  },
+  { immediate: true },
+)
+type EndResult = Awaited<ReturnType<typeof sessionsApi.end>>
+function applyEnd(result: EndResult) {
+  status.value = result.session_status
+  endingReason.value = result.ending_reason ?? null
+  awaitingConsent.value = false
+  void queryClient.invalidateQueries({ queryKey: sessionKeys.messages(sessionId.value) })
+}
+const endNow = useMutation({
+  mutationFn: () => sessionsApi.end(sessionId.value, 'complete'),
+  onSuccess: (result) => {
+    consentOpen.value = false
+    applyEnd(result)
+    if (finished.value) markFinished()
+  },
+  onError: (err) => (consentError.value = getApiErrorMessage(err, t('chat.endFailed'))),
+})
+const keepGoing = useMutation({
+  mutationFn: () => sessionsApi.end(sessionId.value, 'continue'),
+  onSuccess: applyEnd,
+  onError: (err) => (sendError.value = getApiErrorMessage(err, t('chat.continueFailed'))),
+})
+watch(consentOpen, (isOpen) => {
+  // 學生沒選「結束」就關掉視窗 → 繼續對話
+  if (!isOpen && awaitingConsent.value && !endNow.isPending.value && !finished.value) {
+    awaitingConsent.value = false
+    keepGoing.mutate()
+  }
+})
+
+// 6. 放棄探究：保留不算完成，回到課程頁（照 Prototype 的 P07）
 const abandonOpen = ref(false)
 const abandon = useMutation({
   mutationFn: () => sessionsApi.end(sessionId.value, 'abandon'),
@@ -213,6 +273,13 @@ const abandon = useMutation({
 
 const studentName = computed(() => authStore.user?.name ?? t('common.student'))
 const remaining = computed(() => Math.max(0, maxTurns.value - usedTurns.value))
+const finishedText = computed(() =>
+  endingReason.value === 'turn_limit'
+    ? t('chat.finishedTurnLimit')
+    : endingReason.value === 'student_requested_stop'
+      ? t('chat.finishedEarly')
+      : t('chat.finished'),
+)
 const reportLink = computed(() => ({
   name: 'StudentReport',
   params: { courseId: courseId.value, sessionId: sessionId.value, tab: 'personal' },
@@ -232,7 +299,7 @@ const reportLink = computed(() => ({
           },
         ]"
       >
-        <template v-if="sessionId && !completed && !closed" #after-title>
+        <template v-if="sessionId && !finished && !closed" #after-title>
           <Button
             variant="secondary"
             size="sm"
@@ -269,28 +336,39 @@ const reportLink = computed(() => ({
         </ol>
 
         <div
-          v-if="completed || closed"
+          v-if="finished || closed"
           :class="[cardClass, 'mt-4 flex flex-col items-center gap-4 p-6 text-center']"
         >
           <p class="text-h2-title text-foreground">
             {{
-              completed
-                ? t('chat.finished')
+              finished
+                ? finishedText
                 : status === 'abandoned'
                   ? t('chat.abandoned')
                   : t('chat.closed')
             }}
           </p>
-          <p v-if="completed" class="text-body-lg text-muted-foreground">
+          <p v-if="finished" class="text-body-lg text-muted-foreground">
             {{ t('chat.preparingReport') }}
           </p>
-          <Button v-if="completed" as-child size="lg">
+          <Button v-if="finished" as-child size="lg">
             <RouterLink :to="reportLink">{{ t('chat.viewReport') }}</RouterLink>
           </Button>
         </div>
       </QueryState>
       <div ref="listEnd" />
     </div>
+
+    <ConfirmDialog
+      v-model:open="consentOpen"
+      :title="t('chat.goalReachedTitle')"
+      :description="t('chat.goalReachedDescription')"
+      :confirm-text="t('chat.endNow')"
+      :cancel-text="t('chat.keepGoing')"
+      :loading="endNow.isPending.value"
+      :error="consentError"
+      @confirm="endNow.mutate()"
+    />
 
     <ConfirmDialog
       v-model:open="abandonOpen"
@@ -307,7 +385,7 @@ const reportLink = computed(() => ({
         <AppBanner type="error">{{ sendError || speech.errorMessage.value }}</AppBanner>
       </div>
       <ChatInput
-        v-if="!completed && !closed"
+        v-if="!finished && !closed"
         v-model="draft"
         :remaining="maxTurns ? remaining : undefined"
         :total="maxTurns || undefined"

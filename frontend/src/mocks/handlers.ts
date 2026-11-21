@@ -9,7 +9,7 @@
  */
 import { delay, http, HttpResponse } from 'msw'
 import type { CourseRole, TaPermission } from '@/api/courses'
-import type { EndAction } from '@/api/sessions'
+import type { EndAction, PersonalReport } from '@/api/sessions'
 import type { TopicSetup } from '@/api/topics'
 import { USAGE_STAGES, type UsageStage } from '@/api/ai'
 import { mockOpening, mockRefine, mockReply, mockReport, mockSetup } from './ai'
@@ -166,7 +166,26 @@ function topicFor(user: DbUser, topicId: string | undefined) {
 const sessionsOf = (topicId: string) => db.sessions.filter((s) => s.topic_id === topicId)
 /** 對話 API 回傳的狀態是小寫的 outcome（open／completed／…），課程題目列表才用 IN_PROGRESS／COMPLETED */
 const dialogueStatus = (session: DbSession) =>
-  session.status === 'COMPLETED' ? 'completed' : 'open'
+  session.status !== 'COMPLETED'
+    ? 'open'
+    : session.ending_reason === 'turn_limit' || session.ending_reason === 'student_requested_stop'
+      ? 'ended'
+      : 'completed'
+
+/** 有沒有達成過目標；種子資料沒有這個欄位，已結束的當作達成目標後結束 */
+const goalOf = (session: DbSession) =>
+  session.goal_reached ??
+  (session.status === 'COMPLETED' && (session.ending_reason ?? 'goal_reached') === 'goal_reached')
+
+/** 讀訊息、結束對話、串流 done 都會帶的欄位（後端 #267 的 lifecycle_fields） */
+function lifecycle(session: DbSession) {
+  const open = session.status !== 'COMPLETED'
+  return {
+    report_eligible: !open,
+    ending_reason: open ? null : (session.ending_reason ?? 'goal_reached'),
+    can_finish_early: open && turnsOf(session) >= MIN_FINISH_TURNS,
+  }
+}
 const reportOf = (sessionId: string) => db.reports.find((r) => r.session_id === sessionId)
 const turnsOf = (session: DbSession) =>
   session.messages.filter((m) => m.sender === 'student').length
@@ -354,11 +373,23 @@ function draftSummary(topic: DbTopic, previous: DbSummary | undefined): DbSummar
 
 // ---------- 對話 ----------
 
-/** 對話完成。跟真後端一樣，不會自動產生個人報告（要等 POST /sessions/{id}/report） */
-export function completeSession(session: DbSession) {
+/** 學生回答幾次後可以提早結束（後端 MIN_FINISH_TURNS） */
+const MIN_FINISH_TURNS = 3
+
+/**
+ * 結束對話，並跟真後端（#267）一樣立刻開始產生個人報告。
+ * reason：goal_reached 達成目標後選結束｜turn_limit 回合用完｜student_requested_stop 提早結束
+ */
+export function completeSession(
+  session: DbSession,
+  reason: NonNullable<DbSession['ending_reason']> = 'goal_reached',
+) {
   session.status = 'COMPLETED'
   session.awaiting_end_consent = false
+  session.ending_reason = reason
+  if (reason === 'goal_reached') session.goal_reached = true
   session.completed_at = now()
+  startSessionReport(session)
 }
 
 /**
@@ -381,14 +412,39 @@ export function startSessionReport(session: DbSession) {
     // 報告要等 4 秒才「產生完成」，前端可以看到「產生中」的畫面
     ready_at: Date.now() + 4000,
     failed: false,
-    report: mockReport({
-      sessionId: session.id,
-      topic,
-      messages: session.messages,
-      anonymousId: `學生 ${String.fromCharCode(64 + Math.min(index, 26))}`,
-      completedAt: session.completed_at ?? now(),
-    }),
+    report: withEnding(
+      session,
+      mockReport({
+        sessionId: session.id,
+        topic,
+        messages: session.messages,
+        anonymousId: `學生 ${String.fromCharCode(64 + Math.min(index, 26))}`,
+        completedAt: session.completed_at ?? now(),
+      }),
+    ),
   })
+}
+
+/** 報告帶上結束原因；沒達成目標時照樣有報告，但證據標成部分不足並說明限制（負責人的決定） */
+function withEnding(session: DbSession, report: PersonalReport): PersonalReport {
+  const reason = session.ending_reason ?? 'goal_reached'
+  // 種子資料沒有 goal_reached：當作達成目標後結束
+  const goal = session.goal_reached ?? reason === 'goal_reached'
+  return {
+    ...report,
+    completion_reason: reason,
+    goal_reached: goal,
+    ended_at: session.completed_at,
+    ...(goal
+      ? {}
+      : {
+          evidence_status: report.completed_turns <= 2 ? 'insufficient' : 'partial',
+          limitations:
+            reason === 'turn_limit'
+              ? '回合用完時還沒有足夠的回應檢驗反方的挑戰，「修正或辯護」的判斷有限。'
+              : '提早結束，還沒有足夠的回應檢驗反方的挑戰，「修正或辯護」的判斷有限。',
+        }),
+  }
 }
 
 /** 沒有報告（還沒人開始產生）時回 null */
@@ -1020,8 +1076,9 @@ export const handlers = [
       session_status: dialogueStatus(session),
       max_turns: topic?.setup.max_turns ?? 5,
       completed_turns: turnsOf(session),
-      goal_reached: session.awaiting_end_consent || session.status === 'COMPLETED',
+      goal_reached: goalOf(session),
       awaiting_end_consent: session.awaiting_end_consent,
+      ...lifecycle(session),
     })
   }),
 
@@ -1039,13 +1096,16 @@ export const handlers = [
     const content = (data.content ?? '').trim()
     if (!content) return validationError('content', 'Field required')
     if (content.length > 6000) return validationError('content', 'Too long')
+    const max = topic.setup.max_turns
+    if (turnsOf(session) >= max) return fail(400, 'Turn cap reached')
 
-    session.awaiting_end_consent = false
     session.messages.push({ id: newId('m'), sender: 'student', content, created_at: now() })
     const turns = turnsOf(session)
-    const max = topic.setup.max_turns
     const isLast = turns >= max
-    // AI 組還沒定「達成目標提早結束」的規則，假後端只在回合用完時結束（awaiting_end_consent 一律 false）
+    // 假的「AI 判斷達成目標」：第 3 次以後、回答有 15 個字以上就算達成（想測沒達成就一直短短回答）
+    if (turns >= MIN_FINISH_TURNS && content.length >= 15) session.goal_reached = true
+    // 跟真後端一樣：達成後每一回合都會再問一次；最後一回合直接結束，不問
+    session.awaiting_end_consent = goalOf(session) && !isLast
     const reply = mockReply(content, turns, isLast)
     const messageId = newId('m')
     const teacher = userById(db.courses.find((c) => c.id === topic.course_id)?.teacher_id ?? '')
@@ -1060,12 +1120,16 @@ export const handlers = [
         }
         session.messages.push({ id: messageId, sender: 'ai', content: reply, created_at: now() })
         if (teacher) useAi(teacher, 'dialogue', 400, 120)
-        if (isLast) completeSession(session)
+        // 回合用完：後端自動結束（ended、turn_limit）並開始產生報告
+        if (isLast) completeSession(session, 'turn_limit')
         const done = {
           message_id: messageId,
           completed_turns: turns,
-          is_completed: isLast,
-          awaiting_end_consent: false,
+          is_completed: false,
+          awaiting_end_consent: session.awaiting_end_consent,
+          session_status: dialogueStatus(session),
+          goal_reached: goalOf(session),
+          ...lifecycle(session),
         }
         controller.enqueue(encoder.encode(`event: done\ndata: ${JSON.stringify(done)}\n\n`))
         controller.close()
@@ -1082,13 +1146,33 @@ export const handlers = [
     const session = db.sessions.find((s) => s.id === params.sessionId)
     if (!session) return fail(404, 'Session not found')
     if (session.student_id !== user.id) return fail(404, 'Session not found')
-    if (session.status === 'COMPLETED') return fail(409, 'Dialogue is not accepting replies')
     const data = await body<{ action: EndAction }>(request)
+    if (session.status === 'COMPLETED') {
+      // 跟真後端一樣：重複同一個結束動作回 200，其他動作回 409
+      const same =
+        (data.action === 'complete' && dialogueStatus(session) === 'completed') ||
+        (data.action === 'finish' && dialogueStatus(session) === 'ended')
+      if (!same) return fail(409, 'Dialogue has already ended')
+      return HttpResponse.json({
+        session_id: session.id,
+        session_status: dialogueStatus(session),
+        message: 'Dialogue has already ended',
+        goal_reached: goalOf(session),
+        ...lifecycle(session),
+      })
+    }
+    let message = 'Dialogue continues'
     if (data.action === 'complete') {
-      if (!session.awaiting_end_consent) return fail(409, 'Inquiry goal is not met')
-      completeSession(session)
+      if (!session.goal_reached) return fail(409, 'Inquiry goal is not met')
+      completeSession(session, 'goal_reached')
+      message = 'Dialogue completed'
     } else if (data.action === 'continue') {
       session.awaiting_end_consent = false
+    } else if (data.action === 'finish') {
+      if (turnsOf(session) < MIN_FINISH_TURNS)
+        return fail(409, 'Finish early requires three student answers')
+      completeSession(session, 'student_requested_stop')
+      message = 'Dialogue ended early'
     } else if (data.action === 'abandon') {
       // 假後端放棄後直接刪掉，方便重新體驗（真後端會留著、狀態 abandoned，不能再回答）
       db.sessions = db.sessions.filter((s) => s !== session)
@@ -1103,7 +1187,9 @@ export const handlers = [
     return HttpResponse.json({
       session_id: session.id,
       session_status: dialogueStatus(session),
-      message: 'OK',
+      message,
+      goal_reached: goalOf(session),
+      ...lifecycle(session),
     })
   }),
 
@@ -1114,7 +1200,7 @@ export const handlers = [
     if (user instanceof Response) return user
     const session = db.sessions.find((s) => s.id === params.sessionId)
     if (!session || session.student_id !== user.id) return fail(404, 'Session not found')
-    if (session.status !== 'COMPLETED') return fail(409, 'Dialogue is not completed')
+    if (session.status !== 'COMPLETED') return fail(409, 'Dialogue is not report-eligible')
     const json = reportJson(session.id)
     if (!json) return fail(404, 'Report not found')
     return HttpResponse.json(json)
@@ -1125,7 +1211,7 @@ export const handlers = [
     if (user instanceof Response) return user
     const session = db.sessions.find((s) => s.id === params.sessionId)
     if (!session || session.student_id !== user.id) return fail(404, 'Session not found')
-    if (session.status !== 'COMPLETED') return fail(409, 'Dialogue is not completed')
+    if (session.status !== 'COMPLETED') return fail(409, 'Dialogue is not report-eligible')
     startSessionReport(session)
     return HttpResponse.json(reportJson(session.id))
   }),
@@ -1147,7 +1233,9 @@ export const handlers = [
     // 格式照真後端：每一筆是 { report_status, report, student_display_name }，產生中、失敗的也會列出
     return HttpResponse.json({
       class_size: studentsOf(course.id).length,
-      completed_count: sessions.length,
+      // 跟真後端一樣：completed_count 只算「達成目標後結束」，回合用完／提早結束算在 ended_count
+      completed_count: sessions.filter((s) => dialogueStatus(s) === 'completed').length,
+      ended_count: sessions.filter((s) => dialogueStatus(s) === 'ended').length,
       ready_count: statuses.filter((s) => s.report_status === 'ready').length,
       processing_count: statuses.filter(
         (s) => s.report_status === 'processing' || s.report_status === 'pending',
@@ -1170,7 +1258,7 @@ export const handlers = [
       (s) => s.id === params.sessionId && s.topic_id === params.topicId,
     )
     if (!session) return fail(404, 'Session not found')
-    if (session.status !== 'COMPLETED') return fail(409, 'Dialogue is not completed')
+    if (session.status !== 'COMPLETED') return fail(409, 'Dialogue is not report-eligible')
     startSessionReport(session)
     return HttpResponse.json(reportJson(session.id))
   }),

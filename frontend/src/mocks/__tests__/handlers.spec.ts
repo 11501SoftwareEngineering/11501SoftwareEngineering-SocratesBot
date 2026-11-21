@@ -128,28 +128,97 @@ describe('假後端（v0.2）', () => {
     expect(history.messages).toHaveLength(3)
   })
 
-  it('個人報告：結束對話不會自動產生，要 POST 才開始；重複 POST 沿用同一份', async () => {
+  it('個人報告：結束對話時自動開始產生；POST 沿用同一份、GET 輪詢', async () => {
     const { token } = await login('s004')
     const { data: session } = await call('/topics/t-ai/sessions', { method: 'POST', token })
     const path = `/sessions/${session.session_id}/report`
     expect((await call(path, { token })).res.status).toBe(409)
-    expect((await call(path, { method: 'POST', token })).res.status).toBe(409)
+    expect((await call(path, { method: 'POST', token })).data.detail).toBe(
+      'Dialogue is not report-eligible',
+    )
 
     completeSession(db.sessions.find((s) => s.id === session.session_id)!)
-    const before = await call(path, { token })
-    expect(before.res.status).toBe(404)
-    expect(before.data.detail).toBe('Report not found')
-
-    const started = await call(path, { method: 'POST', token })
-    expect(started.data).toMatchObject({ report_status: 'processing', report: null })
+    expect((await call(path, { token })).data).toMatchObject({ report_status: 'processing' })
     const readyAt = db.reports.find((r) => r.session_id === session.session_id)!.ready_at
     await call(path, { method: 'POST', token })
     expect(db.reports.filter((r) => r.session_id === session.session_id)).toHaveLength(1)
     expect(db.reports.find((r) => r.session_id === session.session_id)!.ready_at).toBe(readyAt)
-    expect((await call(path, { token })).data.report_status).toBe('processing')
 
     const other = await login('s005')
     expect((await call(path, { token: other.token })).res.status).toBe(404)
+  })
+
+  it('結束規則：達成目標問學生、回答 3 次後可以提早結束、回合用完自動結束', async () => {
+    const { token } = await login('s004')
+    const { data: session } = await call('/topics/t-ai/sessions', { method: 'POST', token })
+    const id = session.session_id
+    const send = async (content: string) => {
+      const res = await fetch(`${API}/sessions/${id}/messages/stream`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, request_id: crypto.randomUUID() }),
+      })
+      const text = await res.text()
+      return JSON.parse(text.split('event: done\ndata: ')[1]!.split('\n')[0]!)
+    }
+    const end = (action: string) =>
+      call(`/sessions/${id}/end`, { method: 'POST', token, body: JSON.stringify({ action }) })
+
+    await send('短')
+    expect((await end('finish')).data.detail).toBe('Finish early requires three student answers')
+    expect((await end('complete')).data.detail).toBe('Inquiry goal is not met')
+    await send('短')
+    const third = await send('我覺得要看情況，因為說謊可能會破壞彼此的信任')
+    expect(third).toMatchObject({
+      session_status: 'open',
+      awaiting_end_consent: true,
+      goal_reached: true,
+      can_finish_early: true,
+    })
+    expect((await end('continue')).data).toMatchObject({ session_status: 'open' })
+    const { data: history } = await call(`/sessions/${id}/messages`, { token })
+    expect(history).toMatchObject({ awaiting_end_consent: false, goal_reached: true })
+
+    const max = db.topics.find((t) => t.id === 't-ai')!.setup.max_turns
+    let last = third
+    for (let turn = 4; turn <= max; turn += 1) last = await send('短')
+    expect(last).toMatchObject({
+      session_status: 'ended',
+      ending_reason: 'turn_limit',
+      report_eligible: true,
+      awaiting_end_consent: false,
+      is_completed: false,
+    })
+    expect((await end('continue')).data.detail).toBe('Dialogue has already ended')
+    const { data: report } = await call(`/sessions/${id}/report`, { token })
+    expect(report.report_status).toBe('processing')
+  })
+
+  it('提早結束：沒達成目標也有報告，證據標成部分不足', async () => {
+    const { token } = await login('s004')
+    const { data: session } = await call('/topics/t-ai/sessions', { method: 'POST', token })
+    const dbSession = db.sessions.find((s) => s.id === session.session_id)!
+    for (let i = 0; i < 3; i += 1) {
+      dbSession.messages.push({ id: `x${i}`, sender: 'student', content: '短', created_at: '' })
+    }
+    const { data } = await call(`/sessions/${session.session_id}/end`, {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ action: 'finish' }),
+    })
+    expect(data).toMatchObject({
+      session_status: 'ended',
+      ending_reason: 'student_requested_stop',
+      goal_reached: false,
+      report_eligible: true,
+    })
+    const report = db.reports.find((r) => r.session_id === session.session_id)!.report
+    expect(report).toMatchObject({
+      completion_reason: 'student_requested_stop',
+      goal_reached: false,
+      evidence_status: 'partial',
+    })
+    expect(report.limitations).toBeTruthy()
   })
 
   it('摘要：審閱帶文字、只發布最新的已審閱版本；學生看得到發布版', async () => {

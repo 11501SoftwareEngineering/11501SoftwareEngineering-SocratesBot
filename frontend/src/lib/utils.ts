@@ -88,6 +88,10 @@ const API_ERROR_KEYS = new Map<string, string>([
   ['Summary not found', 'summaryNotFound'],
   ['No published summary', 'noPublishedSummary'],
   ['Summary contains a name or identifier', 'summaryHasName'],
+  ['Dialogue has already ended', 'dialogueEnded'],
+  ['Finish early requires three student answers', 'finishTooEarly'],
+  ['Dialogue is not report-eligible', 'sessionNotCompleted'],
+  ['Dialogue changed while replying', 'dialogueChanged'],
   ['Internal Server Error', 'server'],
 ])
 

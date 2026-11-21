@@ -3,7 +3,7 @@
  */
 import { announcements } from '@/data/announcements'
 import { mockReply, mockSetup } from './ai'
-import { completeSession, startSessionReport } from './handlers'
+import { completeSession } from './handlers'
 import { db, newId, newInviteCode, resetDb, secureRandomInt, type DbSession } from './db'
 
 const COURSE_NAMES = ['邏輯思考', '媒體識讀', '環境倫理', '科技與社會', '生命教育', '經濟學入門']
@@ -122,9 +122,8 @@ function finish(session: DbSession) {
       created_at: new Date().toISOString(),
     })
   }
-  completeSession(session)
-  // 模擬學生完成後打開報告頁（真後端要等前端呼叫 POST /sessions/{id}/report 才會產生）
-  startSessionReport(session)
+  // 自動作答到回合用完：跟真後端一樣自動結束（turn_limit）並開始產生報告
+  completeSession(session, 'turn_limit')
   return true
 }
 

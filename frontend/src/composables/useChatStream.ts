@@ -1,14 +1,19 @@
 import { ref } from 'vue'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
 import { API_BASE_URL, apiClient } from '@/api/client'
+import type { DialogueStatus, LifecycleFields } from '@/api/sessions'
 
 /** done 事件（docs/API功能規格.md v0.2「發送回答並串流接收 AI 回覆」） */
-export interface StreamDone {
+export interface StreamDone extends LifecycleFields {
   message_id: string
   completed_turns: number
+  /** 只有 completed 才是 true；回合用完（ended）是 false，要看 session_status／report_eligible */
   is_completed: boolean
-  /** AI 判斷可以結束了，等學生選「結束」或「繼續」 */
+  /** AI 判斷達成目標了，等學生選「結束」或「繼續」 */
   awaiting_end_consent: boolean
+  /** 這一回合結束後的對話狀態：回合用完時是 ended（舊後端沒有這個欄位） */
+  session_status?: DialogueStatus
+  goal_reached?: boolean
 }
 
 /** 串流失敗時丟出的錯誤，格式模仿 axios，這樣 getApiErrorMessage 也能用 */

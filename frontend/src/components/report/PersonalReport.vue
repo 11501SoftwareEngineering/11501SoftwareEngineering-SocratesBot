@@ -39,6 +39,9 @@ function toneOf(index: number) {
 }
 
 function quotesOf(entry: TimelineEntry): string[] {
+  // 新版報告：evidence_reference 是學生原話的引用，evidence 是描述文字
+  const ref = entry.evidence_reference
+  if (ref) return [props.messageText?.[ref.message_id] ?? ref.quote]
   const evidence = entry.evidence
   const list: (EvidenceQuote | string)[] = Array.isArray(evidence)
     ? evidence
