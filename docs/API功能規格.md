@@ -6,6 +6,9 @@ version: 0.2
 
 - Base URL: `/api/v1`
 - 認證機制: Bearer Token (JWT), Request Header: `Authorization: Bearer <access_token>`；登入時 access token 由回應的 `Authorization` 標頭提供
+- Cookie: 登入同時設定 `refresh_token`（HttpOnly）與 `csrf_token` 兩個 cookie
+- 自動續期: `GET` 與 `HEAD` 請求在 Bearer 缺少或失效時，若帶有效的 `refresh_token` cookie，系統自動續期：請求照常處理，回應附新的 `Authorization` 標頭並輪替兩個 cookie。其他方法不續期，Bearer 缺少或失效直接回 401
+- CSRF: 登出需帶與 `csrf_token` cookie 相同值的 `X-CSRF-Token` 標頭，否則回 403
 
 ---
 
@@ -31,14 +34,16 @@ version: 0.2
 - 錯誤:
     - 帳號或密碼未輸入 (422)
     - 帳號或密碼錯誤 (401)
-    - 帳號已停用 (403)
+    - 帳號已停用 (403)（目前尚未實作：系統沒有停用帳號的機制）
 
 ### 使用者登出
-- 功能說明: 登出並清除登入狀態
+- 功能說明: 登出並清除登入狀態：撤銷該使用者所有 refresh token 並清除 cookie；已發出的 access token 無法撤銷，到期前（預設 15 分鐘）仍可使用
 - 呼叫方式: POST /auth/logout
-- 授權: 已登入
-- 輸入資料: 無
+- 授權: 已登入（以 refresh cookie 辨識，不需 Bearer）
+- 輸入資料: 無；需帶 `X-CSRF-Token` 標頭（見全域規範）
 - 成功回應: `ok`（true）
+- 錯誤:
+    - 缺少或不符的 CSRF token (403)
 
 ### 取得當前使用者資訊
 - 功能說明: 重新確認目前帳號（頁面重整、Header 顯示及首頁導向）
@@ -48,7 +53,7 @@ version: 0.2
 - 成功回應: `account_id`, `name`, `role`, `preferred_language`, `must_change_password`
 
 ### 修改密碼
-- 功能說明: 使用者修改密碼
+- 功能說明: 使用者修改密碼；成功後該使用者所有已登入裝置的登入憑證（refresh token）一併撤銷
 - 呼叫方式: PUT /auth/password
 - 授權: 已登入
 - 輸入資料: `old_password`, `new_password`
@@ -56,6 +61,7 @@ version: 0.2
 - 錯誤:
     - 新密碼格式不符 (422)
     - 原密碼輸入錯誤 (400)
+    - 新密碼與原密碼相同 (400)
 
 ### 更新使用者偏好
 - 功能說明: 更新使用者介面偏好語言
@@ -130,9 +136,10 @@ version: 0.2
     - 查無此邀請碼對應的課程 (404)
     - 已經是該課程學生 (400)
     - 已是該課程的老師或助教 (400)
+    - 學生退出或被老師移除後再次加入 (400)
 
 ### 學生退出課程
-- 功能說明: 學生撤銷本人在該課程的存取，不刪除整門課程
+- 功能說明: 學生撤銷本人在該課程的存取，不刪除整門課程；退出後不可再用邀請碼加入
 - 呼叫方式: DELETE /courses/{courseId}/member
 - 授權: 學生
 - 輸入資料: 無
@@ -169,7 +176,7 @@ version: 0.2
     - 查無此課程 (404)
 
 ### 移除學生
-- 功能說明: 老師將學生從課程中移除，撤銷其課程資格；歷史資料保留政策依待決事項
+- 功能說明: 老師將學生從課程中移除，撤銷其課程資格；歷史資料保留政策依待決事項；被移除的學生不可再用邀請碼加入，老師仍可將該帳號指派為助教
 - 呼叫方式: DELETE /courses/{courseId}/students/{userId}
 - 授權: 老師
 - 輸入資料: 無
@@ -253,7 +260,7 @@ version: 0.2
 - 授權: 老師、助教、學生
 - 輸入資料: 無
 - 成功回應: `course_id`, `name`, `invite_code`, `my_role`, `my_permissions`, `topics`[`topic_id`, `title`, `description`, `topic_status`（內容見上方表格）, `age_band`, `max_turns`, 依身分另含下列欄位]
-    - 學生: 只列 `conversation`、`summary` 階段的題目；另含 `session_status`（未進入時為 null）, `session_id`
+    - 學生: 只列 `conversation`、`summary` 階段的題目；另含 `session_status`（未進入時為 null；有 Session 時為 `IN_PROGRESS` 或 `COMPLETED`）, `session_id`
     - 老師與助教: `answered_count`, `student_count`
 - 錯誤:
     - 非課程成員或查無此課程 (404)
@@ -275,10 +282,9 @@ version: 0.2
 - 呼叫方式: DELETE /topics/{topicId}
 - 授權: 老師
 - 輸入資料: 無
-- 成功回應: HTTP 204
+- 成功回應: HTTP 204；題目已不存在時同樣 204（冪等）
 - 錯誤:
     - 非該課程老師 (403)
-    - 查無此題目 (404)
 
 ---
 
@@ -293,6 +299,19 @@ version: 0.2
 - 錯誤:
     - 無權限 (403)
     - 查無此題目 (404)
+
+### AI 依課程描述產生題目設定建議
+- 功能說明: 對既有的 `setup` 階段題目，依課程描述與所選模型產生八欄設定建議；不儲存
+- 呼叫方式: POST /topics/{topicId}/setup/generate
+- 授權: 老師
+- 輸入資料: `age_band`, `max_turns`, `content_language`, `course_description`（不可空白，最多 6000 字元）, `model_id`（須在可用模型清單內）
+- 成功回應: 同「取得題目設定」，`setup` 為建議的八欄，資料庫內容不變
+- 錯誤:
+    - 欄位不符規則，或模型代號無效 (422)
+    - 非該課程老師 (403)
+    - 查無此題目 (404)
+    - 題目已不在設定階段 (400)
+    - AI 服務失敗 (502／503)
 
 ### AI 依回饋修訂題目設定
 - 功能說明: 「確認活動設定」頁的「重新產生」按鈕按下後呼叫，依老師回饋重新產生八欄設定
@@ -362,9 +381,9 @@ version: 0.2
 - 呼叫方式: POST /topics/{topicId}/sessions
 - 授權: 學生
 - 輸入資料: 無
-- 成功回應: `session_id`, `topic_id`, `session_status`（已有 Session 時為該對話目前的狀態）
+- 成功回應: `session_id`, `topic_id`, `session_status`（已有 Session 時為該對話目前的狀態；值為 `open`、`completed`、`abandoned` 或 `closed_by_summary`）
 - 錯誤:
-    - 非課程學生 (403)
+    - 非課程學生，包含老師與助教 (403)；曾以學生身分有過對話的助教也不可進入
     - 查無此題目，或題目仍在 `setup` (404)
     - 題目已進入 `summary`，且本人還沒有 Session (400)
 
@@ -373,7 +392,7 @@ version: 0.2
 - 呼叫方式: GET /sessions/{sessionId}/messages
 - 授權: 本人
 - 輸入資料: 無
-- 成功回應: `messages`[`message_id`, `sender`（`ai` / `student`）, `content`, `created_at`], `session_status`, `max_turns`, `completed_turns`, `goal_reached`, `awaiting_end_consent`
+- 成功回應: `messages`[`message_id`, `sender`（`ai` / `student`）, `content`, `created_at`], `session_status`（值同「建立對話 Session」）, `max_turns`, `completed_turns`, `goal_reached`, `awaiting_end_consent`
 - 錯誤:
     - 非此對話擁有者 (403)
     - 查無此對話 (404)
@@ -399,7 +418,7 @@ version: 0.2
 - 呼叫方式: POST /sessions/{sessionId}/end
 - 授權: 本人
 - 輸入資料: `action`（`complete` / `continue` / `abandon`）
-- 成功回應: `session_id`, `session_status`, `message`
+- 成功回應: `session_id`, `session_status`（值同「建立對話 Session」）, `message`
 - 錯誤:
     - 動作值無效 (422)
     - 非此對話擁有者 (403)
