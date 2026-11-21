@@ -7,6 +7,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import MessageSender, SessionStatus
+from app.crud.course import MEMBERSHIP_STUDENT
 from app.models.class_summary import SummaryAttempt
 from app.models.course import CourseMembership
 from app.models.message import DialogueMessage
@@ -39,6 +40,26 @@ async def is_course_member(
     statement = select(CourseMembership.user_id).where(
         CourseMembership.user_id == user_id,
         CourseMembership.course_id == course_id,
+        CourseMembership.left_at.is_(None),
+    )
+    return await db.scalar(statement) is not None
+
+
+async def is_course_student(
+    db: AsyncSession,
+    *,
+    user_id: UUID,
+    course_id: UUID,
+) -> bool:
+    """True for an active student of the course.
+
+    A TA holds a membership too, but is not a student. A student who left or
+    was removed no longer counts.
+    """
+    statement = select(CourseMembership.user_id).where(
+        CourseMembership.user_id == user_id,
+        CourseMembership.course_id == course_id,
+        CourseMembership.role == MEMBERSHIP_STUDENT,
         CourseMembership.left_at.is_(None),
     )
     return await db.scalar(statement) is not None
@@ -179,6 +200,17 @@ class SQLAlchemySessionStore:
         course_id: UUID,
     ) -> bool:
         return await is_course_member(
+            self._db,
+            user_id=user_id,
+            course_id=course_id,
+        )
+
+    async def is_course_student(
+        self,
+        user_id: UUID,
+        course_id: UUID,
+    ) -> bool:
+        return await is_course_student(
             self._db,
             user_id=user_id,
             course_id=course_id,
