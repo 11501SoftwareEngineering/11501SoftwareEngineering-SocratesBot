@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     OPENAI_VALIDITY_MODEL: NonEmptyStr = "openai/gpt-6.1-sol"
     OPENAI_BASE_URL: NonEmptyStr = "https://openrouter.ai/api/v1"
     DIALOGUE_CONTEXT_TOKEN_BUDGET: int = Field(default=12_000, ge=1_024)
+    REPORT_CONTEXT_TOKEN_BUDGET: int = Field(default=32_000, ge=1_024)
 
     @model_validator(mode="after")
     def _default_language_must_be_supported(self) -> Self:

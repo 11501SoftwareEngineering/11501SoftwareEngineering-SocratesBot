@@ -438,12 +438,12 @@ version: 0.2
 - 輸入資料: 無
 - 成功回應: `report_status`（`pending` / `processing` / `ready` / `failed`）, `report`（最新可用的 ready 內容，沒有則 null；最新 attempt 失敗／處理中仍可能帶較早的 ready 內容）包含
     - 目前識別及完成資訊: `report_id`, `version`（目前固定 1）, `session_id`, `topic_id`, `completed_turns`, `completion_reason`（目前為 completed）
-    - 原規格的 `anonymous_id`, `completed_at` 尚未實作，另追蹤 BE-03，前端不可假設存在
+    - `completed_at` 使用伺服器記錄的對話完成時間（舊資料可能省略）；`anonymous_id` 尚待定義匿名代碼範圍，前端不可假設存在
     - `viewpoint_summary`, `final_viewpoint`, `viewpoint_status`
     - `reasons`, `strongest_reason`, `challenges`[`challenge`, `responded`], `revision_or_defense`, `focus_connection`, `other_perspectives`, `open_questions`
     - `evidence_status`（`sufficient` / `partial` / `insufficient`）, `limitations`
     - `timeline`[`turn`, `question`, `evidence`, `viewpoint_before`, `viewpoint_after`, `change_type`, `attribution`（`explicit` / `sequence_only` / `none`）]
-    - 目標證據引用格式為 `message_id`, `turn`, `quote`，但目前尚未落實型別與查核，另追蹤 AI-09；目前 timeline.evidence 可為字串
+    - 新報告保留 timeline.evidence 字串，另提供 evidence_reference {message_id, turn, quote} 並查核學生訊息來源、回合、原文；舊報告維持可讀但未追溯驗證。此時間線是證據索引，不推定立場改變或因果關係。
     - 不包含學生姓名
 - 錯誤:
     - 查無此對話或非本人 (404)
