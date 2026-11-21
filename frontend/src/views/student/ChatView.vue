@@ -9,9 +9,15 @@ import AppBanner from '@/components/common/AppBanner.vue'
  *   POST /sessions/{sessionId}/messages/stream      送出回答，SSE 逐段接收回覆
  *   POST /sessions/{sessionId}/end                  結束對話：complete／continue（達成目標時的選擇）、finish（提早結束）
  * 結束規則（後端 #267、負責人決定）：
- *   - AI 判斷達成目標（awaiting_end_consent）→ 跳出「結束／繼續」視窗；結束＝complete，繼續（或關掉視窗）＝continue
+ *   - AI 判斷達成目標（awaiting_end_consent）→ 跳出 Figma「Frame 1013」的視窗「導魷覺得心滿意足」：
+ *     結束對話＝complete，繼續對話（或關掉視窗）＝continue
+ *   - 技術債：後端在學生按過「繼續」後每一回合還是會再設 awaiting_end_consent。
+ *     暫時由前端記住「這段對話按過繼續」（localStorage），之後不再自動跳出；學生要結束就按右上的按鈕。
+ *     後端提供對應欄位後改用後端的值，拿掉 consentDeclined。
  *   - 回合用完 → 後端自動結束（session_status: ended、ending_reason: turn_limit），不用學生按
- *   - 學生回答 3 次後（can_finish_early）標題旁出現「提早結束」，先確認再送 finish
+ *   - 學生回答 3 次後（can_finish_early）或已經達成目標時，標題列右上出現「提早結束」：
+ *     已經達成目標 → 打開同一個「導魷覺得心滿意足」視窗（結束＝complete，結束原因記成達成目標）；
+ *     還沒達成 → 先確認再送 finish
  *   - 不提供「放棄」：沒回答滿 3 次的學生直接離開就好，對話留著之後可以回來（後端的 abandon 不用）
  *   - 對話一結束（三種方式都一樣）：最後一句顯示完後，對話最下面出現一條從中間往左右展開的分隔線
  *     「回合結束，正在製作報告」（像 Discord 的換日線），停 3 秒讓學生看完最後一句，再跳到個人報告頁
@@ -96,6 +102,8 @@ const endingReason = ref<EndingReason | null>(null)
 const awaitingConsent = ref(false)
 /** 學生已經回答 3 次以上：可以提早結束 */
 const canFinishEarly = ref(false)
+/** AI 判斷達成過目標（一旦達成就一直是 true） */
+const goalReached = ref(false)
 /** 結束分隔線停留多久再跳到報告頁 */
 const ENDING_DELAY_MS = 3000
 /** 正在顯示結束分隔線、等待跳轉 */
@@ -117,6 +125,7 @@ watch(
     endingReason.value = data.ending_reason ?? null
     awaitingConsent.value = data.session_status === 'open' && data.awaiting_end_consent
     canFinishEarly.value = !!data.can_finish_early
+    goalReached.value = !!data.goal_reached
     // 已經結束的對話（重新整理、從別的頁面進來）：直接到報告頁；正在播結束動畫時不打斷
     if ((data.session_status === 'completed' || data.session_status === 'ended') && !ending.value)
       markFinished(false)
@@ -220,6 +229,7 @@ async function handleSend(text: string) {
         endingReason.value = done.ending_reason ?? null
         awaitingConsent.value = status.value === 'open' && done.awaiting_end_consent
         canFinishEarly.value = !!done.can_finish_early
+        if (done.goal_reached !== undefined) goalReached.value = done.goal_reached
       },
     })
     reply.pending = false
@@ -251,16 +261,39 @@ function handleMic() {
   speech.toggle()
 }
 
-// 5. 達成目標：問學生要結束還是繼續。關掉視窗（Esc、點背景、按「繼續回答」）都算繼續
+// 5. 達成目標：問學生要結束還是繼續。關掉視窗（Esc、點背景、按「繼續對話」）都算繼續
+// 技術債：「按過繼續」先記在瀏覽器（見檔案開頭），按過就不再自動跳出
+const declinedKey = computed(() => `chat:consent-declined:${sessionId.value}`)
+const consentDeclined = ref(false)
+watch(
+  declinedKey,
+  (key) => {
+    try {
+      consentDeclined.value = localStorage.getItem(key) === '1'
+    } catch {
+      consentDeclined.value = false
+    }
+  },
+  { immediate: true },
+)
+function rememberDeclined() {
+  consentDeclined.value = true
+  try {
+    localStorage.setItem(declinedKey.value, '1')
+  } catch {
+    // 瀏覽器不讓存就算了：最多只是之後又跳出一次
+  }
+}
 const consentOpen = ref(false)
 const consentError = ref('')
+function openConsent() {
+  consentError.value = ''
+  consentOpen.value = true
+}
 watch(
-  [awaitingConsent, isStreaming],
-  ([awaiting, streaming]) => {
-    if (awaiting && !streaming) {
-      consentError.value = ''
-      consentOpen.value = true
-    }
+  [awaitingConsent, isStreaming, consentDeclined],
+  ([awaiting, streaming, declined]) => {
+    if (awaiting && !streaming && !declined) openConsent()
   },
   { immediate: true },
 )
@@ -287,8 +320,10 @@ const keepGoing = useMutation({
   onError: (err) => (sendError.value = getApiErrorMessage(err, t('chat.continueFailed'))),
 })
 watch(consentOpen, (isOpen) => {
-  // 學生沒選「結束」就關掉視窗 → 繼續對話
-  if (!isOpen && awaitingConsent.value && !endNow.isPending.value && !finished.value) {
+  // 學生沒選「結束」就關掉視窗 → 繼續對話，記下來之後不再自動跳出
+  if (isOpen || endNow.isPending.value || finished.value) return
+  rememberDeclined()
+  if (awaitingConsent.value) {
     awaitingConsent.value = false
     keepGoing.mutate()
   }
@@ -297,6 +332,11 @@ watch(consentOpen, (isOpen) => {
 // 6. 提早結束：回答滿 3 次後才能用，先確認再送 finish
 const finishOpen = ref(false)
 const finishError = ref('')
+/** 右上的按鈕：已經達成目標 → 打開「導魷覺得心滿意足」；還沒達成 → 提早結束的確認 */
+function onFinishButton() {
+  if (goalReached.value) openConsent()
+  else askFinish()
+}
 function askFinish() {
   finishError.value = ''
   finishOpen.value = true
@@ -328,13 +368,16 @@ const remaining = computed(() => Math.max(0, maxTurns.value - usedTurns.value))
           },
         ]"
       >
-        <template v-if="sessionId && canFinishEarly && !finished && !closed" #after-title>
+        <template
+          v-if="sessionId && (canFinishEarly || goalReached) && !finished && !closed"
+          #after-title
+        >
           <!-- 照 Figma：主色按鈕，靠右、跟對話框右邊對齊（對話框最寬 1000px、置中） -->
           <Button
             size="sm"
             class="ml-auto lg:mr-[max(0px,calc((100%-1000px)/2))]"
             :disabled="isStreaming || finishEarly.isPending.value || endNow.isPending.value"
-            @click="askFinish"
+            @click="onFinishButton"
             >{{ t('chat.finishEarly') }}</Button
           >
         </template>
@@ -396,6 +439,8 @@ const remaining = computed(() => Math.max(0, maxTurns.value - usedTurns.value))
       :description="t('chat.goalReachedDescription')"
       :confirm-text="t('chat.endNow')"
       :cancel-text="t('chat.keepGoing')"
+      destructive
+      confirm-first
       :loading="endNow.isPending.value"
       :error="consentError"
       @confirm="endNow.mutate()"
