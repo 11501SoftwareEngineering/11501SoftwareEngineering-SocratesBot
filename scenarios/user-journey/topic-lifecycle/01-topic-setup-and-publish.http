@@ -320,9 +320,9 @@ Authorization: {{studentAToken}}
 
     const { equal, ok } = require('assert');
 
-    // The spec names session_status but not its values. This endpoint answers with
-    // the dialogue outcome ('open'), while the topic list answers with the session
-    // status ('IN_PROGRESS'). Both are asserted as they are (docs/規格待確認事項.md, P9).
+    // The spec lists the session_status values per endpoint. Session entry answers
+    // with the dialogue outcome ('open'), while the topic list answers with the
+    // session status ('IN_PROGRESS'). Both are asserted as the spec lists them.
     test('The student gets an open session for the topic', () => {
         const data = JSON.parse(response.body);
         equal(data.topic_id, topicId);
@@ -362,7 +362,7 @@ Authorization: {{studentAToken}}
 
     const { equal } = require('assert');
 
-    // Same session, other vocabulary: see P9 in docs/規格待確認事項.md.
+    // Same session, the topic list's own vocabulary (see the spec's topic list).
     test('The student topic list now carries the session', () => {
         const item = JSON.parse(response.body).topics.find((t) => t.topic_id === topicId);
         equal(item.session_id, sessionId);
