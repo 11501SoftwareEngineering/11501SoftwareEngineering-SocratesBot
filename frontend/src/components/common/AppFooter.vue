@@ -1,6 +1,5 @@
 <script setup lang="ts">
 // 頁尾。電腦版一排（Figma Footer），手機版直排加分隔線（Figma Footer_phone）。
-// 五個項目目前都還沒有對應的頁面，先用純文字呈現，做好頁面再換成 <RouterLink>。
 const links = ['隱私權', '版權', '開發者', '聯絡我們', 'Bug']
 </script>
 
@@ -14,7 +13,14 @@ const links = ['隱私權', '版權', '開發者', '聯絡我們', 'Bug']
         :key="link"
         class="py-3 text-center font-heading text-footer text-muted-foreground sm:py-0"
       >
-        {{ link }}
+        <a
+          v-if="link === 'Bug'"
+          href="https://docs.google.com/forms/d/e/1FAIpQLSfQhV0xEnduCiiWKDeWuTVTVr2aVeOE8QfzCPDg2GaDmg0cDQ/viewform"
+          class="hover:underline focus-visible:underline"
+        >
+          {{ link }}
+        </a>
+        <template v-else>{{ link }}</template>
       </li>
     </ul>
   </footer>
