@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.database import Base
@@ -23,7 +23,13 @@ def test_usage_survives_business_rollback_and_is_teacher_month_scoped(monkeypatc
         url = os.environ.get("SESSION_TEST_DATABASE_URL")
         if not url:
             pytest.skip("Set SESSION_TEST_DATABASE_URL for disposable Postgres")
-        engine = create_async_engine(url)
+        schema = "usage_test_" + uuid4().hex
+        admin_engine = create_async_engine(url)
+        async with admin_engine.begin() as connection:
+            await connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+        engine = create_async_engine(
+            url, connect_args={"server_settings": {"search_path": schema}}
+        )
         factory = async_sessionmaker(engine, expire_on_commit=False)
         owner, outsider = uuid4(), uuid4()
         try:
@@ -97,9 +103,11 @@ def test_usage_survives_business_rollback_and_is_teacher_month_scoped(monkeypatc
                 body = await ai_usage.read_month(db, owner)
                 assert body.total_tokens == 1014 and body.by_stage[2].cost_usd == 0
         finally:
-            async with factory() as db:
-                await db.execute(delete(User).where(User.id.in_((owner, outsider))))
-                await db.commit()
             await engine.dispose()
+            # Drop only this test's newly created, isolated schema. Public remains untouched.
+            assert schema.startswith("usage_test_") and schema[11:].isalnum()
+            async with admin_engine.begin() as connection:
+                await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+            await admin_engine.dispose()
 
     asyncio.run(run())
