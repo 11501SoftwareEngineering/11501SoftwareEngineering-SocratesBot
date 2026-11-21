@@ -13,6 +13,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.model_catalog import INQUIRY_CATALOG_MODELS
+from app.services import ai_usage
 
 logger = logging.getLogger("app.model")
 # A provider can ask for a long pause. This request does not wait past two seconds.
@@ -386,7 +387,13 @@ class OpenAIChatClient:
         headers = {"Authorization": f"Bearer {key}"}
         try:
             async with asyncio.timeout(limits.timeout_s):
-                response = await self._send(payload, headers, limits.timeout_s)
+                response = await self._send(
+                    payload,
+                    headers,
+                    limits.timeout_s,
+                    usage_key=api_key,
+                    usage_task=name,
+                )
         except TimeoutError:
             logger.info("model provider timed out")
             raise ModelTimeoutError() from None
@@ -396,22 +403,37 @@ class OpenAIChatClient:
         return _parse_completion(response)
 
     async def _send(
-        self, payload: dict[str, Any], headers: dict[str, str], timeout_s: float
+        self,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+        timeout_s: float,
+        *,
+        usage_key: str | None = None,
+        usage_task: str = "dialogue_reply",
     ) -> httpx.Response:
         response: httpx.Response | None = None
         for attempt in (1, 2):
             try:
+                event_id = await ai_usage.begin(usage_key, usage_task, payload["model"])
+            except Exception:
+                logger.error("ai_usage_start_unavailable task=%s", usage_task)
+                raise ModelCallError(503) from None
+            current_response = None
+            try:
                 async with httpx.AsyncClient(
                     transport=self._transport, timeout=timeout_s
                 ) as client:
-                    response = await client.post(
+                    current_response = await client.post(
                         f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
                         headers=headers,
                         json=payload,
                     )
+                    response = current_response
             except httpx.HTTPError:
                 logger.info("model provider status unavailable")
                 raise ModelCallError(None) from None
+            finally:
+                await ai_usage.finish(event_id, current_response)
             delay = _retry_delay(response)
             if (
                 response.status_code in {429, 503}
