@@ -707,3 +707,10 @@ HTTP 回應新增 `X-Request-ID`，CORS 已 expose，供前端回報502時定位
 SQL_ECHO 預設 false。AI_TRACE_ENABLED 預設 false；僅 development 啟用時，原始回應（去除憑證與 reasoning 文字）寫入被 Git 忽略的 `.local/ai-traces`，每 worker1MB/3備份輪替。可能含學生文字，僅供授權測試資料及本機除錯，production 不啟用。完整定位步驟見 [AI debugging](AI_BACKEND_CONTRACT.md#ai-call-debugging-usage-and-diagnostics-follow-up)。此修正不調整1000 token上限或修復502本身。
 
 開發者操作步驟（含啟動指令、如何從 browser 取 X-Request-ID、PowerShell/Bash 搜尋、範例解析、trace 檔案與回報清單）見 [developer walkthrough](AI_BACKEND_CONTRACT.md#developer-walkthrough)。
+
+
+## Stage2 status 截斷修正（PR274 之後的本地 hot fix）
+
+已用 Luna 重現 legacy progress catch-up 的 provider HTTP200/finish_reason=length：1000 completion tokens 後 JSON 字串未結束，backend 映射502。僅將 cap 改3000 的對照呼叫以1017 tokens 完成，schema/證據均通過；測試用 key/account 有可用額度，非402/429。
+
+status prompt 升版 stage2_status-1.0.1，輸出上限1000→3000，同時套用一般回合與舊對話進度補算；原有 context budget 會計入新 reserve。沒有新增 API 欄位、migration、model 替換、放寬驗證或重試。新增 progress_catch_up_started 診斷 marker。詳見 [truncation hot fix](AI_BACKEND_CONTRACT.md#stage2-status-truncation-hot-fix-local-follow-up-above-pr274)。原始 session/log 未提供，不能斷言每個歷史502皆同因。

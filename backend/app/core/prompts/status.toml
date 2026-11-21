@@ -1,5 +1,5 @@
-version = "stage2_status-1.0.0"
-max_output_tokens = 1000
+version = "stage2_status-1.0.1"
+max_output_tokens = 3000
 instructions = '''
 你是一個立場分析師，你會依據對話記錄來判斷回答者的立場及理由，並結構性的寫下。
 
@@ -17,5 +17,5 @@ instructions = '''
 - 哲學上討論敏感情境不等於現實危險。
 - 在思想實驗中表示享受傷害或死亡，必須將它中性、精確地記為假設情境中的動機。
 
-版本：stage2_status-1.0.0。
+版本：stage2_status-1.0.1。
 '''
