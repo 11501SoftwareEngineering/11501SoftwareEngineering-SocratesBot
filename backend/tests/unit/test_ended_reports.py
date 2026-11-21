@@ -159,7 +159,7 @@ async def test_final_reply_atomically_ends_and_queues_even_without_goal(
         outcome="open",
         generation_meta={"progress": empty_progress()},
     )
-    topic = SimpleNamespace(model_id=None, max_turns=5)
+    topic = SimpleNamespace(model_id="openai/gpt-4o-mini", max_turns=5)
     messages = [SimpleNamespace(sender="student") for _ in range(4)]
     bounded = SimpleNamespace(
         material="record",
@@ -209,8 +209,16 @@ async def test_final_reply_atomically_ends_and_queues_even_without_goal(
         session=session,
         topic=topic,
         messages=messages,
+        api_key="course-private-key",
         content="Final answer",
         request_id=uuid4(),
+    )
+    assert dialogue.run_turn.call_args.kwargs["model_id"] == "openai/gpt-4o-mini"
+    assert dialogue.run_turn.call_args.kwargs["validity_model"] == "openai/gpt-4o-mini"
+    assert dialogue.run_turn.call_args.kwargs["api_key"] == "course-private-key"
+    assert (
+        dialogue.build_bounded_context.call_args.kwargs["api_key"]
+        == "course-private-key"
     )
     assert result.session_status == "ended" and result.ending_reason == "turn_limit"
     assert (

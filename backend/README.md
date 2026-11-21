@@ -13,7 +13,7 @@
     cp backend/config.yaml.example backend/config.yaml
     ```
     `.env` 放密鑰；`config.yaml` 放非密鑰本機設定（見下方 Super Admin）。
-    老師自備的 OpenRouter key 會加密後存進資料庫。`.env` 的 `TEACHER_API_KEY_SECRET` 是解密用的伺服器金鑰，至少 32 字元，可用 `openssl rand -hex 32` 產生。沒設老師 key 時，模型呼叫仍用 `OPENAI_API_KEY`。換掉 `TEACHER_API_KEY_SECRET` 之後，已存的老師 key 無法解密。
+    老師自備的 OpenRouter key 會加密後存進資料庫。`.env` 的 `TEACHER_API_KEY_SECRET` 是解密用的伺服器金鑰，至少 32 字元，可用 `openssl rand -hex 32` 產生。所有課程 AI 工作（含助教／學生觸發與背景報告）使用課程擁有者的 key；沒設時用單一 `OPENAI_API_KEY`。老師 key 解密或呼叫失敗不會改用伺服器額度；本版本沒有 key rotation。換掉 `TEACHER_API_KEY_SECRET` 之後，已存的老師 key 無法解密。
 
 3. 在 repo 根目錄安裝鎖定的 Python 套件並啟用 pre-commit：
     ```bash
@@ -187,7 +187,7 @@ Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 tr
 
 ## 模型設定
 
-- `OPENAI_MODEL` 預設為 `openai/gpt-6-luna`；`OPENAI_VALIDITY_MODEL` 預設同值，用於每回合的 validity 閘門。
+- `OPENAI_MODEL` 預設為 `openai/gpt-6.1-sol`。所有課程 AI 工作（包含 validity、個人報告、班級摘要）優先使用題目所選模型，未設定才用此預設。`OPENAI_VALIDITY_MODEL` 僅保留設定相容性，不再覆蓋題目模型。
 - 各任務的 timeout 與 `max_tokens` 上限（`app/services/model_client.py`）：
   - 課程設定（`inquiry_setup`）：45 秒，上限 2400 tokens；推理模型送 `reasoning: {effort: low}`。
   - 其他任務：60 秒，上限 4500 tokens。

@@ -73,6 +73,7 @@ def source_snapshot(session, topic, messages, progress: dict | None) -> dict:
         json.dumps(
             {
                 "schema_version": "native-report-source-v1",
+                "model_id": topic.model_id or settings.OPENAI_MODEL,
                 "material": {
                     "interfaceLanguage": topic.content_language
                     or settings.DEFAULT_LANGUAGE_CODE,

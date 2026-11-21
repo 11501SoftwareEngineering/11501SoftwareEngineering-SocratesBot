@@ -24,7 +24,7 @@ Generation/refinement feedback: `assessments`, `clarification_questions`, `sugge
 
 Generation errors include 400 outside setup, 422 for request/semantic rejection, 502 for invalid provider output, 503 for unavailable service/incomplete substantive output, and 504 for the task timeout. See per-route OpenAPI for examples. Opening generation sends the effective content language and requests only `opening_message` using a dedicated schema (45-second timeout, at most500 output tokens). Missing/blank/malformed opening output returns502 without replacing the saved opening.
 
-Stage1 uses the requesting user's stored OpenRouter key when available, otherwise the server key. Dialogue/report calls use server credentials. Configuring only a teacher key does not establish access for all stages. For teacher- and TA-created activities, model selection is explicit creation override → course owner (`Course.created_by`) saved default → server default. Explicit and saved selections must exist in the catalog; stale saved defaults return422. Language defaults to server configuration. These defaults affect only new topics. Generate/refine return the effective language/model; to adopt a generated selection, send it explicitly on Save/Publish. Model/language changes are recorded in inquiry revisions. No key belongs in a frontend payload, trace or example beyond the dedicated existing key-settings flow.
+All course AI calls use the course owner's stored OpenRouter key when configured, including requests triggered by TAs/students and background report/synthesis jobs. Otherwise they use the single server OPENAI_API_KEY. Missing course/topic records or unreadable personal keys fail closed; teacher-key provider failures never switch to server billing. No rotating key pool is included. For teacher- and TA-created activities, model selection is explicit creation override → course owner (`Course.created_by`) saved default → server default. Explicit and saved selections must exist in the catalog; stale saved defaults return422. Language defaults to server configuration. These defaults affect only new topics. Generate/refine return the effective language/model; to adopt a generated selection, send it explicitly on Save/Publish. Model/language changes are recorded in inquiry revisions. No key belongs in a frontend payload, trace or example beyond the dedicated existing key-settings flow.
 
 ```mermaid
 sequenceDiagram
@@ -171,7 +171,7 @@ Progress references must identify an existing positive student exchange. Invalid
 
 ## Default model selection
 
-The configured defaults for `OPENAI_MODEL` and `OPENAI_VALIDITY_MODEL` are `openai/gpt-6.1-sol`, as selected by the project owner. Existing environment overrides still win. Saved teacher/topic selections also remain unchanged. Validity uses its separate configured model; reports and class synthesis use the global default. This is configuration compatibility with the existing catalog/tokenizer mapping, not a live OpenRouter availability or output-quality certification.
+The configured defaults for `OPENAI_MODEL` and `OPENAI_VALIDITY_MODEL` are `openai/gpt-6.1-sol`, as selected by the project owner. Existing environment overrides still win. Saved teacher/topic selections also remain unchanged. Validity, status, planning, context compression, progress catch-up, personal reports and class synthesis use the saved activity model, falling back to OPENAI_MODEL only when absent. OPENAI_VALIDITY_MODEL remains accepted for configuration compatibility but no longer controls course dialogue. New report source snapshots and summary requests retain the resolved model; legacy pending snapshots acquire it once from their topic. Credentials are looked up at execution and never frozen in evidence/attempt JSON. This is configuration compatibility with the existing catalog/tokenizer mapping, not a live OpenRouter availability or output-quality certification.
 
 
 ## Native individual reports (Chunk05)
@@ -185,3 +185,28 @@ Public report keys remain compatible. Reflection/working position, strongest rea
 New timeline items retain string `evidence` and add `evidence_reference: {message_id, turn, quote}`. Quotes are copied from stored student messages; the validator checks ownership-derived source, turn, ID, question and exact quote, and rejects duplicates/malformed entries. This checks source integrity, not whether every model interpretation is philosophically or semantically justified. Legacy stored reports remain readable but are not retroactively certified.
 
 `completed_at`, when available, comes from the session's server timestamp. `anonymous_id` remains unimplemented pending an agreed alias scope; clients must not assume it exists. Reports larger than `REPORT_CONTEXT_TOKEN_BUDGET` (default32000 estimated request tokens including output reserve) fail before provider invocation rather than silently dropping evidence. This is a configurable local guard, not a guarantee of provider context capacity. Existing retry/poll behavior remains. Full native Stage3 synthesis remains a later chunk.
+
+
+### Model and credential routing (combined Chunk07/08)
+
+```mermaid
+sequenceDiagram
+    participant Caller as Teacher / TA / Student / Job
+    participant API as Backend
+    participant DB as Postgres
+    participant Model as OpenRouter
+    Caller->>API: Existing course operation
+    API->>DB: Authorize operation; load course owner and activity
+    API->>API: Resolve saved model (or explicit Stage1 generation override)
+    API->>DB: Load course owner's encrypted credential
+    alt Personal credential exists and can be decrypted
+        API->>Model: Selected model + personal credential
+    else No personal credential configured
+        API->>Model: Selected model + single server credential
+    end
+    Model-->>API: Result or failure (no billing-account failover)
+    API->>DB: Validated result and nonsecret provenance
+    API-->>Caller: Existing response / job status
+```
+
+An unreadable credential or missing ownership record stops before a provider request. Model failures preserve existing API error/job-failure contracts. There are no new request fields or frontend changes. Summary model/language are captured when enqueued; report model is captured with its source before inference. Retrying an existing captured request retains its model; a new attempt may resolve current configuration. Native Stage3 input/grouping changes remain a later chunk.

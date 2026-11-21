@@ -147,8 +147,12 @@ async def build_bounded_context(
     checkpoint: DialogueContextCheckpoint,
     model_id: str,
     prompts: DialogueContextPrompts,
+    api_key: str | None = None,
 ) -> BoundedDialogueContext:
-    """Compact complete older turns until the request, schema, and output reserve fit."""
+    """Compact complete older turns until the request, schema, and output reserve fit.
+
+    ``api_key`` is the course teacher's key; None uses the single server key.
+    """
     budget = settings.DIALOGUE_CONTEXT_TOKEN_BUDGET
     if (
         checkpoint.summarized_message_count < 0
@@ -232,6 +236,7 @@ async def build_bounded_context(
             material=summary_material,
             model=model_id,
             max_tokens=prompts.summary.max_output_tokens,
+            api_key=api_key,
         )
         summary = result.get("summary")
         if not isinstance(summary, str) or not summary.strip():

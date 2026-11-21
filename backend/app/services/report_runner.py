@@ -8,6 +8,8 @@ import logging
 from contextlib import suppress
 from uuid import UUID
 
+from fastapi import HTTPException
+
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.prompts import PromptStage, prompt_for
@@ -22,6 +24,7 @@ from app.services.report_adapter import (
     source_snapshot,
 )
 from app.services.report_text import validate_report
+from app.services.teacher_ai_settings import course_api_key
 from app.services.token_budget import estimate_total_request_tokens
 
 logger = logging.getLogger("app.model")
@@ -48,7 +51,6 @@ async def run_report(attempt_id: UUID) -> None:
     _live.add(attempt_id)
     refresher: asyncio.Task[None] | None = None
     prompt = prompt_for(PromptStage.PERSONAL_REPORT)
-    model_id = settings.OPENAI_MODEL
     try:
         begun = await _begin(attempt_id)
         if begun is None:
@@ -59,6 +61,7 @@ async def run_report(attempt_id: UUID) -> None:
         )
         try:
             source = await _source(attempt_id, session_id, progress)
+            model_id = source["model_id"]
             material = json.dumps(source["material"], ensure_ascii=False)
             if (
                 estimate_total_request_tokens(
@@ -71,6 +74,7 @@ async def run_report(attempt_id: UUID) -> None:
                 > settings.REPORT_CONTEXT_TOKEN_BUDGET
             ):
                 raise ValueError("Report source exceeds configured budget")
+            api_key = await _api_key(session_id)
             parsed = await client.complete_object(
                 name="personal_report",
                 schema=_SCHEMA,
@@ -78,10 +82,11 @@ async def run_report(attempt_id: UUID) -> None:
                 material=material,
                 model=model_id,
                 max_tokens=prompt.max_output_tokens,
+                api_key=api_key,
             )
             body, native = project_summary(parsed, source)
             body = validate_report(body, source=source)
-        except (ModelCallError, ValueError, TypeError):
+        except (ModelCallError, HTTPException, ValueError, TypeError):
             await _fail(attempt_id)
             return
         await _ready(
@@ -129,6 +134,19 @@ async def _source(attempt_id: UUID, session_id: UUID, progress: dict | None) -> 
         if saved is not None:
             if source_digest(saved) != metadata.get("source_digest"):
                 raise ValueError("Report source fingerprint mismatch")
+            if "model_id" in saved:
+                return saved
+            # Upgrade historical snapshots once without replacing their evidence.
+            from app.models.session import Session
+            from app.models.topic import Topic
+
+            session = await db.get(Session, session_id)
+            topic = None if session is None else await db.get(Topic, session.topic_id)
+            if topic is None:
+                raise ValueError("Missing historical report topic")
+            saved = {**saved, "model_id": topic.model_id or settings.OPENAI_MODEL}
+            await report_crud.save_source(db, attempt_id, saved, source_digest(saved))
+            await db.commit()
             return saved
         from app.models.session import Session
 
@@ -171,3 +189,18 @@ async def _ready(
             report_metadata=report_metadata,
         )
         await db.commit()
+
+
+async def _api_key(session_id: UUID) -> str | None:
+    """Resolve credentials separately; never place them in the frozen evidence."""
+    from app.models.session import Session
+    from app.models.topic import Topic
+
+    async with AsyncSessionLocal() as db:
+        session = await db.get(Session, session_id)
+        if session is None:
+            raise ValueError("Missing report session")
+        topic = await db.get(Topic, session.topic_id)
+        if topic is None:
+            raise ValueError("Missing report topic")
+        return await course_api_key(db, topic.course_id)
