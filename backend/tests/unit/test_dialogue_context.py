@@ -222,6 +222,6 @@ async def test_default_model_builds_the_full_context(
         ),
     )
 
-    assert default_model == "openai/gpt-6.1-sol"
+    assert default_model == "openai/gpt-6-luna"
     assert client.summary_inputs
     assert "compare who benefits" in context.material
