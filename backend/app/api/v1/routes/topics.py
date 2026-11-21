@@ -98,7 +98,11 @@ async def create_or_enter_session(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CreateSessionResponse:
-    """Create or reuse the authenticated student's session for a topic."""
+    """Create or reuse the authenticated student's session for a topic.
+
+    Only students may enter. Teachers and TAs get 403, including a TA who was a
+    student of the course before.
+    """
     return await session_service.create_or_enter_student_session(
         db,
         current_user.id,

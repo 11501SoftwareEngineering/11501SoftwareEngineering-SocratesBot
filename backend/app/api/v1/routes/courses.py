@@ -81,6 +81,11 @@ async def join_course(
     current_user: UserAccount,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> CourseJoinResponse:
+    """Join a course as a student with its invite code.
+
+    A student who left, or whom the teacher removed, cannot join again with the
+    code (400).
+    """
     return await courses_service.join_course(db, current_user, payload)
 
 
@@ -135,7 +140,10 @@ async def leave_course(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    """Student leaves a course (204). Idempotent if already left or not a member."""
+    """Student leaves a course (204). Idempotent if already left or not a member.
+
+    After leaving, the student cannot join again with the invite code.
+    """
     await courses_service.leave_course(db, current_user, courseId)
 
 
@@ -170,7 +178,11 @@ async def remove_student(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> None:
-    """Remove a student from the course (204). Idempotent if already removed."""
+    """Remove a student from the course (204). Idempotent if already removed.
+
+    A removed student cannot join again with the invite code. The teacher can
+    still assign the account as a TA.
+    """
     await courses_service.remove_course_student(db, current_user, courseId, userId)
 
 

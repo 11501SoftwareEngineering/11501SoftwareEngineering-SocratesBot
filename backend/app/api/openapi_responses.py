@@ -120,6 +120,13 @@ TEACHER_PASSWORD_RESET_RESPONSES: dict[int | str, dict[str, Any]] = {
     404: json_detail_example("Teacher not found", "Teacher not found"),
 }
 
+LOGOUT_RESPONSES: dict[int | str, dict[str, Any]] = {
+    403: json_detail_example(
+        "CSRF token missing or mismatch",
+        "CSRF token missing or mismatch",
+    ),
+}
+
 PASSWORD_CHANGE_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: json_detail_examples(
         "Password change rejected",
@@ -180,7 +187,6 @@ COURSE_JOIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: json_detail_examples(
         "Join rejected",
         {
-            "invalid_invite_format": "Invalid invitation code format",
             "already_a_member": "Already a member of this course",
             "already_teacher_or_ta": "Already a teacher or TA of this course",
             "cannot_rejoin_after_leaving": "Cannot rejoin after leaving this course",

@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import ActiveUser, get_db, get_redis
 from app.api.openapi_responses import (
     LOGIN_RESPONSES,
+    LOGOUT_RESPONSES,
     PASSWORD_CHANGE_RESPONSES,
     REGISTER_RESPONSES,
 )
@@ -77,16 +78,32 @@ async def login(
     )
 
 
-@router.post("/logout", response_model=OkResponse)
+@router.post(
+    "/logout",
+    response_model=OkResponse,
+    responses=LOGOUT_RESPONSES,
+    openapi_extra={
+        "parameters": [
+            {
+                "name": "X-CSRF-Token",
+                "in": "header",
+                "required": True,
+                "description": "Must equal the `csrf_token` cookie.",
+                "schema": {"type": "string"},
+            }
+        ]
+    },
+)
 async def logout(
     request: Request,
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> OkResponse:
-    """Revoke refresh tokens for the cookie session and clear cookies.
+    """Revoke every refresh token of the user and clear the cookies.
 
     CSRF is required (middleware). Bearer is not required so expired access
-    can still log out.
+    can still log out. An access token already issued cannot be revoked: it
+    stays valid until it expires (15 minutes by default).
     """
     await auth_service.logout_user(db, request, response)
     return OkResponse()
@@ -105,6 +122,8 @@ async def change_password(
     """Change the authenticated user's password.
 
     Exempt from the must-change gate so forced teachers can clear the flag.
+    On success every refresh token of the user is revoked, so all devices must
+    log in again.
 
     Raises:
         HTTPException: 400 if the old password is wrong or the new password

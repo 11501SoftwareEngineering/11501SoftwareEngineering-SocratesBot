@@ -49,7 +49,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await engine.dispose()
 
 
-app = FastAPI(title=settings.APP_NAME, lifespan=lifespan)
+API_DESCRIPTION = """\
+**Authentication.** Send the access token as `Authorization: Bearer <access_token>`.
+Login returns it in the `Authorization` response header, not in the body.
+
+**Cookies.** Login also sets two cookies: `refresh_token` (HttpOnly) and `csrf_token`.
+
+**Silent renewal.** A `GET` or `HEAD` request whose Bearer is missing or expired is renewed
+from a valid `refresh_token` cookie. The request is served as usual, and the response carries
+a new `Authorization` header and rotated cookies. Other methods never renew: a missing or
+expired Bearer is 401.
+
+**CSRF.** Logout must send an `X-CSRF-Token` header equal to the `csrf_token` cookie, or it
+gets 403.
+"""
+
+app = FastAPI(title=settings.APP_NAME, description=API_DESCRIPTION, lifespan=lifespan)
 
 
 @app.exception_handler(AuthRequired)
