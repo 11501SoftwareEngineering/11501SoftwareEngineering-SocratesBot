@@ -1,4 +1,4 @@
-"""Unprefixed inquiry routes. Setup routes need the course instructor."""
+"""Unprefixed inquiry routes. Setup needs the teacher or a TA with edit_topics; publish and generate need the course teacher."""
 
 from typing import Annotated
 from uuid import UUID
@@ -11,6 +11,7 @@ from app.api.openapi_responses import (
     INQUIRY_GENERATE_RESPONSES,
     INQUIRY_MODEL_LIST_RESPONSES,
     INQUIRY_PUBLISH_RESPONSES,
+    INQUIRY_REFINE_RESPONSES,
     INQUIRY_SETUP_READ_RESPONSES,
     INQUIRY_SETUP_WRITE_RESPONSES,
 )
@@ -50,7 +51,7 @@ async def list_inquiry_models(
 )
 async def get_inquiry_setup(
     topicId: UUID,
-    current_user: TeacherUser,
+    current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InquirySetupResponse:
     """Read the saved inquiry."""
@@ -66,7 +67,7 @@ async def get_inquiry_setup(
 async def save_inquiry_setup(
     topicId: UUID,
     payload: SaveInquiryRequest,
-    current_user: TeacherUser,
+    current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InquirySetupWriteResponse:
     """Save the eight fields during setup. This does not publish."""
@@ -93,12 +94,12 @@ async def generate_inquiry(
     "/topics/{topicId}/setup/refine",
     response_model=InquirySetupResponse,
     response_model_exclude_none=True,
-    responses=INQUIRY_GENERATE_RESPONSES,
+    responses=INQUIRY_REFINE_RESPONSES,
 )
 async def refine_inquiry(
     topicId: UUID,
     payload: RefineInquiryRequest,
-    current_user: TeacherUser,
+    current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InquirySetupResponse:
     """Suggest eight fields from the setup on screen and the feedback. This does not save them."""
@@ -108,12 +109,12 @@ async def refine_inquiry(
 @router.post(
     "/topics/{topicId}/setup/opening-message",
     response_model=OpeningMessageResponse,
-    responses=INQUIRY_GENERATE_RESPONSES,
+    responses=INQUIRY_REFINE_RESPONSES,
 )
 async def opening_message(
     topicId: UUID,
     payload: OpeningMessageRequest,
-    current_user: TeacherUser,
+    current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> OpeningMessageResponse:
     """Draft an opening line from the supplied setup and store it."""

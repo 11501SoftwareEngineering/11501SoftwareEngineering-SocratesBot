@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import CourseRole, SessionStatus, TopicStage
+from app.core.enums import CourseRole, SessionStatus, TaPermission, TopicStage
 from app.crud import course as course_crud
 from app.crud import topic as topic_crud
 from app.models.topic import Topic
@@ -39,6 +39,24 @@ async def get_instructed_topic(
     if topic is None:
         raise _topic_not_found()
     await courses_service.require_course_teacher(db, teacher, topic.course_id)
+    return topic
+
+
+async def get_setup_topic(db: AsyncSession, user: User, topic_id: UUID) -> Topic:
+    """Return the topic if ``user`` may work on its setup.
+
+    The course teacher, or a TA holding ``edit_topics``. Permissions are read on
+    every call, so a change applies to the next request.
+
+    Raises:
+        HTTPException: 404 if the topic is missing; 403 for anyone else.
+    """
+    topic = await topic_crud.get_topic_by_id(db, topic_id)
+    if topic is None:
+        raise _topic_not_found()
+    await courses_service.require_course_teacher_or_ta(
+        db, user, topic.course_id, TaPermission.EDIT_TOPICS
+    )
     return topic
 
 

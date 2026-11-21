@@ -532,6 +532,10 @@ _INQUIRY_DENIED = json_detail_examples(
         "not_instructor": "Course teacher required",
     },
 )
+_INQUIRY_SETUP_DENIED = json_detail_example(
+    "Course teacher or TA with edit_topics permission required",
+    "Course teacher or TA with edit_topics permission required",
+)
 _INQUIRY_MISSING = json_detail_example("Topic not found", "Topic not found")
 _INQUIRY_UNAUTHORIZED = json_detail_example(
     AUTH_UNAUTHORIZED_DETAIL,
@@ -548,7 +552,7 @@ INQUIRY_MODEL_LIST_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 INQUIRY_SETUP_READ_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: _INQUIRY_UNAUTHORIZED,
-    403: _INQUIRY_DENIED,
+    403: _INQUIRY_SETUP_DENIED,
     404: _INQUIRY_MISSING,
 }
 
@@ -560,7 +564,7 @@ INQUIRY_SETUP_WRITE_RESPONSES: dict[int | str, dict[str, Any]] = {
         },
     ),
     401: _INQUIRY_UNAUTHORIZED,
-    403: _INQUIRY_DENIED,
+    403: _INQUIRY_SETUP_DENIED,
     404: _INQUIRY_MISSING,
     422: json_detail_example(
         "Request validation failed",
@@ -575,9 +579,16 @@ _INQUIRY_GENERATION_FAILED = json_detail_example(
 
 INQUIRY_GENERATE_RESPONSES: dict[int | str, dict[str, Any]] = {
     **INQUIRY_SETUP_WRITE_RESPONSES,
+    403: _INQUIRY_DENIED,
     409: json_detail_example("Inquiry was updated", "Inquiry was updated"),
     502: _INQUIRY_GENERATION_FAILED,
     503: _INQUIRY_GENERATION_FAILED,
+}
+
+# Generate stays course-teacher only; refine and the opening line follow setup.
+INQUIRY_REFINE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    **INQUIRY_GENERATE_RESPONSES,
+    403: _INQUIRY_SETUP_DENIED,
 }
 
 SUMMARY_PUBLISH_RESPONSES: dict[int | str, dict[str, Any]] = {

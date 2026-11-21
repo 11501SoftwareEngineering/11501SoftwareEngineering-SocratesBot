@@ -33,7 +33,7 @@ from app.schemas.inquiry import (
 from app.services import courses as courses_service
 from app.services.model_client import ModelCallError, OpenAIChatClient
 from app.services.teacher_ai_settings import openrouter_api_key
-from app.services.topics import get_instructed_topic
+from app.services.topics import get_instructed_topic, get_setup_topic
 
 _INSTRUCTIONS = (
     "Turn the teacher's notes into an eight-field inquiry. "
@@ -206,14 +206,14 @@ def _apply(topic: Topic, generated: GeneratedInquiry) -> None:
 
 
 async def get_inquiry_setup(
-    db: AsyncSession, teacher: User, topic_id: UUID
+    db: AsyncSession, user: User, topic_id: UUID
 ) -> InquirySetupResponse:
-    """Return the saved inquiry for an instructor of the course.
+    """Return the saved inquiry to the teacher or a TA with ``edit_topics``.
 
     Raises:
-        HTTPException: 404 if the topic is missing; 403 if not an instructor.
+        HTTPException: 404 if the topic is missing; 403 for anyone else.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_setup_topic(db, user, topic_id)
     return _response(topic)
 
 
@@ -289,15 +289,15 @@ async def _store_setup(db: AsyncSession, topic: Topic, setup: InquiryFields) -> 
 
 
 async def save_inquiry_setup(
-    db: AsyncSession, teacher: User, topic_id: UUID, payload: SaveInquiryRequest
+    db: AsyncSession, user: User, topic_id: UUID, payload: SaveInquiryRequest
 ) -> InquirySetupWriteResponse:
     """Save the eight fields while the topic is still in setup.
 
     Raises:
-        HTTPException: 404 if the topic is missing; 403 if not an instructor;
-            400 if the topic is not in setup.
+        HTTPException: 404 if the topic is missing; 403 unless the teacher or a TA
+            with ``edit_topics``; 400 if the topic is not in setup.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_setup_topic(db, user, topic_id)
     try:
         topic = await _locked_setup(db, topic.id)
         topic = await _store_setup(db, topic, payload.setup)
@@ -379,19 +379,20 @@ async def generate_inquiry(
 
 
 async def refine_inquiry(
-    db: AsyncSession, teacher: User, topic_id: UUID, payload: RefineInquiryRequest
+    db: AsyncSession, user: User, topic_id: UUID, payload: RefineInquiryRequest
 ) -> InquirySetupResponse:
     """Suggest eight fields from the screen and the feedback. Nothing is saved.
 
     Raises:
-        HTTPException: 404 if the topic is missing; 403 if not an instructor;
-            400 if the topic is not in setup; 502 or 503 if the model call fails.
+        HTTPException: 404 if the topic is missing; 403 unless the teacher or a TA
+            with ``edit_topics``; 400 if the topic is not in setup; 502 or 503
+            if the model call fails.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_setup_topic(db, user, topic_id)
     await _require_setup(topic)
     model_id = topic.model_id or settings.OPENAI_MODEL
     language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
-    api_key = await openrouter_api_key(db, teacher.id)
+    api_key = await openrouter_api_key(db, user.id)
     generated = await _complete(
         model_id,
         _INSTRUCTIONS,
@@ -402,21 +403,22 @@ async def refine_inquiry(
 
 
 async def opening_message(
-    db: AsyncSession, teacher: User, topic_id: UUID, payload: OpeningMessageRequest
+    db: AsyncSession, user: User, topic_id: UUID, payload: OpeningMessageRequest
 ) -> OpeningMessageResponse:
     """Draft an opening line from the supplied setup and store it.
 
     Raises:
-        HTTPException: 404 if the topic is missing; 403 if not an instructor;
-            400 if the topic is not in setup; 502 or 503 if the model call fails.
+        HTTPException: 404 if the topic is missing; 403 unless the teacher or a TA
+            with ``edit_topics``; 400 if the topic is not in setup; 502 or 503
+            if the model call fails.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_setup_topic(db, user, topic_id)
     await _require_setup(topic)
     seen_at = topic.updated_at
     topic_id = topic.id
     model_id = topic.model_id or settings.OPENAI_MODEL
     draft = payload.setup
-    api_key = await openrouter_api_key(db, teacher.id)
+    api_key = await openrouter_api_key(db, user.id)
     await db.commit()
     raw = await _model_json(
         model_id,
