@@ -229,3 +229,20 @@ API transport, lifecycle and retry contracts: [integration guide](../docs/AI_BAC
 使用原生 CentralReport 與動態觀點分組，模型只輸出定性群組，後端驗證成員與計算比例。無法分類的報告仍列入分母；全無足夠證據時直接產生結構化結果，不呼叫模型。私有原生結果保存在既有 JSON 欄位；既有教師編輯／審核／發布／撤回及學生 DTO 不變。詳見 docs/AI_BACKEND_CONTRACT.md。無新增 migration。
 
 測試：`pytest tests/unit/test_central_synthesis.py tests/unit/test_stage3_jobs.py tests/api/v1/test_summary_routes.py -q`。真實資料庫測試為 `tests/integration/test_native_stage3_postgres.py`，需要 disposable `SESSION_TEST_DATABASE_URL`。httpyac 手動驗收見 `scenarios/user-journey/native-stage3/README.md`，不能將未執行的 scenario 視為測試通過。
+
+
+### Teacher usage metering
+
+Usage follow-up requires Alembic revision `b8e39a1547c2`. GET `/api/v1/users/me/ai/usage` aggregates provider requests attributed to the authenticated course teacher in the current UTC month, including retries/failed output. Unknown token totals/cost are null, not zero. No historic provider-account backfill. See [API contract](../docs/AI_BACKEND_CONTRACT.md#real-usage-metering-usage-follow-up-branch-not-deployed) for ownership, failure semantics and examples. Ledger recording uses a separate DB connection; size the pool for request/job connections plus metering writes.
+
+
+### AI diagnostics and response traces
+
+AI calls emit structured `ai_event` logs on `app.ai`. Browser responses include `X-Request-ID` (also exposed through CORS); use it to find the HTTP request and its validity/status/planning call IDs. Background events include report/summary job IDs. Logs include requested/actual model when available, task, prompt version/hash, schema hash, output cap, response status, finish reason, token/reasoning counts, latency, provider generation ID and usage-record ID. Normal events exclude messages, responses and credentials.
+
+SQL query echo is now disabled by default. Set `SQL_ECHO=true` explicitly in development only if SQL debugging is needed. To inspect a model's returned output, set `AI_TRACE_ENABLED=true` with `APP_ENV=development` and restart the backend. Redacted response JSON is written to `backend/.local/ai-traces/ai-responses-<pid>.jsonl`, rotating at1MB with3 backups per worker; directory is Git-ignored. This records responses, not prompts/headers; credentials and reasoning text are removed. It is disabled by default and never enabled in production by this flag. Responses may contain student text: use only authorized development data, restrict access and delete the files after debugging.
+
+See [AI debug playbook](../docs/AI_BACKEND_CONTRACT.md#ai-call-debugging-usage-and-diagnostics-follow-up) for pinpointing truncation versus malformed/schema/evidence/provider errors. Instrumentation does not change model selection, prompts, token limits or retry behavior, and does not prove the cause of an earlier unlogged502.
+
+
+Developer handoff: the [step-by-step diagnostics walkthrough](../docs/AI_BACKEND_CONTRACT.md#developer-walkthrough) covers startup/configuration, collecting X-Request-ID, Windows/Bash log filtering, interpreting a status truncation example, reading redacted response files, missing-log troubleshooting, and the exact evidence to include in a bug report. Start there when investigating a502; the logging feature itself does not fix it.

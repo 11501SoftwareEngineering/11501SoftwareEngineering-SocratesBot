@@ -563,13 +563,17 @@ version: 0.2
 皆在 /users/me/ai 路徑下，僅限 teacher 可用
 
 ### 取得 AI 用量
-- 功能說明: 取得本人本月 AI 用量
+
+> 實作狀態：本 usage 修正分支提供真實 provider-request ledger 與聚合，需合併及執行 migration `b8e39a1547c2` 才可採用；main 與 PR239 scaffold 不具備此能力。只包含啟用計量後由本系統發出的請求，不回補歷史／外部帳號用量。
+
+- 功能說明: 依 UTC 月份統計本人作為課程 owner 的 AI 請求（含 TA／學生觸發、背景報告、重試及失敗呼叫），來源為 provider 回傳值
 - 呼叫方式: GET /users/me/ai/usage
 - 輸入資料: 無
-- 成功回應: `month`, `total_tokens`, `input_tokens`, `output_tokens`, `request_count`, `by_stage`（分階段統計，格式見下）, `cost_usd`（無資料時為 null，不代表 0）, `cost_source`, `updated_at`
+- 成功回應: `month`, `total_tokens`, `input_tokens`, `output_tokens`, `request_count`, `by_stage`（分階段統計，格式見下）, `cost_usd`（無資料或任一請求成本未知時為 null；provider 明確回0才表示0）, `cost_source`, `updated_at`
     - `by_stage`: 陣列，固定 4 筆，依 `setup`、`dialogue`、`report`、`summary` 的順序；本月沒有用量的階段也要回傳（數量為 0、`cost_usd` 為 null）
         - `stage`: `setup`（活動設定）、`dialogue`（學生對話）、`report`（個人報告）、`summary`（全班統整）
-        - `request_count`, `total_tokens`, `input_tokens`, `output_tokens`: 整數
+        - `request_count`: 整數，實際 provider request 嘗試次數；同一學生回合可能有多個呼叫
+        - `total_tokens`, `input_tokens`, `output_tokens`: 整數或 null；任一請求缺該項 usage 時，該項總數為 null，不假裝是0
         - `cost_usd`: 該階段本月花費（美元）；無資料時為 null，不代表 0
     - `by_stage` 範例:
         ```json
@@ -694,3 +698,12 @@ Inconclusive reports retain the full report structure, with `evidence_status=ins
 - HTTP200 表示已關閉且工作已排程，不代表摘要就緒。後端先等待個人報告再自動統整；GET summary 輪詢工作狀態，原有審閱／發布流程不變。重複關閉沿用有效或 ready 工作，失敗／逾時可重試。
 - 零回答：個人報告為 ready/insufficient，明示未提交回答；不呼叫模型、不計入全班分母。全班皆無回答時仍有 denominator0 的誠實證據不足草稿。
 - 新端點沿用全域 teacher + course instructor 授權。完整 payload、錯誤、競態、恢復與前端流程見 [teacher closure contract](AI_BACKEND_CONTRACT.md#teacher-controlled-stage2-closure-pr-272-not-deployed)。本提案不修改前端；前端需輪詢／重讀現有狀態才能導頁。
+
+
+## AI 診斷日誌（usage/diagnostics 修正分支）
+
+HTTP 回應新增 `X-Request-ID`，CORS 已 expose，供前端回報502時定位。後端 `ai_event` 串接 HTTP request/call/job ID，記錄 task、model、prompt 版本/hash、輸出上限、provider status、finish_reason、token/reasoning 數、latency、generation/usage ID。可分辨截斷、JSON、schema、證據引用、provider、timeout；不變更現有 AI 回應/API error 行為。
+
+SQL_ECHO 預設 false。AI_TRACE_ENABLED 預設 false；僅 development 啟用時，原始回應（去除憑證與 reasoning 文字）寫入被 Git 忽略的 `.local/ai-traces`，每 worker1MB/3備份輪替。可能含學生文字，僅供授權測試資料及本機除錯，production 不啟用。完整定位步驟見 [AI debugging](AI_BACKEND_CONTRACT.md#ai-call-debugging-usage-and-diagnostics-follow-up)。此修正不調整1000 token上限或修復502本身。
+
+開發者操作步驟（含啟動指令、如何從 browser 取 X-Request-ID、PowerShell/Bash 搜尋、範例解析、trace 檔案與回報清單）見 [developer walkthrough](AI_BACKEND_CONTRACT.md#developer-walkthrough)。

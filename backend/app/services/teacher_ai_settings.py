@@ -20,6 +20,7 @@ from app.schemas.teacher_ai_settings import (
     DefaultModelResponse,
     DefaultModelUpdateResponse,
 )
+from app.services.ai_usage import AttributedKey
 
 _MIN_MASKED = 20
 
@@ -84,9 +85,11 @@ async def openrouter_api_key(db: AsyncSession, user_id: uuid.UUID) -> str:
     row = await settings_crud.get_settings(db, user_id)
     stored = None if row is None else row.api_key_ciphertext
     if not isinstance(stored, str) or stored == "":
-        return settings.OPENAI_API_KEY.get_secret_value()
+        return AttributedKey(
+            settings.OPENAI_API_KEY.get_secret_value(), user_id, "server"
+        )
     try:
-        return decrypt_api_key(stored)
+        return AttributedKey(decrypt_api_key(stored), user_id, "teacher")
     except RuntimeError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

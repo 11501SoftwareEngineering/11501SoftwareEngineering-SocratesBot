@@ -8,11 +8,14 @@ import logging
 from contextlib import suppress
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.prompts import PromptStage, prompt_for
 from app.crud import summary as summary_crud
 from app.crud import topic as topic_crud
+from app.services import ai_diagnostics
 from app.services.attempt_lease import refresh
 from app.services.central_synthesis import (
     MAX_PAYLOAD_BYTES,
@@ -79,6 +82,7 @@ def schedule(attempt_id: UUID) -> None:
     task.add_done_callback(_tasks.discard)
 
 
+@ai_diagnostics.job_scope("summary")
 async def run_summary(attempt_id: UUID) -> None:
     """Prepare one summary attempt and store it as ready or failed."""
     _live.add(attempt_id)
@@ -118,7 +122,14 @@ async def run_summary(attempt_id: UUID) -> None:
             draft["native_synthesis"]["sources"] = request["sources"]
             draft["native_synthesis"]["prompt_version"] = prompt.version
 
-        except (ModelCallError, ValueError, TypeError, KeyError):
+        except (ModelCallError, ValueError, TypeError, KeyError) as exc:
+            if isinstance(exc, ValidationError):
+                ai_diagnostics.validation_failure("native_class_summary", exc)
+            ai_diagnostics.emit(
+                "job_validation_failed",
+                error_type=type(exc).__name__,
+                job_kind="summary",
+            )
             await _fail(attempt_id)
             return
         await _ready(
@@ -182,6 +193,7 @@ async def _fail(attempt_id: UUID) -> None:
     async with AsyncSessionLocal() as db:
         await summary_crud.mark_failed(db, attempt_id)
         await db.commit()
+    ai_diagnostics.emit("job_failed", job_kind="summary", job_id=str(attempt_id))
     logger.info("summary attempt failed")
 
 

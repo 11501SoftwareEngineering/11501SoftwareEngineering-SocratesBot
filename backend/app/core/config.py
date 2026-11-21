@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # Optional comma-separated seed pack names (empty → default core packs).
     SEED_PACKS: str = ""
 
+    # Debug output is explicit and development-only.
+    SQL_ECHO: bool = False
+    AI_TRACE_ENABLED: bool = False
+
     # Database (PostgreSQL)
     POSTGRES_USER: Annotated[SecretStr, Field(min_length=1)]
     POSTGRES_DB: Annotated[SecretStr, Field(min_length=1)]
