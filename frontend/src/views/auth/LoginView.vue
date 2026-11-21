@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import TextLink from '@/components/common/TextLink.vue'
 /**
  * 登入頁。對應 Figma「Login」（node 125:62）。
  * API：POST /auth/login（token 在回應的 Authorization header）
@@ -13,6 +14,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getApiErrorMessage } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const authStore = useAuthStore()
 const showForgotHint = ref(false)
@@ -35,13 +39,13 @@ const mutation = useMutation({
     }
   },
   onError: (error) => {
-    formError.value = getApiErrorMessage(error, '登入失敗，請稍後再試')
+    formError.value = getApiErrorMessage(error, t('auth.loginFailed'))
   },
 })
 
 function handleSubmit() {
-  errors.account = form.account.trim() ? '' : '請輸入帳號'
-  errors.password = form.password ? '' : '請輸入密碼'
+  errors.account = form.account.trim() ? '' : t('auth.accountRequired')
+  errors.password = form.password ? '' : t('auth.password.required')
   formError.value = ''
   if (errors.account || errors.password) return
   mutation.mutate()
@@ -58,7 +62,7 @@ function handleSubmit() {
       role="status"
       class="mt-6 rounded-lg bg-secondary/60 px-4 py-2 text-center text-body text-foreground"
     >
-      登入已過期，請重新登入
+      {{ t('auth.sessionExpired') }}
     </p>
 
     <form
@@ -66,10 +70,15 @@ function handleSubmit() {
       novalidate
       @submit.prevent="handleSubmit"
     >
-      <FormField v-slot="field" inline label="帳號" :error="errors.account">
+      <FormField v-slot="field" inline :label="t('auth.account')" :error="errors.account">
         <Input v-model="form.account" v-bind="field" :id="field.id" autocomplete="username" />
       </FormField>
-      <FormField v-slot="field" inline label="密碼" :error="errors.password || formError">
+      <FormField
+        v-slot="field"
+        inline
+        :label="t('auth.password.label')"
+        :error="errors.password || formError"
+      >
         <Input
           v-model="form.password"
           v-bind="field"
@@ -82,23 +91,18 @@ function handleSubmit() {
       <div class="-mt-[29px] flex flex-col items-end pt-[10px]">
         <div class="flex items-center gap-4 py-[5px]">
           <Button as-child variant="ghost" size="lg" class="font-medium">
-            <RouterLink :to="{ name: 'Register' }">註冊</RouterLink>
+            <RouterLink :to="{ name: 'Register' }">{{ t('auth.register') }}</RouterLink>
           </Button>
           <Button type="submit" size="lg" :disabled="mutation.isPending.value">
-            {{ mutation.isPending.value ? '登入中…' : '登入' }}
+            {{ mutation.isPending.value ? t('auth.loggingIn') : t('auth.login') }}
           </Button>
         </div>
         <!-- 後端沒有忘記密碼的 API：點了提示找老師或管理員重設 -->
-        <button
-          type="button"
-          class="rounded text-header text-muted-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          :aria-expanded="showForgotHint"
-          @click="showForgotHint = !showForgotHint"
-        >
-          忘記密碼?
-        </button>
+        <TextLink :aria-expanded="showForgotHint" @click="showForgotHint = !showForgotHint">
+          {{ t('auth.password.forgot') }}
+        </TextLink>
         <p v-if="showForgotHint" role="status" class="mt-1 text-body text-muted-foreground">
-          請聯絡老師或管理員協助重設密碼。
+          {{ t('auth.password.forgotHint') }}
         </p>
       </div>
     </form>

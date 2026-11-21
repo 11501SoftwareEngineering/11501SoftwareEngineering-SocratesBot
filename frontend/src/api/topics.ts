@@ -1,5 +1,6 @@
 import { apiClient } from './client'
 import type { AgeBand, MaxTurns, TopicStatus } from './courses'
+import { translate } from '@/i18n'
 
 /**
  * 題目（探究活動）：建立、設定、發布（docs/API功能規格.md v0.2「題目」「題目設定階段」）。
@@ -57,14 +58,21 @@ export interface InquiryModel {
 }
 
 /** 欄位名稱 → 畫面上的標題（Figma「確認活動設定」） */
-export const SETUP_FIELDS: { key: keyof TopicSetup; label: string }[] = [
-  { key: 'topic', label: '主題' },
-  { key: 'core_question', label: '核心問題' },
-  { key: 'inquiry_focus', label: '探究重點' },
-  { key: 'background_info', label: '背景資訊' },
-  { key: 'exclusions', label: '排除事項' },
-  { key: 'opening_message', label: '開場訊息' },
-]
+export const SETUP_FIELDS: { key: keyof TopicSetup; label: string }[] = (
+  [
+    'topic',
+    'core_question',
+    'inquiry_focus',
+    'background_info',
+    'exclusions',
+    'opening_message',
+  ] as const
+).map((key) => ({
+  key,
+  get label() {
+    return translate(`setupFields.${key}`)
+  },
+}))
 
 /** 課程描述、對話內容的字數上限 */
 export const LONG_TEXT_MAX = 6000

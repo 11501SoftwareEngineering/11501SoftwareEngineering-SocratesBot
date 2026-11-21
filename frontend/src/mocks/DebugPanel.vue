@@ -8,7 +8,7 @@
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useQueryClient } from '@tanstack/vue-query'
-import { ROLE_LABELS } from '@/api/auth'
+import { roleLabel } from '@/api/auth'
 import { getApiErrorMessage } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -182,7 +182,7 @@ const btn =
             目前：
             <strong class="text-foreground">{{
               authStore.user
-                ? `${authStore.user.name}（${ROLE_LABELS[authStore.user.role]}）`
+                ? `${authStore.user.name}（${roleLabel(authStore.user.role)}）`
                 : '未登入'
             }}</strong>
           </p>
