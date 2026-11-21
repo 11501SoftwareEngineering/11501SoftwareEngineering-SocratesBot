@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { setupServer } from 'msw/node'
-import { addManyConclusions, finishTopicForClass } from '../actions'
-import { handlers } from '../handlers'
-import { resetDb } from '../db'
+import { finishTopicForClass } from '../actions'
+import { completeSession, handlers } from '../handlers'
+import { db, resetDb } from '../db'
 import { resetScenarios, scenarios } from '../scenarios'
 
 const server = setupServer(...handlers)
@@ -30,138 +30,159 @@ async function call(path: string, init: RequestInit & { token?: string } = {}) {
 async function login(account: string, password = 'password123') {
   const { res, data } = await call('/auth/login', {
     method: 'POST',
-    body: JSON.stringify({ account, password }),
+    body: JSON.stringify({ account_id: account, password }),
   })
   return { res, data, token: (res.headers.get('Authorization') ?? '').replace('Bearer ', '') }
 }
 
-describe('假後端', () => {
-  it('登入用後端的角色名稱，token 放在 Authorization header', async () => {
-    const { res, data, token } = await login('s001')
+describe('假後端（v0.2）', () => {
+  it('登入用 account_id，token 放在 Authorization header', async () => {
+    const { res, data, token } = await login('wang')
     expect(res.status).toBe(200)
-    expect(data).toMatchObject({ account: 's001', role: ['USER'], must_change_password: false })
     expect(token).toMatch(/^mock-token\./)
-    expect((await login('s001', 'wrong')).data.detail).toBe('Invalid account or password')
+    expect(data).toMatchObject({ account_id: 'wang', role: ['TEACHER'] })
   })
 
   it('需要改密碼的老師，改完之前其他 API 會回 403', async () => {
     const { token } = await login('chen')
-    const blocked = await call('/teacher/courses', { token })
-    expect(blocked.res.status).toBe(403)
-    expect(blocked.data.detail).toBe('Password change required')
+    const before = await call('/courses', { token })
+    expect(before.res.status).toBe(403)
     const changed = await call('/auth/password', {
       method: 'PUT',
       token,
       body: JSON.stringify({ old_password: 'password123', new_password: 'newpassword1' }),
     })
     expect(changed.res.status).toBe(200)
-    expect((await call('/teacher/courses', { token })).res.status).toBe(200)
+    expect((await call('/courses', { token })).res.status).toBe(200)
   })
 
-  it('學生不能打老師的 API', async () => {
-    const { token } = await login('s001')
-    const { res, data } = await call('/teacher/courses', { token })
-    expect(res.status).toBe(403)
-    expect(data.detail).toBe('Teacher privileges required')
-  })
-
-  it('加入課程：格式錯、代碼不存在、已經加入、成功、退出後不能再加入', async () => {
-    const { token } = await login('s001')
-    const join = (code: string) =>
-      call('/student/courses/join', {
-        method: 'POST',
-        token,
-        body: JSON.stringify({ invite_code: code }),
-      })
-    expect((await join('NOPE99')).data.detail).toBe('Invalid invitation code format')
-    expect((await join('ZZZZZZZZ')).data.detail).toBe('Course not found for this invitation code')
-    expect((await join('PHSP3456')).data.detail).toBe('Already a member of this course')
-    const ok = await join(' ethc7892 ')
-    expect(ok.res.status).toBe(200)
-    expect(ok.data.name).toBe('倫理學入門')
-    const { data: courses } = await call('/student/courses', { token })
-    expect(courses).toHaveLength(3)
-
-    const left = await call(`/student/courses/${ok.data.course_id}`, { method: 'DELETE', token })
-    expect(left.res.status).toBe(204)
-    expect((await join('ETHC7892')).data.detail).toBe('Cannot rejoin after leaving this course')
-  })
-
-  it('老師可以把退出的學生用帳號加回來', async () => {
-    const student = await login('s001')
-    await call('/student/courses/c-phil', { method: 'DELETE', token: student.token })
+  it('課程列表依身分回傳 my_role；學生看不到學生人數', async () => {
     const teacher = await login('wang')
-    const add = (account_id: string) =>
-      call('/teacher/courses/c-phil/students', {
-        method: 'POST',
-        token: teacher.token,
-        body: JSON.stringify({ account_id }),
-      })
-    expect((await add('nobody')).data.detail).toBe('Student not found')
-    expect((await add('s001')).res.status).toBe(200)
-    expect((await add('s001')).data.detail).toBe('Student is already in this course')
-    const { data: students } = await call('/teacher/courses/c-phil/students', {
-      token: teacher.token,
+    const { data: courses } = await call('/courses', { token: teacher.token })
+    expect(courses[0]).toMatchObject({ my_role: 'teacher', student_count: 10 })
+    const ta = await login('s011')
+    const { data: taCourses } = await call('/courses', { token: ta.token })
+    expect(taCourses.find((c: { course_id: string }) => c.course_id === 'c-phil')).toMatchObject({
+      my_role: 'ta',
+      my_permissions: ['view_members', 'view_reports'],
     })
-    expect(students.map((s: { account_id: string }) => s.account_id)).toContain('s001')
+    const student = await login('s001')
+    const { data: mine } = await call('/courses', { token: student.token })
+    expect(mine[0].student_count).toBeNull()
+  })
+
+  it('學生看不到草稿（setup）的活動', async () => {
+    const { token } = await login('s001')
+    const { data } = await call('/courses/c-phil/topics', { token })
+    expect(data.topics.map((t: { topic_status: string }) => t.topic_status)).not.toContain('setup')
+    const teacher = await login('wang')
+    const { data: all } = await call('/courses/c-phil/topics', { token: teacher.token })
+    expect(all.topics.map((t: { topic_status: string }) => t.topic_status)).toContain('setup')
+  })
+
+  it('refine 帶畫面上的 setup，結果只回傳、不存檔；發布帶 setup 才存', async () => {
+    const { token } = await login('wang')
+    const { data: before } = await call('/topics/t-free/setup', { token })
+    const edited = { ...before.setup, core_question: '畫面上改過、還沒存的問題' }
+    const { data: refined } = await call('/topics/t-free/setup/refine', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ setup: edited, feedback: '精簡一點' }),
+    })
+    expect(refined.setup.core_question).toBe('畫面上改過、還沒存的問題')
+    const { data: saved } = await call('/topics/t-free/setup', { token })
+    expect(saved.setup.core_question).toBe(before.setup.core_question)
+    const { data: published } = await call('/topics/t-free/publish', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ setup: edited }),
+    })
+    expect(published).toMatchObject({ topic_status: 'conversation' })
+    expect(published.setup.core_question).toBe('畫面上改過、還沒存的問題')
   })
 
   it('情境：空資料、錯誤只影響指定的 API 群組', async () => {
     const { token } = await login('s001')
-    scenarios.groups.studentCourses = 'empty'
-    expect((await call('/student/courses', { token })).data).toEqual([])
-    scenarios.groups.studentCourses = 'error'
-    const failed = await call('/student/courses', { token })
-    expect(failed.res.status).toBe(500)
+    scenarios.groups.courses = 'empty'
+    expect((await call('/courses', { token })).data).toEqual([])
+    scenarios.groups.courses = 'error'
+    expect((await call('/courses', { token })).res.status).toBe(500)
     expect((await call('/users/me', { token })).res.status).toBe(200)
   })
 
-  it('對話串流：逐段回傳文字，最後一個事件帶剩餘回合數', async () => {
-    const { token } = await login('s012')
-    const { data: session } = await call('/student/topics/t-lie/sessions', {
-      method: 'POST',
-      token,
-    })
-    const res = await fetch(`${API}/student/sessions/${session.session_id}/messages/stream`, {
+  it('對話串流：逐段回傳文字，done 事件帶 completed_turns', async () => {
+    const { token } = await login('s004')
+    const { data: session } = await call('/topics/t-ai/sessions', { method: 'POST', token })
+    const res = await fetch(`${API}/sessions/${session.session_id}/messages/stream`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: '我覺得可以' }),
+      body: JSON.stringify({ content: '我覺得要看情況', request_id: 'r1' }),
     })
     expect(res.headers.get('Content-Type')).toContain('text/event-stream')
     const text = await res.text()
     expect(text).toContain('data: ')
     const done = JSON.parse(text.split('event: done\ndata: ')[1] ?? '{}')
-    expect(done).toMatchObject({ remaining_rounds: 4, is_completed: false })
-    const { data: history } = await call(`/student/sessions/${session.session_id}/messages`, {
-      token,
-    })
+    expect(done).toMatchObject({ completed_turns: 1, is_completed: false })
+    const { data: history } = await call(`/sessions/${session.session_id}/messages`, { token })
+    expect(history).toMatchObject({ completed_turns: 1, max_turns: 10 })
     expect(history.messages).toHaveLength(3)
   })
 
-  it('匿名的同學在學生端統計顯示成「匿名同學」，老師看得到本名', async () => {
-    const student = await login('s001')
-    const { data: stats } = await call('/student/topics/t-lie/analytics', { token: student.token })
-    const names = stats.conclusions.flatMap((k: { students: { display_name: string }[] }) =>
-      k.students.map((s) => s.display_name),
-    )
-    expect(names).toContain('匿名同學')
-    const teacher = await login('wang')
-    const { data: teacherStats } = await call('/teacher/topics/t-lie/conclusions', {
-      token: teacher.token,
-    })
-    const teacherNames = teacherStats.conclusions.flatMap(
-      (k: { students: { display_name: string }[] }) => k.students.map((s) => s.display_name),
-    )
-    expect(teacherNames).not.toContain('匿名同學')
+  it('個人報告：結束對話不會自動產生，要 POST 才開始；重複 POST 沿用同一份', async () => {
+    const { token } = await login('s004')
+    const { data: session } = await call('/topics/t-ai/sessions', { method: 'POST', token })
+    const path = `/sessions/${session.session_id}/report`
+    expect((await call(path, { token })).res.status).toBe(409)
+    expect((await call(path, { method: 'POST', token })).res.status).toBe(409)
+
+    completeSession(db.sessions.find((s) => s.id === session.session_id)!)
+    const before = await call(path, { token })
+    expect(before.res.status).toBe(404)
+    expect(before.data.detail).toBe('Report not found')
+
+    const started = await call(path, { method: 'POST', token })
+    expect(started.data).toMatchObject({ report_status: 'processing', report: null })
+    const readyAt = db.reports.find((r) => r.session_id === session.session_id)!.ready_at
+    await call(path, { method: 'POST', token })
+    expect(db.reports.filter((r) => r.session_id === session.session_id)).toHaveLength(1)
+    expect(db.reports.find((r) => r.session_id === session.session_id)!.ready_at).toBe(readyAt)
+    expect((await call(path, { token })).data.report_status).toBe('processing')
+
+    const other = await login('s005')
+    expect((await call(path, { token: other.token })).res.status).toBe(404)
   })
 
-  it('Debug「新增很多結論」：結論變多，而且每個結論都分到作答', async () => {
-    finishTopicForClass('t-lie')
-    expect(addManyConclusions('t-lie')).toContain('已新增 5 個結論')
+  it('摘要：審閱帶文字、只發布最新的已審閱版本；學生看得到發布版', async () => {
     const { token } = await login('wang')
-    const { data } = await call('/teacher/topics/t-lie/conclusions', { token })
-    expect(data.conclusions).toHaveLength(8)
-    expect(data.total_answered).toBe(12)
-    expect(data.conclusions.every((k: { count: number }) => k.count > 0)).toBe(true)
+    const { data: latest } = await call('/topics/t-lie/summary', { token })
+    expect(latest).toMatchObject({
+      published_version: 1,
+      summary: { version: 2, summary_status: 'draft' },
+    })
+    const blocked = await call('/topics/t-lie/summary/publish', { method: 'POST', token })
+    expect(blocked.res.status).toBe(400)
+    const text = { overview: '新的總覽', viewpoint_summary: latest.summary.viewpoint_summary }
+    const { data: reviewed } = await call('/topics/t-lie/summary/review', {
+      method: 'POST',
+      token,
+      body: JSON.stringify(text),
+    })
+    expect(reviewed).toMatchObject({ version: 3, summary_status: 'reviewed' })
+    const { data: published } = await call('/topics/t-lie/summary/publish', {
+      method: 'POST',
+      token,
+    })
+    expect(published).toMatchObject({ version: 3, summary_status: 'published' })
+    const student = await login('s001')
+    const { data: pub } = await call('/topics/t-lie/summary/published', { token: student.token })
+    expect(pub.summary.overview).toBe('新的總覽')
+  })
+
+  it('Debug「讓全班完成」：每位學生都有完成的對話', async () => {
+    finishTopicForClass('t-ai')
+    const { token } = await login('wang')
+    const { data } = await call('/courses/c-phil/topics', { token })
+    const topic = data.topics.find((t: { topic_id: string }) => t.topic_id === 't-ai')
+    expect(topic).toMatchObject({ answered_count: 10, student_count: 10 })
   })
 })

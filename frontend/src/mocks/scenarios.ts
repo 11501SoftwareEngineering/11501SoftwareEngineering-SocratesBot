@@ -17,13 +17,14 @@ export const SCENARIO_LABELS: Record<ScenarioMode, string> = {
 export const API_GROUPS = {
   auth: '登入／註冊／帳號',
   admin: '管理員：老師帳號',
-  teacherCourses: '老師：課程列表',
-  teacherTopics: '老師：問題列表',
-  teacherResults: '老師：結果與學生',
-  studentCourses: '學生：課程列表',
-  studentTopics: '學生：問題列表',
+  courses: '課程列表、課程資訊',
+  topics: '探究活動列表',
+  members: '課程成員、助教',
+  setup: '活動設定（AI 產生）',
   chat: '學生：對話',
-  studentResults: '學生：結果',
+  reports: '個人報告',
+  summary: '全班摘要',
+  ai: 'AI 用量與金鑰',
 } as const
 
 export type ApiGroup = keyof typeof API_GROUPS

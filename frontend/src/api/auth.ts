@@ -2,7 +2,7 @@ import { apiClient } from './client'
 
 /**
  * 登入、註冊、帳號相關 API。
- * 欄位名稱已對照後端 OpenAPI（backend/app/schemas/auth.py）。
+ * 欄位名稱照 docs/API功能規格.md v0.2（帳號欄位叫 account_id）。
  */
 
 /** 前端統一使用的角色名稱（路由 meta.roles、畫面判斷都用這個） */
@@ -42,7 +42,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 }
 
 export interface User {
-  account: string
+  account_id: string
   name: string
   /** 主要身分：決定首頁、Header 顯示 */
   role: UserRole
@@ -55,7 +55,7 @@ export interface User {
 
 /** POST /auth/login、GET /users/me 的回應 */
 interface UserResponse {
-  account: string
+  account_id: string
   name: string
   role: string[]
   preferred_language?: string
@@ -63,13 +63,13 @@ interface UserResponse {
 }
 
 export interface LoginPayload {
-  account: string
+  account_id: string
   password: string
 }
 
 export interface RegisterPayload {
   /** 1–64 字 */
-  account: string
+  account_id: string
   /** 8–128 字 */
   password: string
   /** 1–128 字 */
@@ -85,7 +85,7 @@ export interface ChangePasswordPayload {
 export function toUser(data: UserResponse): User {
   const roles = toUserRoles(data.role)
   return {
-    account: data.account,
+    account_id: data.account_id,
     name: data.name,
     role: primaryRole(roles),
     roles,
@@ -93,6 +93,15 @@ export function toUser(data: UserResponse): User {
     must_change_password: !!data.must_change_password,
   }
 }
+
+/** 介面語言（PATCH /users/me/preferences 只接受這三種） */
+export type UiLanguage = 'zh-TW' | 'en' | 'es'
+
+export const UI_LANGUAGES: { value: UiLanguage; label: string }[] = [
+  { value: 'zh-TW', label: '正體中文' },
+  { value: 'en', label: 'English' },
+  { value: 'es', label: 'Español' },
+]
 
 export const authApi = {
   /** 登入。後端把 access token 放在回應的 Authorization header，不在 JSON 裡 */
@@ -115,5 +124,13 @@ export const authApi = {
   },
   changePassword(payload: ChangePasswordPayload) {
     return apiClient.put<{ message: string }>('/auth/password', payload)
+  },
+  /** 更新介面語言 */
+  async updatePreferences(preferred_language: UiLanguage) {
+    const res = await apiClient.patch<{ preferred_language: UiLanguage; message: string }>(
+      '/users/me/preferences',
+      { preferred_language },
+    )
+    return res.data
   },
 }

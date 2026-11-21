@@ -1,3 +1,9 @@
+<script lang="ts">
+import type { InjectionKey } from 'vue'
+/** FormDialog 會 provide 'dialog'：標籤用 Figma 對話框的 32px 粗體、寬 165px 靠左，提示 22px */
+export const FORM_FIELD_LAYOUT: InjectionKey<'page' | 'dialog'> = Symbol('form-field-layout')
+</script>
+
 <script setup lang="ts">
 /**
  * 表單欄位：左邊粗體標籤「帳號：」，右邊輸入框，下面右對齊顯示提示或錯誤訊息。
@@ -11,7 +17,7 @@
  *     </template>
  *   </FormField>
  */
-import { computed, useId } from 'vue'
+import { computed, inject, useId } from 'vue'
 
 const props = defineProps<{
   label: string
@@ -23,6 +29,7 @@ const props = defineProps<{
   inline?: boolean
 }>()
 
+const layout = inject(FORM_FIELD_LAYOUT, 'page')
 const id = useId()
 const messageId = `${id}-message`
 const message = computed(() => props.error || props.hint)
@@ -36,12 +43,22 @@ const fieldAttrs = computed(() => ({
 <template>
   <div
     class="grid gap-x-3 gap-y-1"
-    :class="inline ? 'grid-cols-[auto_1fr] sm:grid-cols-[9rem_1fr]' : 'sm:grid-cols-[9rem_1fr]'"
+    :class="
+      layout === 'dialog'
+        ? 'gap-x-0 [&_input]:h-[63px] sm:grid-cols-[var(--form-label-width,165px)_1fr]'
+        : inline
+          ? 'grid-cols-[auto_1fr] sm:grid-cols-[9rem_1fr]'
+          : 'sm:grid-cols-[9rem_1fr]'
+    "
   >
     <label
       :for="id"
-      class="text-header font-bold text-foreground sm:text-right"
-      :class="[alignTop ? 'sm:pt-3' : 'sm:self-center', inline && !alignTop && 'self-center']"
+      class="font-bold text-foreground"
+      :class="[
+        layout === 'dialog' ? 'text-h1-title' : 'text-header sm:text-right',
+        alignTop ? 'sm:pt-3' : 'sm:self-center',
+        inline && !alignTop && 'self-center',
+      ]"
     >
       {{ label }}：
     </label>
@@ -50,8 +67,12 @@ const fieldAttrs = computed(() => ({
       v-if="message"
       :id="messageId"
       :role="error ? 'alert' : undefined"
-      class="text-right text-body sm:col-start-2"
-      :class="[error ? 'text-destructive' : 'text-muted-foreground', inline && 'col-start-2']"
+      class="text-right sm:col-start-2"
+      :class="[
+        layout === 'dialog' ? 'text-header' : 'text-body',
+        error ? 'text-destructive' : 'text-muted-foreground',
+        inline && 'col-start-2',
+      ]"
     >
       {{ message }}
     </p>
