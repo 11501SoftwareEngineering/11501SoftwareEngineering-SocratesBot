@@ -1,0 +1,463 @@
+# ============================================
+# Case 2: Course and roles
+# ============================================
+# The seed teacher creates a course. Student A and student B join by invite
+# code, and a registered account becomes a TA. Every role then sees the course
+# with the role it holds. Student A leaves, the teacher removes student B and
+# revokes the TA, and the teacher deletes the course.
+#
+# Permissions come back in a fixed order: edit_topics, view_reports,
+# edit_summary, view_members.
+
+# @import ../shared/common.http
+
+###
+
+# ============================================
+# Teacher creates the course
+# ============================================
+# @name createCourse
+# @ref teacherLogin
+{{
+    exports.courseName = `Scenario course ${Date.now().toString(36)}`;
+}}
+POST {{BASE_URL}}/courses
+Authorization: {{teacherToken}}
+Content-Type: application/json
+
+{
+    "name": "{{courseName}}",
+    "description": "Created by the user-lifecycle journey"
+}
+
+{{
+    test.status(200);
+
+    const { equal, ok } = require('assert');
+
+    test('Course is created with an 8-character invite code', () => {
+        const data = JSON.parse(response.body);
+        equal(data.name, courseName);
+        equal(data.my_role, 'teacher');
+        ok(/^[A-Z2-9]{8}$/.test(data.invite_code), 'invite code format');
+    });
+
+    const data = JSON.parse(response.body);
+    exports.courseId = data.course_id;
+    exports.inviteCode = data.invite_code;
+}}
+
+###
+
+# ============================================
+# Students join by invite code
+# ============================================
+# @name joinStudentA
+# @ref createCourse
+# @ref loginStudentA
+POST {{BASE_URL}}/courses/join
+Authorization: {{studentAToken}}
+Content-Type: application/json
+
+{
+    "invite_code": "{{inviteCode}}"
+}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Student A joins as a student', () => {
+        const data = JSON.parse(response.body);
+        equal(data.course_id, courseId);
+        equal(data.my_role, 'student');
+        equal(data.message, 'Joined course');
+    });
+}}
+
+###
+
+# @name joinStudentB
+# @ref joinStudentA
+# @ref loginStudentB
+POST {{BASE_URL}}/courses/join
+Authorization: {{studentBToken}}
+Content-Type: application/json
+
+{
+    "invite_code": "{{inviteCode}}"
+}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Student B joins as a student', () => {
+        equal(JSON.parse(response.body).my_role, 'student');
+    });
+}}
+
+###
+
+# @name teacherCourseList
+# @ref joinStudentB
+GET {{BASE_URL}}/courses
+Authorization: {{teacherToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Teacher sees the course as teacher with both students counted', () => {
+        const item = JSON.parse(response.body).find((c) => c.course_id === courseId);
+        equal(item.my_role, 'teacher');
+        equal(item.student_count, 2);
+        equal(item.invite_code, inviteCode);
+    });
+}}
+
+###
+
+# ============================================
+# Teacher assigns a TA
+# ============================================
+# The check call only validates and writes nothing. The real call grants the
+# permissions, and a later update replaces them.
+# @name checkAssignTa
+# @ref teacherCourseList
+# @ref loginTa
+POST {{BASE_URL}}/courses/{{courseId}}/tas
+Authorization: {{teacherToken}}
+Content-Type: application/json
+
+{
+    "account_id": "{{taAccount}}",
+    "permissions": ["edit_topics", "view_members"],
+    "check": true
+}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Check call reports the account can be assigned', () => {
+        const data = JSON.parse(response.body);
+        equal(data.message, 'TA can be assigned');
+        equal(data.account_id, taAccount);
+    });
+}}
+
+###
+
+# @name assignTa
+# @ref checkAssignTa
+POST {{BASE_URL}}/courses/{{courseId}}/tas
+Authorization: {{teacherToken}}
+Content-Type: application/json
+
+{
+    "account_id": "{{taAccount}}",
+    "permissions": ["edit_topics", "view_members"]
+}
+
+{{
+    test.status(200);
+
+    const { deepEqual, equal } = require('assert');
+
+    test('TA is assigned with the permissions given', () => {
+        const data = JSON.parse(response.body);
+        equal(data.message, 'TA assigned');
+        deepEqual(data.permissions, ['edit_topics', 'view_members']);
+    });
+
+    exports.taUserId = JSON.parse(response.body).user_id;
+}}
+
+###
+
+# @name updateTaPermissions
+# @ref assignTa
+PUT {{BASE_URL}}/courses/{{courseId}}/tas/{{taUserId}}
+Authorization: {{teacherToken}}
+Content-Type: application/json
+
+{
+    "permissions": ["view_members", "view_reports"]
+}
+
+{{
+    test.status(200);
+
+    const { deepEqual, equal } = require('assert');
+
+    test('Permissions are replaced, in the fixed order', () => {
+        const data = JSON.parse(response.body);
+        equal(data.message, 'TA permissions updated');
+        deepEqual(data.permissions, ['view_reports', 'view_members']);
+    });
+}}
+
+###
+
+# ============================================
+# Each role sees its own role
+# ============================================
+# @name taCourseList
+# @ref updateTaPermissions
+GET {{BASE_URL}}/courses
+Authorization: {{taToken}}
+
+{{
+    test.status(200);
+
+    const { deepEqual, equal } = require('assert');
+
+    test('TA sees the course as ta with the updated permissions and a student count', () => {
+        const item = JSON.parse(response.body).find((c) => c.course_id === courseId);
+        equal(item.my_role, 'ta');
+        deepEqual(item.my_permissions, ['view_reports', 'view_members']);
+        equal(item.student_count, 2);
+    });
+}}
+
+###
+
+# @name studentCourseList
+# @ref taCourseList
+GET {{BASE_URL}}/courses
+Authorization: {{studentAToken}}
+
+{{
+    test.status(200);
+
+    const { deepEqual, equal, ok } = require('assert');
+
+    test('Student sees the course as student, without permissions or a student count', () => {
+        const item = JSON.parse(response.body).find((c) => c.course_id === courseId);
+        equal(item.my_role, 'student');
+        deepEqual(item.my_permissions, []);
+        ok(!('student_count' in item), 'student_count should be omitted');
+    });
+}}
+
+###
+
+# @name courseDetailAsTa
+# @ref studentCourseList
+GET {{BASE_URL}}/courses/{{courseId}}
+Authorization: {{taToken}}
+
+?? status == 200
+?? js response.parsedBody.my_role == ta
+?? js response.parsedBody.course_id == {{courseId}}
+
+###
+
+# @name courseDetailAsStudent
+# @ref courseDetailAsTa
+GET {{BASE_URL}}/courses/{{courseId}}
+Authorization: {{studentAToken}}
+
+?? status == 200
+?? js response.parsedBody.my_role == student
+?? js response.parsedBody.name == {{courseName}}
+
+###
+
+# ============================================
+# Member lists follow the caller's role
+# ============================================
+# @name listStudents
+# @ref courseDetailAsStudent
+GET {{BASE_URL}}/courses/{{courseId}}/members?role=student
+Authorization: {{teacherToken}}
+
+{{
+    test.status(200);
+
+    const { deepEqual, equal } = require('assert');
+
+    test('Teacher lists both students', () => {
+        const data = JSON.parse(response.body);
+        equal(data.length, 2);
+        deepEqual(data.map((m) => m.role), ['student', 'student']);
+        deepEqual(data.map((m) => m.account_id).sort(), [studentAAccount, studentBAccount].sort());
+    });
+}}
+
+###
+
+# @name listTas
+# @ref listStudents
+GET {{BASE_URL}}/courses/{{courseId}}/members?role=ta
+Authorization: {{teacherToken}}
+
+{{
+    test.status(200);
+
+    const { deepEqual, equal } = require('assert');
+
+    test('Teacher lists the single TA with permissions', () => {
+        const data = JSON.parse(response.body);
+        equal(data.length, 1);
+        equal(data[0].user_id, taUserId);
+        deepEqual(data[0].permissions, ['view_reports', 'view_members']);
+    });
+}}
+
+###
+
+# @name listAllMembers
+# @ref listTas
+GET {{BASE_URL}}/courses/{{courseId}}/members
+Authorization: {{teacherToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Without a role the list holds students and the TA', () => {
+        equal(JSON.parse(response.body).length, 3);
+    });
+}}
+
+###
+
+# @name listStudentsAsTa
+# @ref listAllMembers
+GET {{BASE_URL}}/courses/{{courseId}}/members?role=student
+Authorization: {{taToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('A TA with view_members lists the students', () => {
+        const data = JSON.parse(response.body);
+        equal(data.length, 2);
+        // Students carry no TA permissions.
+        data.forEach((m) => equal(m.permissions.length, 0));
+    });
+
+    // Resolve student B's user id for the removal below.
+    exports.studentBUserId = JSON.parse(response.body).find((m) => m.account_id === studentBAccount).user_id;
+}}
+
+###
+
+# ============================================
+# Leave, remove, revoke
+# ============================================
+# @name studentALeaves
+# @ref listStudentsAsTa
+DELETE {{BASE_URL}}/courses/{{courseId}}/member
+Authorization: {{studentAToken}}
+
+?? status == 204
+
+###
+
+# @name listStudentsAfterLeave
+# @ref studentALeaves
+GET {{BASE_URL}}/courses/{{courseId}}/members?role=student
+Authorization: {{teacherToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Only student B is left after student A leaves', () => {
+        const data = JSON.parse(response.body);
+        equal(data.length, 1);
+        equal(data[0].account_id, studentBAccount);
+    });
+}}
+
+###
+
+# @name removeStudentB
+# @ref listStudentsAfterLeave
+DELETE {{BASE_URL}}/courses/{{courseId}}/students/{{studentBUserId}}
+Authorization: {{teacherToken}}
+
+?? status == 204
+
+###
+
+# @name listStudentsAfterRemoval
+# @ref removeStudentB
+GET {{BASE_URL}}/courses/{{courseId}}/members?role=student
+Authorization: {{teacherToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('No students are left after the teacher removes student B', () => {
+        equal(JSON.parse(response.body).length, 0);
+    });
+}}
+
+###
+
+# @name revokeTa
+# @ref listStudentsAfterRemoval
+DELETE {{BASE_URL}}/courses/{{courseId}}/tas/{{taUserId}}
+Authorization: {{teacherToken}}
+
+?? status == 204
+
+###
+
+# @name listTasAfterRevoke
+# @ref revokeTa
+GET {{BASE_URL}}/courses/{{courseId}}/members?role=ta
+Authorization: {{teacherToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('No TAs are left after the revoke', () => {
+        equal(JSON.parse(response.body).length, 0);
+    });
+}}
+
+###
+
+# ============================================
+# Cleanup: the teacher deletes the course
+# ============================================
+# @name deleteCourse
+# @ref listTasAfterRevoke
+DELETE {{BASE_URL}}/courses/{{courseId}}
+Authorization: {{teacherToken}}
+
+?? status == 204
+
+###
+
+# @name teacherCourseListAfterDelete
+# @ref deleteCourse
+GET {{BASE_URL}}/courses
+Authorization: {{teacherToken}}
+
+{{
+    test.status(200);
+
+    const { ok } = require('assert');
+
+    test('The deleted course is gone from the teacher\'s list', () => {
+        ok(!JSON.parse(response.body).some((c) => c.course_id === courseId));
+    });
+}}

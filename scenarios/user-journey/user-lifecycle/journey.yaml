@@ -1,0 +1,12 @@
+name: "User Lifecycle"
+description: "Positive end-to-end coverage for accounts and for course roles, from registration to course deletion. No model calls, so it runs without an LLM."
+cases:
+  - name: "Account Lifecycle"
+    description: "Register, log in, read the current user, change language and password, log in with the new password, and log out with the refresh session revoked."
+    path: "01-account.http"
+    test: "verifyLogoutRevokedSession"
+
+  - name: "Course And Roles"
+    description: "Create a course, join two students by invite code, assign a TA and update its permissions, check each role's course list and member lists, then leave, remove, revoke and delete the course."
+    path: "02-course-and-roles.http"
+    test: "teacherCourseListAfterDelete"

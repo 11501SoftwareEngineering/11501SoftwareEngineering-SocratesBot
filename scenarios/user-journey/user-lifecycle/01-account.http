@@ -1,0 +1,250 @@
+# ============================================
+# Case 1: Account lifecycle
+# ============================================
+# Register, log in, read the current user, change language and password,
+# log in with the new password, and log out.
+#
+# This case uses its own account so changing its password cannot disturb the
+# shared roles. Logout is the one request that needs cookies: it reads the
+# refresh cookie and checks a matching X-CSRF-Token header. The requests build
+# both from this user's own login response, with the cookie jar off, so no
+# other login's cookies leak in.
+
+@password = password1
+@newPassword = password2x
+
+###
+
+# @name registerAccount
+{{
+    exports.account = `scn-acct-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}}
+POST {{BASE_URL}}/auth/register
+Content-Type: application/json
+
+{
+    "account_id": "{{account}}",
+    "password": "{{password}}",
+    "name": "Scenario Account"
+}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Registration returns a USER account', () => {
+        const data = JSON.parse(response.body);
+        equal(data.account_id, account);
+        equal(data.role, 'USER');
+        equal(data.message, 'Registration successful');
+    });
+}}
+
+###
+
+# @name loginAccount
+# @ref registerAccount
+POST {{BASE_URL}}/auth/login
+Content-Type: application/json
+
+{
+    "account_id": "{{account}}",
+    "password": "{{password}}"
+}
+
+{{
+    test.status(200);
+
+    const { deepEqual, equal, ok } = require('assert');
+
+    test('Login returns the profile with the USER role', () => {
+        const data = JSON.parse(response.body);
+        equal(data.account_id, account);
+        deepEqual(data.role, ['USER']);
+        equal(data.must_change_password, false);
+    });
+
+    test('The access token is in the Authorization header, not the body', () => {
+        ok(String(response.headers['authorization']).startsWith('Bearer '));
+        ok(!('access_token' in JSON.parse(response.body)));
+    });
+
+    exports.accountToken = response.headers['authorization'];
+}}
+
+###
+
+# @name getMe
+# @ref loginAccount
+GET {{BASE_URL}}/users/me
+Authorization: {{accountToken}}
+
+{{
+    test.status(200);
+
+    const { deepEqual, equal } = require('assert');
+
+    test('Current user matches the registered account', () => {
+        const data = JSON.parse(response.body);
+        equal(data.account_id, account);
+        equal(data.name, 'Scenario Account');
+        deepEqual(data.role, ['USER']);
+        equal(data.preferred_language, 'zh-TW');
+    });
+}}
+
+###
+
+# @name updateLanguage
+# @ref getMe
+PATCH {{BASE_URL}}/users/me/preferences
+Authorization: {{accountToken}}
+Content-Type: application/json
+
+{
+    "preferred_language": "en"
+}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Language update echoes the new language', () => {
+        equal(JSON.parse(response.body).preferred_language, 'en');
+    });
+}}
+
+###
+
+# @name getMeAfterLanguage
+# @ref updateLanguage
+GET {{BASE_URL}}/users/me
+Authorization: {{accountToken}}
+
+?? status == 200
+?? js response.parsedBody.preferred_language == en
+
+###
+
+# @name changePassword
+# @ref getMeAfterLanguage
+PUT {{BASE_URL}}/auth/password
+Authorization: {{accountToken}}
+Content-Type: application/json
+
+{
+    "old_password": "{{password}}",
+    "new_password": "{{newPassword}}"
+}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Password change confirms the update', () => {
+        equal(JSON.parse(response.body).message, 'Password updated');
+    });
+}}
+
+###
+
+# @name loginWithNewPassword
+# @ref changePassword
+POST {{BASE_URL}}/auth/login
+Content-Type: application/json
+
+{
+    "account_id": "{{account}}",
+    "password": "{{newPassword}}"
+}
+
+{{
+    test.status(200);
+
+    const { equal, ok } = require('assert');
+
+    test('The new password logs in and keeps the chosen language', () => {
+        const data = JSON.parse(response.body);
+        equal(data.account_id, account);
+        equal(data.preferred_language, 'en');
+    });
+
+    // httpyac joins the two Set-Cookie headers into one comma-separated string.
+    const cookies = String(response.headers['set-cookie']);
+    const refresh = /refresh_token=([^;,]+)/.exec(cookies);
+    const csrf = /csrf_token=([^;,]+)/.exec(cookies);
+
+    test('Login sets a refresh cookie and a CSRF cookie', () => {
+        ok(refresh, 'refresh_token cookie');
+        ok(csrf, 'csrf_token cookie');
+    });
+
+    exports.refreshToken = refresh[1];
+    exports.csrfToken = csrf[1];
+}}
+
+###
+
+# Control for the logout check below: before logout the refresh cookie renews a
+# GET without a Bearer. Renewal rotates both cookies, so keep the new pair.
+# @name renewBeforeLogout
+# @ref loginWithNewPassword
+# @no-cookie-jar
+GET {{BASE_URL}}/users/me
+Cookie: refresh_token={{refreshToken}}; csrf_token={{csrfToken}}
+
+{{
+    test.status(200);
+
+    const { equal, ok } = require('assert');
+
+    test('Before logout the refresh cookie renews a request without a Bearer', () => {
+        equal(JSON.parse(response.body).account_id, account);
+    });
+
+    const cookies = String(response.headers['set-cookie']);
+    const refresh = /refresh_token=([^;,]+)/.exec(cookies);
+    const csrf = /csrf_token=([^;,]+)/.exec(cookies);
+
+    test('Renewal rotates the refresh and CSRF cookies', () => {
+        ok(refresh, 'refresh_token cookie');
+        ok(csrf, 'csrf_token cookie');
+    });
+
+    exports.refreshToken = refresh[1];
+    exports.csrfToken = csrf[1];
+}}
+
+###
+
+# @name logout
+# @ref renewBeforeLogout
+# @no-cookie-jar
+POST {{BASE_URL}}/auth/logout
+Cookie: refresh_token={{refreshToken}}; csrf_token={{csrfToken}}
+X-CSRF-Token: {{csrfToken}}
+
+{{
+    test.status(200);
+
+    const { equal } = require('assert');
+
+    test('Logout reports ok', () => {
+        equal(JSON.parse(response.body).ok, true);
+    });
+}}
+
+###
+
+# @name verifyLogoutRevokedSession
+# @ref logout
+# @no-cookie-jar
+GET {{BASE_URL}}/users/me
+Cookie: refresh_token={{refreshToken}}; csrf_token={{csrfToken}}
+
+# The same cookie renewed the request before logout. After logout the refresh
+# session is revoked, so it no longer does.
+?? status == 401
