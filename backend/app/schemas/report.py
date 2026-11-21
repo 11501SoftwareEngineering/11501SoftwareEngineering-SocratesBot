@@ -100,6 +100,8 @@ class ReportBody(BaseModel):
     completed_turns: int | None = None
     completion_reason: str | None = None
     completed_at: str | None = None
+    ended_at: str | None = None
+    goal_reached: bool | None = None
     viewpoint_summary: str | None = None
     final_viewpoint: str | None = None
     viewpoint_status: str | None = None
@@ -153,6 +155,7 @@ class TeachingReportsResponse(BaseModel):
 
     class_size: int
     completed_count: int
+    ended_count: int = 0
     ready_count: int
     processing_count: int
     failed_count: int

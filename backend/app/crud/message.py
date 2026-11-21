@@ -143,6 +143,7 @@ async def save_end(
     status: str,
     goal_reached: bool,
     awaiting_end_consent: bool,
+    ending_reason: str | None = None,
 ) -> None:
     values: dict[str, object] = {
         "outcome": outcome,
@@ -150,6 +151,9 @@ async def save_end(
         "goal_reached": goal_reached,
         "awaiting_end_consent": awaiting_end_consent,
     }
+    if outcome in {DialogueOutcome.COMPLETED.value, DialogueOutcome.ENDED.value}:
+        values["ended_at"] = datetime.now(UTC)
+        values["ending_reason"] = ending_reason
     if status == SessionStatus.COMPLETED.value:
         values["completed_at"] = datetime.now(UTC)
     if outcome == DialogueOutcome.ABANDONED.value:

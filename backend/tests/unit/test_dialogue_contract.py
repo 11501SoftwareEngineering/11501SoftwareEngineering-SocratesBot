@@ -4,6 +4,7 @@ import json
 from uuid import uuid4
 
 import pytest
+from fastapi.encoders import jsonable_encoder
 
 from app.api.v1.routes.student_sessions import _sse
 from app.main import app
@@ -62,7 +63,9 @@ def test_openapi_matches_sse_transport_and_terminal_payload():
     assert set(response["content"]) == {"text/event-stream"}
     assert response["content"]["text/event-stream"]["schema"] == {"type": "string"}
     event_schema = response["x-sse-events"]["done"]["schema"]
-    assert event_schema == StreamDoneEvent.model_json_schema()
+    assert event_schema == jsonable_encoder(
+        StreamDoneEvent.model_json_schema(), exclude_none=True
+    )
     events = decode_events(response["content"]["text/event-stream"]["example"])
     StreamDoneEvent.model_validate(json.loads(events[1][1]))
 
@@ -100,6 +103,7 @@ def test_session_status_is_endpoint_specific():
     assert set(schemas["DialogueOutcome"]["enum"]) == {
         "open",
         "completed",
+        "ended",
         "abandoned",
         "closed_by_summary",
     }
