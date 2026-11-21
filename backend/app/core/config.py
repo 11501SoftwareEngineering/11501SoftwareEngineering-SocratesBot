@@ -76,9 +76,9 @@ class Settings(BaseSettings):
     # LLM API via OpenRouter. The model id stays in server config; clients never send or read it.
     OPENAI_API_KEY: SecretStr
     ANTHROPIC_API_KEY: SecretStr
-    OPENAI_MODEL: NonEmptyStr = "openai/gpt-6.1-sol"
+    OPENAI_MODEL: NonEmptyStr = "openai/gpt-6-luna"
     # Legacy configuration compatibility; course validity uses the activity model.
-    OPENAI_VALIDITY_MODEL: NonEmptyStr = "openai/gpt-6.1-sol"
+    OPENAI_VALIDITY_MODEL: NonEmptyStr = "openai/gpt-6-luna"
     OPENAI_BASE_URL: NonEmptyStr = "https://openrouter.ai/api/v1"
     DIALOGUE_CONTEXT_TOKEN_BUDGET: int = Field(default=12_000, ge=1_024)
     REPORT_CONTEXT_TOKEN_BUDGET: int = Field(default=32_000, ge=1_024)

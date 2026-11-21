@@ -187,7 +187,7 @@ Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 tr
 
 ## 模型設定
 
-- `OPENAI_MODEL` 預設為 `openai/gpt-6.1-sol`。所有課程 AI 工作（包含 validity、個人報告、班級摘要）優先使用題目所選模型，未設定才用此預設。`OPENAI_VALIDITY_MODEL` 僅保留設定相容性，不再覆蓋題目模型。
+- `OPENAI_MODEL` 預設為 `openai/gpt-6-luna`。所有課程 AI 工作（包含 validity、個人報告、班級摘要）優先使用題目所選模型，未設定才用此預設。`OPENAI_VALIDITY_MODEL` 僅保留設定相容性，不再覆蓋題目模型。
 - 各任務的 timeout 與 `max_tokens` 上限（`app/services/model_client.py`）：
   - 課程設定（`inquiry_setup`）：45 秒，上限 2400 tokens；推理模型送 `reasoning: {effort: low}`。
   - 其他任務：60 秒，上限 4500 tokens。

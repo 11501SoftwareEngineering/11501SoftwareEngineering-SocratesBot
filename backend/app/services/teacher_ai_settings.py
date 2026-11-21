@@ -41,9 +41,12 @@ def _default_model(model: InquiryModel | None) -> DefaultModelResponse | None:
 async def _loaded_default(
     db: AsyncSession, row: TeacherAiSettings | None
 ) -> DefaultModelResponse | None:
-    if row is None or row.default_model_id is None:
-        return None
-    model = await settings_crud.get_inquiry_model(db, row.default_model_id)
+    model_id = (
+        settings.OPENAI_MODEL
+        if row is None or row.default_model_id is None
+        else row.default_model_id
+    )
+    model = await settings_crud.get_inquiry_model(db, model_id)
     return _default_model(model)
 
 
