@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from contextlib import suppress
 from uuid import UUID
@@ -114,14 +115,15 @@ async def run_report(attempt_id: UUID) -> None:
     prompt = prompt_for(PromptStage.PERSONAL_REPORT)
     model_id = settings.OPENAI_MODEL
     try:
-        session_id = await _begin(attempt_id)
-        if session_id is None:
+        begun = await _begin(attempt_id)
+        if begun is None:
             return
+        session_id, progress = begun
         refresher = asyncio.create_task(
             refresh(report_crud.extend_lease, attempt_id, _live)
         )
         try:
-            material = await _material(session_id)
+            material = await _material(session_id, progress)
             parsed = await client.complete_object(
                 name="personal_report",
                 schema=_SCHEMA,
@@ -143,18 +145,19 @@ async def run_report(attempt_id: UUID) -> None:
         _live.discard(attempt_id)
 
 
-async def _begin(attempt_id: UUID) -> UUID | None:
+async def _begin(attempt_id: UUID) -> tuple[UUID, dict | None] | None:
     async with AsyncSessionLocal() as db:
         attempt = await report_crud.get_attempt(db, attempt_id)
         if attempt is None or attempt.status != "pending":
             return None
         session_id = attempt.session_id
+        progress = (attempt.generation_meta or {}).get("progress")
         await report_crud.mark_processing(db, attempt_id)
         await db.commit()
-        return session_id
+        return session_id, progress
 
 
-async def _material(session_id: UUID) -> str:
+async def _material(session_id: UUID, progress: dict | None) -> str:
     async with AsyncSessionLocal() as db:
         from app.models.session import Session
         from app.models.topic import Topic
@@ -169,7 +172,8 @@ async def _material(session_id: UUID) -> str:
             db, session_id=session_id, user_id=session.user_id
         )
         messages = [] if loaded is None else loaded[2]
-        return reply_material(topic, messages)
+        snapshot = json.dumps(progress, ensure_ascii=False) if progress else "null"
+        return f"{reply_material(topic, messages)}\nprogressSnapshot:\n{snapshot}"
 
 
 async def _fail(attempt_id: UUID) -> None:

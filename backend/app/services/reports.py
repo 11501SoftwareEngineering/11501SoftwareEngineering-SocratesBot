@@ -164,7 +164,11 @@ async def _start(db: AsyncSession, session: Session) -> dict:
     if action == "reject":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_NOT_COMPLETED)
     if action == "insert":
-        created = await report_crud.insert_pending(db, session.id)
+        created = await report_crud.insert_pending(
+            db,
+            session.id,
+            progress=(session.generation_meta or {}).get("progress"),
+        )
         await db.commit()
         report_runner.schedule(created.id)
         attempts = await report_crud.list_for_session(db, session.id)
