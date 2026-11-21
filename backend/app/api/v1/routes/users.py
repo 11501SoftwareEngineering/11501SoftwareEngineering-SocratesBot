@@ -1,17 +1,25 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import ActiveUser, get_db
+from app.api.deps import ActiveUser, TeacherUser, get_db
 from app.api.openapi_responses import PREFERENCES_UPDATE_RESPONSES
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.preferences import (
     PreferencesUpdateRequest,
     PreferencesUpdateResponse,
 )
+from app.schemas.teacher_ai_settings import (
+    AiSettingsResponse,
+    ApiKeyRequest,
+    ApiKeyResponse,
+    DefaultModelRequest,
+    DefaultModelUpdateResponse,
+)
 from app.services import auth as auth_service
 from app.services import preferences as preferences_service
+from app.services import teacher_ai_settings as teacher_ai_settings_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -53,3 +61,43 @@ async def update_preferences(
     anything else returns 400 ``Invalid language code``.
     """
     return await preferences_service.update_preferences(db, current_user, payload)
+
+
+@router.get("/me/ai/settings", response_model=AiSettingsResponse)
+async def read_ai_settings(
+    current_user: TeacherUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AiSettingsResponse:
+    """Return the teacher's key status and default model. The raw key stays stored."""
+    return await teacher_ai_settings_service.read_settings(db, current_user)
+
+
+@router.put("/me/ai/api-key", response_model=ApiKeyResponse)
+async def save_ai_api_key(
+    payload: ApiKeyRequest,
+    current_user: TeacherUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ApiKeyResponse:
+    """Store the teacher's provider key and return only its mask."""
+    return await teacher_ai_settings_service.save_api_key(db, current_user, payload)
+
+
+@router.delete("/me/ai/api-key", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_ai_api_key(
+    current_user: TeacherUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> None:
+    """Remove the stored key. The default model stays. Missing key is still 204."""
+    await teacher_ai_settings_service.clear_api_key(db, current_user)
+
+
+@router.patch("/me/ai/model", response_model=DefaultModelUpdateResponse)
+async def update_default_model(
+    payload: DefaultModelRequest,
+    current_user: TeacherUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> DefaultModelUpdateResponse:
+    """Set the default model for new topics. Existing topics stay unchanged."""
+    return await teacher_ai_settings_service.set_default_model(
+        db, current_user, payload
+    )

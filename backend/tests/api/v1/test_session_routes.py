@@ -15,7 +15,7 @@ from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
 
 
 def test_create_session_requires_login(auth_client: TestClient) -> None:
-    response = auth_client.post(f"/api/v1/student/topics/{uuid4()}/sessions")
+    response = auth_client.post(f"/api/v1/topics/{uuid4()}/sessions")
 
     assert response.status_code == 401
     assert response.json() == {"detail": AUTH_UNAUTHORIZED_DETAIL}
@@ -42,7 +42,7 @@ def test_create_session_returns_ids_and_commits(
     student = seed_user(store, account_id="session-student")
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
 
@@ -54,11 +54,14 @@ def test_create_session_returns_ids_and_commits(
     )
     monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=True))
     monkeypatch.setattr(session_crud, "get_session_id", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        session_crud, "get_topic_stage", AsyncMock(return_value="conversation")
+    )
     create_mock = AsyncMock(return_value=session_id)
-    monkeypatch.setattr(session_crud, "get_or_create_session_id", create_mock)
+    monkeypatch.setattr(session_crud, "insert_session_id", create_mock)
 
     response = auth_client.post(
-        f"/api/v1/student/topics/{topic_id}/sessions",
+        f"/api/v1/topics/{topic_id}/sessions",
         headers={"Authorization": bearer_from(login)},
     )
 
@@ -66,12 +69,12 @@ def test_create_session_returns_ids_and_commits(
     assert response.json() == {
         "session_id": str(session_id),
         "topic_id": str(topic_id),
+        "session_status": "open",
     }
     create_mock.assert_awaited_once_with(
         session_route_db,
         user_id=student.id,
         topic_id=topic_id,
-        is_anonymous=False,
     )
     session_route_db.commit.assert_awaited_once()
     session_route_db.rollback.assert_not_awaited()
@@ -96,7 +99,7 @@ def test_session_errors_return_http_status_and_roll_back(
     student = seed_user(store, account_id="session-denied")
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
 
@@ -112,16 +115,53 @@ def test_session_errors_return_http_status_and_roll_back(
     lookup_mock = AsyncMock(return_value=None)
     create_mock = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(session_crud, "get_session_id", lookup_mock)
-    monkeypatch.setattr(session_crud, "get_or_create_session_id", create_mock)
+    monkeypatch.setattr(session_crud, "insert_session_id", create_mock)
 
     response = auth_client.post(
-        f"/api/v1/student/topics/{topic_id}/sessions",
+        f"/api/v1/topics/{topic_id}/sessions",
         headers={"Authorization": bearer_from(login)},
     )
 
     assert response.status_code == expected_status
     assert response.json() == {"detail": expected_detail}
     lookup_mock.assert_not_awaited()
+    create_mock.assert_not_awaited()
+    session_route_db.commit.assert_not_awaited()
+    session_route_db.rollback.assert_awaited_once()
+
+
+def test_setup_topic_without_session_does_not_insert(
+    auth_client: TestClient,
+    store: FakeStore,
+    session_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    student = seed_user(store, account_id="session-setup")
+    login = auth_client.post(
+        "/api/v1/auth/login",
+        json={"account_id": student.account_id, "password": "password1"},
+    )
+    assert login.status_code == 200
+
+    topic_id = uuid4()
+    monkeypatch.setattr(
+        session_crud, "get_topic_course_id", AsyncMock(return_value=uuid4())
+    )
+    monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=True))
+    monkeypatch.setattr(session_crud, "get_session_id", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        session_crud, "get_topic_stage", AsyncMock(return_value="setup")
+    )
+    create_mock = AsyncMock(return_value=uuid4())
+    monkeypatch.setattr(session_crud, "insert_session_id", create_mock)
+
+    response = auth_client.post(
+        f"/api/v1/topics/{topic_id}/sessions",
+        headers={"Authorization": bearer_from(login)},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Topic is still in setup"
     create_mock.assert_not_awaited()
     session_route_db.commit.assert_not_awaited()
     session_route_db.rollback.assert_awaited_once()
@@ -136,7 +176,7 @@ def test_enter_existing_session_returns_original_id(
     student = seed_user(store, account_id="session-returning")
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": student.account_id, "password": "password1"},
+        json={"account_id": student.account_id, "password": "password1"},
     )
     assert login.status_code == 200
 
@@ -151,18 +191,23 @@ def test_enter_existing_session_returns_original_id(
     lookup_mock = AsyncMock(return_value=existing_session_id)
     create_mock = AsyncMock(return_value=uuid4())
     monkeypatch.setattr(session_crud, "get_session_id", lookup_mock)
-    monkeypatch.setattr(session_crud, "get_or_create_session_id", create_mock)
+    monkeypatch.setattr(
+        session_crud, "get_topic_stage", AsyncMock(return_value="conversation")
+    )
+    monkeypatch.setattr(
+        session_crud, "get_session_outcome", AsyncMock(return_value="open")
+    )
+    monkeypatch.setattr(session_crud, "insert_session_id", create_mock)
 
     response = auth_client.post(
-        f"/api/v1/student/topics/{topic_id}/sessions",
+        f"/api/v1/topics/{topic_id}/sessions",
         headers={"Authorization": bearer_from(login)},
     )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "session_id": str(existing_session_id),
-        "topic_id": str(topic_id),
-    }
+    assert response.json()["session_id"] == str(existing_session_id)
+    assert response.json()["topic_id"] == str(topic_id)
+    assert response.json()["session_status"] == "open"
     lookup_mock.assert_awaited_once_with(
         session_route_db,
         user_id=student.id,
@@ -192,7 +237,7 @@ def test_expired_token_cannot_create_session(
     )
 
     response = auth_client.post(
-        f"/api/v1/student/topics/{uuid4()}/sessions",
+        f"/api/v1/topics/{uuid4()}/sessions",
         headers={"Authorization": f"Bearer {expired_token}"},
     )
 

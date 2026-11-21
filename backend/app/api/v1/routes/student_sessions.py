@@ -1,77 +1,94 @@
+"""Dialogue history, reply, and end. Creating a session stays on the topic routes."""
+
+import json
+from collections.abc import Iterator
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ActiveUser, get_db
-from app.api.openapi_responses import (
-    SESSION_ENTRY_RESPONSES,
-    SESSION_PRIVACY_RESPONSES,
-    SESSION_RESULT_RESPONSES,
+from app.schemas.dialogue import (
+    DialogueHistoryResponse,
+    EndDialogueRequest,
+    EndDialogueResponse,
+    StreamDone,
+    StreamMessageRequest,
 )
-from app.schemas.session import (
-    CreateSessionResponse,
-    SessionResultResponse,
-    UpdateSessionPrivacyRequest,
-    UpdateSessionPrivacyResponse,
-)
-from app.services import session as session_service
+from app.services import dialogue as dialogue_service
+from app.services.model_client import OpenAIChatClient
 
-router = APIRouter(prefix="/student", tags=["student-sessions"])
+router = APIRouter(tags=["dialogue"])
 
 
-@router.post(
-    "/topics/{topicId}/sessions",
-    response_model=CreateSessionResponse,
-    responses=SESSION_ENTRY_RESPONSES,
-)
-async def create_or_enter_student_session(
-    topicId: UUID,
-    current_user: ActiveUser,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> CreateSessionResponse:
-    """Create or reuse the authenticated student's session for a topic."""
-    return await session_service.create_or_enter_student_session(
-        db,
-        current_user.id,
-        topicId,
+def _sse(done: StreamDone) -> Iterator[str]:
+    lines = done.text.splitlines() or [""]
+    for line in lines:
+        yield f"data: {line}\n"
+    yield "\n"
+    payload = json.dumps(
+        {
+            "message_id": str(done.message_id),
+            "completed_turns": done.completed_turns,
+            "is_completed": done.is_completed,
+            "awaiting_end_consent": done.awaiting_end_consent,
+        }
     )
-
-
-@router.patch(
-    "/sessions/{sessionId}/privacy",
-    response_model=UpdateSessionPrivacyResponse,
-    responses=SESSION_PRIVACY_RESPONSES,
-)
-async def update_student_session_privacy(
-    sessionId: UUID,
-    payload: UpdateSessionPrivacyRequest,
-    current_user: ActiveUser,
-    db: Annotated[AsyncSession, Depends(get_db)],
-) -> UpdateSessionPrivacyResponse:
-    """Update the authenticated student's session privacy setting."""
-    return await session_service.update_student_session_privacy(
-        db,
-        current_user.id,
-        sessionId,
-        payload.is_anonymous,
-    )
+    yield f"event: done\ndata: {payload}\n\n"
 
 
 @router.get(
-    "/sessions/{sessionId}/result",
-    response_model=SessionResultResponse,
-    responses=SESSION_RESULT_RESPONSES,
+    "/sessions/{sessionId}/messages",
+    response_model=DialogueHistoryResponse,
 )
-async def get_student_session_result(
+async def read_dialogue_messages(
     sessionId: UUID,
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> SessionResultResponse:
-    """Return the authenticated student's completed session identifiers."""
-    return await session_service.get_student_session_result(
+) -> DialogueHistoryResponse:
+    """Return this student's messages for the dialogue."""
+    return await dialogue_service.read_history(
         db,
-        current_user.id,
-        sessionId,
+        user_id=current_user.id,
+        session_id=sessionId,
+    )
+
+
+@router.post("/sessions/{sessionId}/messages/stream")
+async def stream_dialogue_reply(
+    sessionId: UUID,
+    payload: StreamMessageRequest,
+    current_user: ActiveUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> StreamingResponse:
+    """Send one student turn and stream the model reply."""
+    done = await dialogue_service.send_reply(
+        db,
+        OpenAIChatClient(),
+        user_id=current_user.id,
+        session_id=sessionId,
+        content=payload.content,
+        request_id=payload.request_id,
+    )
+    return StreamingResponse(_sse(done), media_type="text/event-stream")
+
+
+@router.post(
+    "/sessions/{sessionId}/end",
+    response_model=EndDialogueResponse,
+)
+async def end_dialogue(
+    sessionId: UUID,
+    payload: EndDialogueRequest,
+    current_user: ActiveUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> EndDialogueResponse:
+    """Complete, continue, or abandon this dialogue."""
+    return await dialogue_service.end_dialogue(
+        db,
+        user_id=current_user.id,
+        session_id=sessionId,
+        action=payload.action,
     )

@@ -7,7 +7,9 @@ import pytest
 
 from app.services.session import (
     CourseAccessDeniedError,
+    TopicClosedError,
     TopicNotFoundError,
+    TopicNotOpenError,
     create_or_enter_session,
 )
 
@@ -23,6 +25,7 @@ def anyio_backend() -> str:
 class FakeSession:
     id: UUID
     status: str = "IN_PROGRESS"
+    outcome: str = "open"
 
 
 class FakeSessionStore:
@@ -33,12 +36,18 @@ class FakeSessionStore:
         self.topic_id = uuid4()
         self.course_id = uuid4()
         self.topics = {self.topic_id: self.course_id}
+        self.stages = {self.topic_id: "conversation"}
         self.members = {(self.user_id, self.course_id)}
         self.sessions: dict[tuple[UUID, UUID], FakeSession] = {}
         self.create_calls = 0
 
     async def get_topic_course_id(self, topic_id: UUID) -> UUID | None:
         return self.topics.get(topic_id)
+
+    async def get_topic_stage(self, topic_id: UUID) -> str | None:
+        if topic_id not in self.topics:
+            return None
+        return self.stages.get(topic_id, "conversation")
 
     async def is_course_member(self, user_id: UUID, course_id: UUID) -> bool:
         return (user_id, course_id) in self.members
@@ -47,11 +56,16 @@ class FakeSessionStore:
         session = self.sessions.get((user_id, topic_id))
         return session.id if session is not None else None
 
-    async def get_or_create_session_id(self, user_id: UUID, topic_id: UUID) -> UUID:
+    async def get_session_outcome(self, user_id: UUID, topic_id: UUID) -> str | None:
+        session = self.sessions.get((user_id, topic_id))
+        return session.outcome if session is not None else None
+
+    async def insert_session_id(self, user_id: UUID, topic_id: UUID) -> UUID | None:
         self.create_calls += 1
         key = (user_id, topic_id)
-        if key not in self.sessions:
-            self.sessions[key] = FakeSession(id=uuid4())
+        if key in self.sessions:
+            return None
+        self.sessions[key] = FakeSession(id=uuid4())
         return self.sessions[key].id
 
 
@@ -68,6 +82,7 @@ async def test_first_entry_creates_session(store: FakeSessionStore) -> None:
     saved = store.sessions[(store.user_id, store.topic_id)]
     assert result.session_id == saved.id
     assert result.topic_id == store.topic_id
+    assert result.session_status == "open"
     assert saved.status == "IN_PROGRESS"
     assert len(store.sessions) == 1
     assert store.create_calls == 1
@@ -83,11 +98,12 @@ async def test_reentry_keeps_existing_session(
     saved = store.sessions[(store.user_id, store.topic_id)]
     saved.status = session_status
 
-    second = await create_or_enter_session(
+    again = await create_or_enter_session(
         user_id=store.user_id, topic_id=store.topic_id, store=store
     )
 
-    assert second.session_id == first.session_id
+    assert again.session_id == first.session_id
+    assert again.session_status == "open"
     assert saved.status == session_status
     assert len(store.sessions) == 1
     assert store.create_calls == 1
@@ -111,6 +127,7 @@ async def test_different_users_get_separate_sessions(store: FakeSessionStore) ->
 async def test_different_topics_get_separate_sessions(store: FakeSessionStore) -> None:
     other_topic_id = uuid4()
     store.topics[other_topic_id] = store.course_id
+    store.stages[other_topic_id] = "conversation"
 
     first = await create_or_enter_session(
         user_id=store.user_id, topic_id=store.topic_id, store=store
@@ -149,3 +166,65 @@ async def test_non_member_is_rejected(
 
     assert len(store.sessions) == int(has_session)
     assert store.create_calls == 0
+
+
+async def test_setup_without_session_inserts_nothing(store: FakeSessionStore) -> None:
+    store.stages[store.topic_id] = "setup"
+
+    with pytest.raises(TopicNotOpenError):
+        await create_or_enter_session(
+            user_id=store.user_id, topic_id=store.topic_id, store=store
+        )
+
+    assert store.sessions == {}
+    assert store.create_calls == 0
+
+
+async def test_existing_session_on_setup_is_not_duplicated(
+    store: FakeSessionStore,
+) -> None:
+    store.stages[store.topic_id] = "setup"
+    existing = FakeSession(id=uuid4())
+    store.sessions[(store.user_id, store.topic_id)] = existing
+
+    with pytest.raises(TopicNotOpenError):
+        await create_or_enter_session(
+            user_id=store.user_id, topic_id=store.topic_id, store=store
+        )
+
+    assert store.sessions[(store.user_id, store.topic_id)].id == existing.id
+    assert store.create_calls == 0
+    assert len(store.sessions) == 1
+
+
+async def test_summary_without_session_inserts_nothing(store: FakeSessionStore) -> None:
+    store.stages[store.topic_id] = "summary"
+
+    with pytest.raises(TopicClosedError):
+        await create_or_enter_session(
+            user_id=store.user_id, topic_id=store.topic_id, store=store
+        )
+
+    assert store.sessions == {}
+    assert store.create_calls == 0
+
+
+async def test_insert_conflict_rejects_with_original_id(
+    store: FakeSessionStore,
+) -> None:
+    original = FakeSession(id=uuid4())
+
+    async def lost_insert(user_id: UUID, topic_id: UUID) -> UUID | None:
+        store.create_calls += 1
+        store.sessions[(user_id, topic_id)] = original
+        return None
+
+    store.insert_session_id = lost_insert  # type: ignore[method-assign]
+
+    again = await create_or_enter_session(
+        user_id=store.user_id, topic_id=store.topic_id, store=store
+    )
+
+    assert again.session_id == original.id
+    assert again.session_status == "open"
+    assert len(store.sessions) == 1

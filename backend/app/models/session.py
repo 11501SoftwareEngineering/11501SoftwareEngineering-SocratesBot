@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
-from app.core.enums import SessionStatus
+from app.core.enums import DialogueOutcome, SessionStatus
 
 
 class Session(Base):
@@ -29,6 +29,10 @@ class Session(Base):
         CheckConstraint(
             "status IN ('IN_PROGRESS', 'COMPLETED')",
             name="status",
+        ),
+        CheckConstraint(
+            "outcome IN ('open', 'completed', 'abandoned', 'closed_by_summary')",
+            name="outcome",
         ),
     )
 
@@ -52,7 +56,24 @@ class Session(Base):
         nullable=False,
         default=SessionStatus.IN_PROGRESS.value,
     )
-    is_anonymous: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    outcome: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=DialogueOutcome.OPEN.value,
+        server_default=DialogueOutcome.OPEN.value,
+    )
+    goal_reached: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    awaiting_end_consent: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

@@ -67,7 +67,6 @@ def test_creator_delete_cascades_memberships_topics_sessions_instructors() -> No
                 topic_id=topic_id,
                 user_id=student_id,
                 status=SessionStatus.IN_PROGRESS.value,
-                is_anonymous=False,
             )
             db.add(session)
             await db.flush()
@@ -93,7 +92,7 @@ def test_creator_delete_cascades_memberships_topics_sessions_instructors() -> No
 
             teacher_row = await user_crud.get_user_by_id(db, teacher_id)
             assert teacher_row is not None
-            await courses_service.delete_teacher_course(db, teacher_row, course_id)
+            await courses_service.delete_course(db, teacher_row, course_id)
 
             assert (
                 await db.scalar(

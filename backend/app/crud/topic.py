@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import SessionStatus
+from app.core.enums import SessionStatus, TopicStage
+from app.crud.course import MEMBERSHIP_STUDENT
+from app.models.course import CourseMembership
+from app.models.inquiry_revision import InquiryRevision
 from app.models.session import Session
 from app.models.topic import Topic
 
@@ -40,15 +43,94 @@ async def get_topic_by_id(db: AsyncSession, topic_id: UUID) -> Topic | None:
     return await db.get(Topic, topic_id)
 
 
-async def update_topic(
+async def lock_topic(db: AsyncSession, topic_id: UUID) -> Topic | None:
+    """Lock the topic row and reload it. Callers re-check stage after this returns."""
+    statement = (
+        select(Topic)
+        .where(Topic.id == topic_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return (await db.execute(statement)).scalar_one_or_none()
+
+
+async def save_inquiry(
     db: AsyncSession,
     topic: Topic,
     *,
-    title: str,
-    description: str | None,
+    content_language: str | None,
+    age_band: str | None,
+    max_turns: int | None,
+    inquiry_topic: str | None,
+    core_question: str | None,
+    inquiry_focus: str | None,
+    background_info: str | None,
+    exclusions: str | None,
+    opening_message: str | None,
 ) -> Topic:
-    topic.title = title
-    topic.description = description
+    """Persist the saved inquiry. This does not copy a generation attempt."""
+    topic.content_language = content_language
+    topic.age_band = age_band
+    topic.max_turns = max_turns
+    topic.inquiry_topic = inquiry_topic
+    topic.core_question = core_question
+    topic.inquiry_focus = inquiry_focus
+    topic.background_info = background_info
+    topic.exclusions = exclusions
+    topic.opening_message = opening_message
+    await db.flush()
+    return topic
+
+
+def inquiry_snapshot(topic: Topic) -> dict:
+    return {
+        "age_band": topic.age_band,
+        "max_turns": topic.max_turns,
+        "topic": topic.inquiry_topic,
+        "core_question": topic.core_question,
+        "inquiry_focus": topic.inquiry_focus,
+        "background_info": topic.background_info,
+        "exclusions": topic.exclusions,
+        "opening_message": topic.opening_message,
+    }
+
+
+def next_revision_version(
+    previous: dict | None, previous_version: int | None, current: dict
+) -> int | None:
+    """Next stored version, or None when the eight fields are unchanged."""
+    if previous == current:
+        return None
+    if previous_version is None:
+        return 1
+    return previous_version + 1
+
+
+async def record_inquiry_change(db: AsyncSession, topic: Topic) -> None:
+    """Append a revision when the inquiry changed. The number stays off the API."""
+    current = inquiry_snapshot(topic)
+    latest = await _latest_revision(db, topic.id)
+    previous = None if latest is None else latest.body
+    previous_version = None if latest is None else latest.version
+    version = next_revision_version(previous, previous_version, current)
+    if version is None:
+        return
+    db.add(InquiryRevision(topic_id=topic.id, version=version, body=current))
+    await db.flush()
+
+
+async def _latest_revision(db: AsyncSession, topic_id: UUID) -> InquiryRevision | None:
+    statement = (
+        select(InquiryRevision)
+        .where(InquiryRevision.topic_id == topic_id)
+        .order_by(InquiryRevision.version.desc())
+        .limit(1)
+    )
+    return (await db.execute(statement)).scalar_one_or_none()
+
+
+async def publish_topic(db: AsyncSession, topic: Topic) -> Topic:
+    topic.stage = TopicStage.CONVERSATION.value
     await db.flush()
     return topic
 
@@ -61,13 +143,24 @@ async def delete_topic(db: AsyncSession, topic: Topic) -> None:
 async def list_topics_with_completed_count(
     db: AsyncSession, course_id: UUID
 ) -> list[TopicWithCompletedCountRow]:
-    """List a course's topics with COMPLETED session counts in one query."""
+    """List a course's topics with COMPLETED session counts in one query.
+
+    Only sessions of current students count, so the number matches the
+    active student count (TAs and students who left are excluded).
+    """
     completed_count = (
         select(func.count())
         .select_from(Session)
+        .join(
+            CourseMembership,
+            (CourseMembership.user_id == Session.user_id)
+            & (CourseMembership.course_id == Topic.course_id),
+        )
         .where(
             Session.topic_id == Topic.id,
             Session.status == SessionStatus.COMPLETED.value,
+            CourseMembership.role == MEMBERSHIP_STUDENT,
+            CourseMembership.left_at.is_(None),
         )
         .correlate(Topic)
         .scalar_subquery()
@@ -91,7 +184,15 @@ async def list_topics_with_user_session(
             Session,
             (Session.topic_id == Topic.id) & (Session.user_id == user_id),
         )
-        .where(Topic.course_id == course_id)
+        .where(
+            Topic.course_id == course_id,
+            or_(
+                Topic.stage.in_(
+                    (TopicStage.CONVERSATION.value, TopicStage.SUMMARY.value)
+                ),
+                Session.id.is_not(None),
+            ),
+        )
         .order_by(Topic.created_at.asc(), Topic.id.asc())
     )
     result = await db.execute(statement)

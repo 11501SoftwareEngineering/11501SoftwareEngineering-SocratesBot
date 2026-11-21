@@ -84,7 +84,7 @@ version: 0.2
 - 呼叫方式: GET /courses/{courseId}
 - 授權: 老師、助教、學生
 - 輸入資料: 無
-- 成功回應: `course_id`, `name`, `description`, `teacher_name`, `my_role`, `my_permissions`, `invite_code`, `default_model`{id, name}
+- 成功回應: `course_id`, `name`, `description`, `teacher_name`, `my_role`, `my_permissions`, `invite_code`
 - 錯誤:
     - 非課程成員或查無此課程 (404)
 
@@ -121,11 +121,12 @@ version: 0.2
 ### 透過邀請碼加入課程
 - 功能說明: 使用者輸入老師提供的課程邀請碼，以學生身分加入課程
 - 呼叫方式: POST /courses/join
-- 授權: 已登入
+- 授權: 全域角色為 USER（老師帳號不可加入）
 - 輸入資料: `invite_code`
 - 成功回應: `course_id`, `name`, `invite_code`, `my_role`, `message`
 - 錯誤:
     - 邀請碼格式無效 (422)
+    - 非學生帳號 (403)
     - 查無此邀請碼對應的課程 (404)
     - 已經是該課程學生 (400)
     - 已是該課程的老師或助教 (400)
@@ -142,7 +143,7 @@ version: 0.2
 ---
 
 ## 課程名單
-助教權限有四項，如下表說明
+助教權限有四項，如下表說明。指派助教時可省略 `permissions`，省略即給予全部四項；其他 API 照常回傳 `permissions` / `my_permissions`，前端不需要時可忽略
 
 | permission | 允許做的事 |
 | --- | --- |
@@ -178,19 +179,19 @@ version: 0.2
     - 查無此課程 (404)
 
 ### 指派助教
-- 功能說明: 老師輸入已註冊帳號，指派為本課程助教並勾選權限。原為本課程學生者改任助教時保留歷史對話，並從學生統計排除
+- 功能說明: 老師輸入學生帳號（全域角色為 USER），指派為本課程助教並給予權限（未指定時給予全部四項）；老師帳號與管理員不可擔任助教。原為本課程學生者改任助教時保留歷史對話，並從學生統計排除；不在本課程者直接以助教身分加入課程。確認彈窗先以 `check: true` 呼叫，只做檢查並取得姓名、不寫入，讓錯誤在按下「新增」前就能顯示；確認後再以 `check: false`（或不帶）正式指派
 - 呼叫方式: POST /courses/{courseId}/tas
 - 授權: 老師
-- 輸入資料: `account_id`, `permissions`(僅接受 edit_topics, view_reports, edit_summary, view_members)
-- 成功回應: `user_id`, `account_id`, `name`, `permissions`, `message`
+- 輸入資料: `account_id`, `permissions`（選填，僅接受 edit_topics, view_reports, edit_summary, view_members；省略時給予全部四項）, `check`（選填，只接受 `true` / `false`，預設 `false`）
+- 成功回應: `user_id`, `account_id`, `name`, `permissions`, `message`（`check: true` 時為 `TA can be assigned`，正式指派為 `TA assigned`）
 - 錯誤:
-    - 帳號未填寫或含未知權限 (422)
+    - 帳號未填寫、含未知權限，或 `check` 不是 `true` / `false` (422)
     - 非該課程老師 (403)
     - 查無此帳號 (404)
-    - 已是本課程助教，或帳號身分不允許（如本課程老師、管理員）(409)
+    - 指派對象已是本課程助教，或帳號不是學生帳號（全域角色為 TEACHER，或為管理員），或同時有其他請求變更了該帳號的課程身分 (400)
 
 ### 更新助教權限
-- 功能說明: 老師逐項更新助教權限；儲存後下一次 API 請求立即依新權限檢查
+- 功能說明: 老師逐項更新助教權限；儲存後下一次 API 請求立即依新權限檢查。助教已不分權限，前端不使用此 API，暫時保留
 - 呼叫方式: PUT /courses/{courseId}/tas/{userId}
 - 授權: 老師
 - 輸入資料: `permissions`
@@ -201,7 +202,7 @@ version: 0.2
     - 查無此助教 (404)
 
 ### 撤銷助教
-- 功能說明: 老師撤銷助教的教學存取；原為學生者依核定政策恢復學生資格，並保存角色變更紀錄
+- 功能說明: 老師撤銷助教，並直接將其移出課程；助教權限與其在本課程的歷史對話一併刪除，與移除學生相同。
 - 呼叫方式: DELETE /courses/{courseId}/tas/{userId}
 - 授權: 老師
 - 輸入資料: 無
@@ -237,8 +238,7 @@ version: 0.2
 | `conversation` | 學生對話 | 老師發布題目 | 鎖定八欄、內容語言與模型；學生可建立／繼續 Session |
 | `summary` | 觀點摘要 | 老師第一次產生摘要草稿 | 學生不能再建立 Session 或送出訊息；未完成的 Session 保留但不計入完成數；摘要內的細分狀態見 `summary_status` |
 
-- 「設定權限」指：老師、助教需 `edit_topics`
-- AI 長工作的傳輸方式（同步、輪詢或 SSE）待前後端共同確認，不得因前端請求逾時造成無提示中斷
+- 「設定權限」指：老師、助教需 `edit_topics` 權限
 
 ### 取得可用模型清單
 - 功能說明: 取得供應商目錄中的可用模型及單價
@@ -252,22 +252,23 @@ version: 0.2
 - 呼叫方式: GET /courses/{courseId}/topics
 - 授權: 老師、助教、學生
 - 輸入資料: 無
-- 成功回應: `course_id`, `name`, `invite_code`, `my_role`, `my_permissions`, `topics`[`topic_id`, `title`, `description`, `topic_status`（`setup` / `conversation` / `summary`）, `age_band`, `max_turns`, 依身分另含下列欄位]
+- 成功回應: `course_id`, `name`, `invite_code`, `my_role`, `my_permissions`, `topics`[`topic_id`, `title`, `description`, `topic_status`（內容見上方表格）, `age_band`, `max_turns`, 依身分另含下列欄位]
     - 學生: 只列 `conversation`、`summary` 階段的題目；另含 `session_status`（未進入時為 null）, `session_id`
     - 老師與助教: `answered_count`, `student_count`
 - 錯誤:
     - 非課程成員或查無此課程 (404)
 
 ### 建立題目
-- 功能說明: 在課程中建立新題目，只填標題；建立後 `topic_status` 為 `setup`，再進入題目完成設定
+- 功能說明: 「新增活動」頁送出後，後端以選定模型將課程描述交由 AI 產生八欄設定並建立題目，將 `topic_status` 設為 `setup`
 - 呼叫方式: POST /courses/{courseId}/topics
 - 授權: 老師、助教需 `edit_topics`
-- 輸入資料: `title`（作為八欄 `topic` 的初始值）
-- 成功回應: `topic_id`, `course_id`, `title`, `topic_status`（`setup`）, `version`, `message`
+- 輸入資料: `age_band`, `max_turns`, `course_description`（不可空白，最多 6000 字元）
+- 成功回應: 同「取得題目設定」
 - 錯誤:
-    - 標題未填寫 (422)
+    - 欄位未填寫或不符規則、模型代號無效 (422)
     - 無權限 (403)
     - 查無此課程 (404)
+    - AI 服務失敗 (502／503)
 
 ### 刪除題目
 - 功能說明: 老師刪除題目，連帶刪除對話、報告與摘要，沒有封存
@@ -284,20 +285,20 @@ version: 0.2
 ## 題目設定階段
 
 ### 取得題目設定
-- 功能說明: 開啟題目設定頁（`setup` 階段可編輯，之後唯讀）；尚未設定的欄位為 null
+- 功能說明: 開啟題目設定頁（`setup` 階段可編輯，之後唯讀），尚未設定的欄位為 null
 - 呼叫方式: GET /topics/{topicId}/setup
 - 授權: 設定權限
 - 輸入資料: 無
-- 成功回應: `topic_id`, `course_id`, `version`, `topic_status`, `content_language`, `model_id`, `setup`（八欄設定物件，欄位見上表）
+- 成功回應: `topic_id`, `course_id`, `topic_status`, `model_id`, `setup`{八欄設定物件，欄位見上表}
 - 錯誤:
     - 無權限 (403)
     - 查無此題目 (404)
 
-### AI 產生題目設定
-- 功能說明: 將老師輸入的設定（年齡層、回合上限、內容語言、課程描述）交由 AI 整理成八欄建議，並產生釐清題（同一題目累計最多三題）；不寫入題目，需另呼叫儲存題目設定
-- 呼叫方式: POST /topics/{topicId}/setup/generate
+### AI 依回饋修訂題目設定
+- 功能說明: 「確認活動設定」頁的「重新產生」按鈕按下後呼叫，依老師回饋重新產生八欄設定
+- 呼叫方式: POST /topics/{topicId}/setup/refine
 - 授權: 設定權限
-- 輸入資料: `age_band`, `max_turns`, `content_language`, `course_description`, `model_id`
+- 輸入資料: `setup`, `feedback`
 - 成功回應: 同「取得題目設定」
 - 錯誤:
     - 欄位不符規則 (422)
@@ -306,41 +307,41 @@ version: 0.2
     - 題目已不在設定階段 (400)
     - AI 服務失敗 (502／503)
 
-### AI 依回饋修訂題目設定
-- 功能說明: 以目前設定（含手動修改）與老師回饋重新產生八欄；不寫入題目，需另呼叫儲存題目設定
-- 呼叫方式: POST /topics/{topicId}/setup/refine
+### AI 重新產生開場訊息
+- 功能說明: 「確認活動設定」頁開場訊息欄的「重新產生」按鈕按下後呼叫，依目前設定（含手動修改）重新產生 `opening_message`
+- 呼叫方式: POST /topics/{topicId}/setup/opening-message
 - 授權: 設定權限
-- 輸入資料: `setup`（含手動修改）, `feedback`
-- 成功回應: 同「取得題目設定」
+- 輸入資料: `setup`
+- 成功回應: `opening_message`
 - 錯誤:
     - 欄位不符規則 (422)
     - 無權限 (403)
     - 查無此題目 (404)
     - 題目已不在設定階段 (400)
+    - AI 服務失敗 (502／503)
 
 ### 儲存題目設定
-- 功能說明: 儲存 `setup` 階段的題目設定，以 `expected_version` 檢查並發衝突
+- 功能說明: 「確認活動設定」頁的「儲存草稿」按鈕按下後呼叫，儲存 `setup` 階段的八欄設定
 - 呼叫方式: PUT /topics/{topicId}/setup
 - 授權: 設定權限
-- 輸入資料: `expected_version`, `content_language`, `model_id`, `setup`
+- 輸入資料: `setup`
 - 成功回應:「取得題目設定」的回應, `message`
 - 錯誤:
     - 欄位不符規則 (422)
     - 無權限 (403)
     - 查無此題目 (404)
-    - 版本不符，需重新取得最新設定後再送出 (400)
     - 題目已不在設定階段 (400)
 
 ### 發布題目
-- 功能說明: 老師在交易內將題目從 `setup` 原子性轉為 `conversation`，固定八欄、內容語言與模型，開放學生對話；發布前前端須顯示確認
+- 功能說明: 先把畫面上的八欄存下來，設定完整才在同一筆交易把題目從 `setup` 轉為 `conversation`，固定八欄、內容語言與模型，開放學生對話；發布前前端須顯示確認。不完整的內容不會留下
 - 呼叫方式: POST /topics/{topicId}/publish
 - 授權: 老師
-- 輸入資料: `expected_version`
+- 輸入資料: `setup`（八欄，與儲存題目設定的 `setup` 相同）
 - 成功回應:「取得題目設定」的回應, `message`
 - 錯誤:
+    - 欄位不符規則，或設定未完整 (422)
     - 非該課程老師 (403)
     - 查無此題目 (404)
-    - 版本不符，或設定未完整，需補齊或重新取得後再送出 (409)
     - 題目已不在設定階段 (400)
 
 ---
@@ -357,15 +358,15 @@ version: 0.2
     - 非課程成員或查無此題目 (404)
 
 ### 建立對話 Session
-- 功能說明: 學生第一次進入題目時建立本人 Session，固定題目設定、內容語言、模型及設定版本。已有 Session 時（題目列表的 `session_id` 不為 null）前端應改用 `GET /sessions/{sessionId}/messages`
+- 功能說明: 學生第一次進入題目時建立本人 Session，固定題目設定、內容語言、模型及設定版本。已有 Session 時回傳該 Session
 - 呼叫方式: POST /topics/{topicId}/sessions
 - 授權: 學生
 - 輸入資料: 無
-- 成功回應: `session_id`, `topic_id`, `session_status`
+- 成功回應: `session_id`, `topic_id`, `session_status`（已有 Session 時為該對話目前的狀態）
 - 錯誤:
     - 非課程學生 (403)
     - 查無此題目，或題目仍在 `setup` (404)
-    - 題目已進入 `summary`，不能再開始對話；或本人已有此題目的 Session (400)
+    - 題目已進入 `summary`，且本人還沒有 Session (400)
 
 ### 取得對話紀錄
 - 功能說明: 取得本人 Session 的正式訊息歷史與進度，也用於斷線後校準
@@ -390,7 +391,7 @@ version: 0.2
     - 非此對話擁有者 (403)
     - 查無此對話 (404)
     - 對話已完成、已達回合上限，或題目已進入 `summary` (400)
-    - 同一 Session 有其他請求進行中，待其完成後再送出 (409)
+    - 同一 Session 有其他請求進行中，待其完成後再送出 (400)
     - AI 服務失敗 (502／503)
 
 ### 結束或繼續對話
@@ -404,7 +405,7 @@ version: 0.2
     - 非此對話擁有者 (403)
     - 查無此對話 (404)
     - 對話已結束（已完成或已退出），無法再變更 (400)
-    - 尚未達成探究目標就要求 `complete`，可繼續對話後再送出 (409)
+    - 尚未達成探究目標就要求 `complete`，可繼續對話後再送出 (400)
 
 ### 取得本人個人報告
 - 功能說明: 對話完成後取得本人結構化報告；報告準備中時回傳處理狀態供前端輪詢
@@ -422,7 +423,7 @@ version: 0.2
 - 錯誤:
     - 非此對話擁有者 (403)
     - 查無此對話 (404)
-    - 對話尚未完成 (409)
+    - 對話尚未完成 (400)
 
 ---
 
@@ -433,26 +434,31 @@ version: 0.2
 - 呼叫方式: GET /topics/{topicId}/reports
 - 授權: 老師、助教需 `view_reports`
 - 輸入資料: 無
-- 成功回應: `class_size`, `completed_count`, `ready_count`, `processing_count`, `failed_count`, `reports`[個人報告的 `report` 結構, `student_display_name`]
+- 成功回應: `class_size`, `completed_count`, `ready_count`, `processing_count`, `failed_count`, `summary_version`（分群標籤所依據的摘要版本，即「取得教學端摘要」的最新版本；尚無摘要時為 null）, 
+    - `groups`[`group_id`, `name`, `count`]該版本的群組清單，供前端產生篩選 tag；尚無摘要時為空陣列
+    - `reports`[個人報告的 `report` 結構, `student_display_name`, `group_ids`(此學生在哪一 group)]
+    - 前端依 `group_ids` 做 tag 篩選，`group_ids` 為空且 `summary_version` 不為 null 者即為「未分類」
 - 錯誤:
     - 無權限 (403)
     - 查無此題目 (404)
 
 ### 取得教學端摘要
-- 功能說明: 讀取最新版本的摘要（含學生是否已看到哪個版本）
+- 功能說明: 讀取摘要。沒帶 `version` 時回最新一版；帶了就回那一版。`published_version` 仍是學生目前看到的版本
 - 呼叫方式: GET /topics/{topicId}/summary
 - 授權: 老師、助教需 `edit_summary` 或 `view_reports`
-- 輸入資料: 無
-- 成功回應: `topic_status`, `published_version`（學生目前看到的版本號，沒有則 null）, `summary`（最新版本，題目尚未進入 `summary` 時為 null），結構為
+- 輸入資料: query `version`（可省略；有帶時須為大於等於 1 的整數）
+- 成功回應: `topic_status`, `published_version`（學生目前看到的版本號，沒有則 null）, `summary`（沒帶 `version` 時為最新一版，題目尚未進入 `summary` 時為 null；有帶時為該版），結構為
     - `summary_id`, `version`, `summary_status`（`draft` / `reviewed` / `published` / `withdrawn`）, `overview`, `viewpoint_summary`, `denominator`
     - `groups`[`group_id`, `name`, `conditions`, `count`, `percentage`, `report_ids`]
     - `ungrouped_report_ids`
 - 錯誤:
+    - 版本無效 (422)
     - 無權限 (403)
     - 查無此題目 (404)
+    - 指定的版本不存在 (404)
 
 ### 產生摘要草稿
-- 功能說明: 以 `ready` 報告動態分群產生新摘要草稿，不自動發布，不影響學生已看到的版本。題目在 `conversation` 時第一次呼叫，會把 `topic_status` 轉為 `summary` 並結束學生對話（不可退回）
+- 功能說明: 以 `ready` 報告動態分群產生新摘要草稿，成功時存成新的一版，不自動發布，不影響學生已看到的版本。題目在 `conversation` 時第一次呼叫，會把 `topic_status` 轉為 `summary` 並結束學生對話（不可退回）
 - 呼叫方式: POST /topics/{topicId}/summary
 - 授權:
     - 題目在 `conversation`（會結束學生對話）: 僅老師
@@ -466,41 +472,40 @@ version: 0.2
     - AI 服務失敗 (502／503)
 
 ### 修訂摘要草稿
-- 功能說明: 修訂草稿文字；修訂後撤銷審閱狀態，回到 `draft`
+- 功能說明: 以畫面上的文字修訂最新一版。文字有變才存成下一版；文字沒變則版本號不變。狀態回到 `draft`，已發布給學生的快照不變
 - 呼叫方式: PATCH /topics/{topicId}/summary
 - 授權: 老師、助教需 `edit_summary`
-- 輸入資料: `version`, `overview`, `viewpoint_summary`
+- 輸入資料: `overview`, `viewpoint_summary`（不可空白）
 - 成功回應: `summary`（結構同上，`summary_status` 為 `draft`）
 - 錯誤:
     - 欄位不符規則 (422)
     - 無權限 (403)
     - 查無此摘要 (404)
-    - 版本不符 (400)
 
 ### 標記摘要審閱完成
-- 功能說明: 老師確認統計範圍與表述後標記 `reviewed`
+- 功能說明: 以畫面上的文字標記審閱完成。與最新一版不同時，先存成下一版再標 `reviewed`；沒有變動就只改狀態，版本號不變。若已有別的 `reviewed` 版本，那個版本改為 `withdrawn`
 - 呼叫方式: POST /topics/{topicId}/summary/review
 - 授權: 老師
-- 輸入資料: `version`
-- 成功回應: `version`, `summary_status`（`reviewed`）, `message`
+- 輸入資料: `overview`, `viewpoint_summary`（不可空白）
+- 成功回應: `version`（寫入後的版本號）, `summary_status`（`reviewed`）, `message`
 - 錯誤:
+    - 欄位不符規則 (422)
     - 非該課程老師 (403)
     - 查無此摘要 (404)
-    - 版本不符 (400)
 
 ### 發布摘要
-- 功能說明: 老師將同一個 `reviewed` 版本發布給學生，成為不可變的發布快照
+- 功能說明: 老師發布最新一版，且該版必須是 `reviewed`。不帶版本號，也不接收畫面上的文字。已有較新的未審閱版本時拒絕發布。前一個 `published` 版本改為 `withdrawn`
 - 呼叫方式: POST /topics/{topicId}/summary/publish
 - 授權: 老師
-- 輸入資料: `version`
-- 成功回應: `version`, `summary_status`（`published`）, `message`
+- 輸入資料: 無
+- 成功回應: `version`（實際發布的版本號）, `summary_status`（`published`）, `message`
 - 錯誤:
     - 非該課程老師 (403)
     - 查無此摘要 (404)
-    - 版本不符或尚未審閱 (400)
+    - 最新一版尚未審閱，或已有較新的未審閱版本 (400)。`detail` 為 `version`（最新版本號）, `summary_status`（該版狀態）, `message`
 
 ### 撤回摘要
-- 功能說明: 老師撤回目前發布版本，學生端不再取得該摘要
+- 功能說明: 老師撤回目前發布版本，學生端不再取得該摘要。最新一版只清掉 `published` 與 `published_version`，不改它的狀態；較舊的發布版改為 `withdrawn`
 - 呼叫方式: POST /topics/{topicId}/summary/withdraw
 - 授權: 老師
 - 輸入資料: 無
@@ -528,7 +533,20 @@ version: 0.2
 - 功能說明: 取得本人本月 AI 用量
 - 呼叫方式: GET /users/me/ai/usage
 - 輸入資料: 無
-- 成功回應: `month`, `total_tokens`, `input_tokens`, `output_tokens`, `request_count`, `by_stage`（分階段統計）, `cost_usd`（無資料時為 null，不代表 0）, `cost_source`, `updated_at`
+- 成功回應: `month`, `total_tokens`, `input_tokens`, `output_tokens`, `request_count`, `by_stage`（分階段統計，格式見下）, `cost_usd`（無資料時為 null，不代表 0）, `cost_source`, `updated_at`
+    - `by_stage`: 陣列，固定 4 筆，依 `setup`、`dialogue`、`report`、`summary` 的順序；本月沒有用量的階段也要回傳（數量為 0、`cost_usd` 為 null）
+        - `stage`: `setup`（活動設定）、`dialogue`（學生對話）、`report`（個人報告）、`summary`（全班統整）
+        - `request_count`, `total_tokens`, `input_tokens`, `output_tokens`: 整數
+        - `cost_usd`: 該階段本月花費（美元）；無資料時為 null，不代表 0
+    - `by_stage` 範例:
+        ```json
+        [
+          { "stage": "setup", "request_count": 18, "total_tokens": 31200, "input_tokens": 21400, "output_tokens": 9800, "cost_usd": 0.02 },
+          { "stage": "dialogue", "request_count": 352, "total_tokens": 80150, "input_tokens": 61800, "output_tokens": 18350, "cost_usd": 0.05 },
+          { "stage": "report", "request_count": 36, "total_tokens": 13100, "input_tokens": 9800, "output_tokens": 3300, "cost_usd": 0.01 },
+          { "stage": "summary", "request_count": 0, "total_tokens": 0, "input_tokens": 0, "output_tokens": 0, "cost_usd": null }
+        ]
+        ```
 - 錯誤:
     - 非老師身分 (403)
 
@@ -586,7 +604,7 @@ version: 0.2
 - 錯誤:
     - 帳號或姓名未填寫或格式無效 (422)
     - 非管理員 (403)
-    - 帳號已存在或為保留帳號名稱 (409)
+    - 帳號已存在或為保留帳號名稱 (400)
 
 ### 刪除老師帳號
 - 功能說明: 管理員刪除指定老師帳號，連帶刪除其課程（有其他授課老師的課程保留）
@@ -606,3 +624,4 @@ version: 0.2
 - 錯誤:
     - 非管理員 (403)
     - 查無此老師帳號 (404)
+    - 目標帳號為設定檔超級管理員，不可重設 (403)

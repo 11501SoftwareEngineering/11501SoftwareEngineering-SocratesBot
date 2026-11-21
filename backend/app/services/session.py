@@ -6,30 +6,25 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import SessionStatus
+from app.core.enums import DialogueOutcome, TopicStage
 from app.crud.session import SQLAlchemySessionStore
-from app.schemas.session import (
-    CreateSessionResponse,
-    SessionData,
-    SessionResultResponse,
-    UpdateSessionPrivacyResponse,
-)
+from app.schemas.session import CreateSessionResponse
 
 
 class TopicNotFoundError(Exception):
     """The requested topic does not exist."""
 
 
+class TopicNotOpenError(Exception):
+    """The topic is still in setup, so a new dialogue is not created."""
+
+
+class TopicClosedError(Exception):
+    """The topic is in summary, so a new dialogue is not created."""
+
+
 class CourseAccessDeniedError(Exception):
     """The user is not a member of the topic's course."""
-
-
-class SessionNotFoundError(Exception):
-    """The requested session does not exist."""
-
-
-class NotSessionOwnerError(Exception):
-    """The caller is not the session owner."""
 
 
 class SessionStore(Protocol):
@@ -37,6 +32,10 @@ class SessionStore(Protocol):
 
     async def get_topic_course_id(self, topic_id: UUID) -> UUID | None:
         """Return the course ID, or None when the topic does not exist."""
+        ...
+
+    async def get_topic_stage(self, topic_id: UUID) -> str | None:
+        """Return the topic stage, or None when the topic does not exist."""
         ...
 
     async def is_course_member(self, user_id: UUID, course_id: UUID) -> bool:
@@ -47,9 +46,39 @@ class SessionStore(Protocol):
         """Find an existing session regardless of completion status."""
         ...
 
-    async def get_or_create_session_id(self, user_id: UUID, topic_id: UUID) -> UUID:
-        """Atomically create IN_PROGRESS or reuse an existing session unchanged."""
+    async def get_session_outcome(self, user_id: UUID, topic_id: UUID) -> str | None:
+        """Return the dialogue outcome, or None when the pair does not exist."""
         ...
+
+    async def insert_session_id(self, user_id: UUID, topic_id: UUID) -> UUID | None:
+        """Insert one dialogue. Return None when the unique pair already exists."""
+        ...
+
+
+async def _course_id(store: SessionStore, topic_id: UUID) -> UUID:
+    course_id = await store.get_topic_course_id(topic_id)
+    if course_id is None:
+        raise TopicNotFoundError("Topic not found")
+    return course_id
+
+
+async def _require_member(store: SessionStore, user_id: UUID, course_id: UUID) -> None:
+    if not await store.is_course_member(user_id, course_id):
+        raise CourseAccessDeniedError("Course membership required")
+
+
+async def _existing_session(
+    store: SessionStore, user_id: UUID, topic_id: UUID
+) -> CreateSessionResponse | None:
+    session_id = await store.get_session_id(user_id, topic_id)
+    if session_id is None:
+        return None
+    outcome = await store.get_session_outcome(user_id, topic_id)
+    return CreateSessionResponse(
+        session_id=session_id,
+        topic_id=topic_id,
+        session_status=outcome or DialogueOutcome.OPEN.value,
+    )
 
 
 async def create_or_enter_session(
@@ -58,20 +87,53 @@ async def create_or_enter_session(
     topic_id: UUID,
     store: SessionStore,
 ) -> CreateSessionResponse:
-    """Enter a session using the authenticated user's ID supplied by the route."""
-    course_id = await store.get_topic_course_id(topic_id)
-    if course_id is None:
-        raise TopicNotFoundError("Topic not found")
+    """Enter a session using the authenticated user's ID supplied by the route.
 
+    An existing dialogue is returned again. A missing one is created only while
+    the topic is in conversation.
+    """
+    course_id = await _course_id(store, topic_id)
     # Check permission even when an old session already exists.
-    if not await store.is_course_member(user_id, course_id):
-        raise CourseAccessDeniedError("Course membership required")
-
-    session_id = await store.get_session_id(user_id, topic_id)
+    await _require_member(store, user_id, course_id)
+    stage = await store.get_topic_stage(topic_id)
+    if stage == TopicStage.SETUP.value:
+        raise TopicNotOpenError("Topic is still in setup")
+    existing = await _existing_session(store, user_id, topic_id)
+    if existing is not None:
+        return existing
+    if stage == TopicStage.SUMMARY.value:
+        raise TopicClosedError("Topic is in summary")
+    session_id = await store.insert_session_id(user_id, topic_id)
     if session_id is None:
-        session_id = await store.get_or_create_session_id(user_id, topic_id)
+        existing = await _existing_session(store, user_id, topic_id)
+        if existing is None:
+            raise RuntimeError("Session was not found after an insert conflict")
+        return existing
+    return CreateSessionResponse(
+        session_id=session_id,
+        topic_id=topic_id,
+        session_status=DialogueOutcome.OPEN.value,
+    )
 
-    return CreateSessionResponse(session_id=session_id, topic_id=topic_id)
+
+def _enter_http(exc: Exception) -> HTTPException:
+    if isinstance(exc, TopicNotFoundError):
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Topic not found"
+        )
+    if isinstance(exc, TopicNotOpenError):
+        return HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Topic is still in setup"
+        )
+    if isinstance(exc, TopicClosedError):
+        return HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Topic is in summary"
+        )
+    if isinstance(exc, CourseAccessDeniedError):
+        return HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Course membership required"
+        )
+    raise exc
 
 
 async def create_or_enter_student_session(
@@ -80,11 +142,7 @@ async def create_or_enter_student_session(
     topic_id: UUID,
 ) -> CreateSessionResponse:
     """Enter a student session and handle transactions and HTTP errors."""
-    store = SQLAlchemySessionStore(
-        db,
-        initial_is_anonymous=False,
-    )
-
+    store = SQLAlchemySessionStore(db)
     try:
         result = await create_or_enter_session(
             user_id=user_id,
@@ -92,165 +150,15 @@ async def create_or_enter_student_session(
             store=store,
         )
         await db.commit()
-    except TopicNotFoundError as exc:
+    except (
+        TopicNotFoundError,
+        TopicNotOpenError,
+        TopicClosedError,
+        CourseAccessDeniedError,
+    ) as exc:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Topic not found",
-        ) from exc
-    except CourseAccessDeniedError as exc:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Course membership required",
-        ) from exc
+        raise _enter_http(exc) from exc
     except Exception:
         await db.rollback()
         raise
-
     return result
-
-
-class SessionReadStore(Protocol):
-    async def get_session(
-        self,
-        session_id: UUID,
-    ) -> SessionData | None:
-        """Return session data, or None when the session does not exist."""
-        ...
-
-
-async def _get_owned_session(
-    *,
-    store: SessionReadStore,
-    session_id: UUID,
-    current_user_id: UUID,
-) -> SessionData:
-    session = await store.get_session(session_id)
-
-    if session is None:
-        raise SessionNotFoundError("Session not found")
-
-    if session.user_id != current_user_id:
-        raise NotSessionOwnerError("Not the session owner")
-
-    return session
-
-
-class SessionPrivacyStore(SessionReadStore, Protocol):
-    async def set_is_anonymous(
-        self,
-        session_id: UUID,
-        is_anonymous: bool,
-    ) -> SessionData | None: ...
-
-
-async def update_session_privacy(
-    *,
-    store: SessionPrivacyStore,
-    session_id: UUID,
-    current_user_id: UUID,
-    is_anonymous: bool,
-) -> UpdateSessionPrivacyResponse:
-    await _get_owned_session(
-        store=store,
-        session_id=session_id,
-        current_user_id=current_user_id,
-    )
-
-    updated_session = await store.set_is_anonymous(session_id, is_anonymous)
-
-    if updated_session is None:
-        raise SessionNotFoundError("Session not found")
-
-    return UpdateSessionPrivacyResponse(
-        session_id=updated_session.id,
-        is_anonymous=updated_session.is_anonymous,
-        message="匿名分享設定已更新",
-    )
-
-
-async def update_student_session_privacy(
-    db: AsyncSession,
-    current_user_id: UUID,
-    session_id: UUID,
-    is_anonymous: bool,
-) -> UpdateSessionPrivacyResponse:
-    """Update session privacy and manage the database transaction."""
-    store = SQLAlchemySessionStore(db)
-
-    try:
-        result = await update_session_privacy(
-            store=store,
-            session_id=session_id,
-            current_user_id=current_user_id,
-            is_anonymous=is_anonymous,
-        )
-        await db.commit()
-    except SessionNotFoundError as exc:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found",
-        ) from exc
-    except NotSessionOwnerError as exc:
-        await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not the session owner",
-        ) from exc
-    except Exception:
-        await db.rollback()
-        raise
-
-    return result
-
-
-async def get_session_result(
-    *,
-    store: SessionReadStore,
-    session_id: UUID,
-    current_user_id: UUID,
-) -> SessionResultResponse:
-    try:
-        session = await _get_owned_session(
-            store=store,
-            session_id=session_id,
-            current_user_id=current_user_id,
-        )
-    except SessionNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Session not found",
-        ) from exc
-    except NotSessionOwnerError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Not the session owner",
-        ) from exc
-
-    if session.status != SessionStatus.COMPLETED:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Session is not completed",
-        )
-
-    return SessionResultResponse(
-        session_id=session.id,
-        topic_id=session.topic_id,
-    )
-
-
-async def get_student_session_result(
-    db: AsyncSession,
-    current_user_id: UUID,
-    session_id: UUID,
-) -> SessionResultResponse:
-    """Return the owner's completed session identifiers."""
-    store = SQLAlchemySessionStore(db)
-
-    return await get_session_result(
-        store=store,
-        session_id=session_id,
-        current_user_id=current_user_id,
-    )

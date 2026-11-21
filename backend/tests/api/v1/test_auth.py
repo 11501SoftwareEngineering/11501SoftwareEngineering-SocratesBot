@@ -34,18 +34,18 @@ from tests.api.v1.conftest import (
 def test_register_login_and_me(auth_client: TestClient) -> None:
     register = auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "alice", "password": "password1", "name": "Alice"},
+        json={"account_id": "alice", "password": "password1", "name": "Alice"},
     )
     assert register.status_code == 200
     body = register.json()
-    assert body["account"] == "alice"
+    assert body["account_id"] == "alice"
     assert body["role"] == "USER"
     assert "message" in body
     assert "access_token" not in body
 
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "alice", "password": "password1"},
+        json={"account_id": "alice", "password": "password1"},
     )
     assert login.status_code == 200
     token_body = login.json()
@@ -64,7 +64,7 @@ def test_register_login_and_me(auth_client: TestClient) -> None:
     )
     assert me.status_code == 200
     assert me.json() == {
-        "account": "alice",
+        "account_id": "alice",
         "name": "Alice",
         "role": ["USER"],
         "preferred_language": "zh-TW",
@@ -75,20 +75,20 @@ def test_register_login_and_me(auth_client: TestClient) -> None:
 def test_me_silent_renew_on_get_without_bearer(auth_client: TestClient) -> None:
     auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "renew", "password": "password1", "name": "Renew"},
+        json={"account_id": "renew", "password": "password1", "name": "Renew"},
     )
     auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "renew", "password": "password1"},
+        json={"account_id": "renew", "password": "password1"},
     )
     me = auth_client.get("/api/v1/users/me")
     assert me.status_code == 200
-    assert me.json()["account"] == "renew"
+    assert me.json()["account_id"] == "renew"
     bearer_from(me)
 
 
 def test_register_duplicate_account(auth_client: TestClient) -> None:
-    payload = {"account": "bob", "password": "password1", "name": "Bob"}
+    payload = {"account_id": "bob", "password": "password1", "name": "Bob"}
     assert auth_client.post("/api/v1/auth/register", json=payload).status_code == 200
     again = auth_client.post("/api/v1/auth/register", json=payload)
     assert again.status_code == 400
@@ -97,11 +97,11 @@ def test_register_duplicate_account(auth_client: TestClient) -> None:
 def test_login_wrong_password(auth_client: TestClient) -> None:
     auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "carol", "password": "password1", "name": "Carol"},
+        json={"account_id": "carol", "password": "password1", "name": "Carol"},
     )
     response = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "carol", "password": "wrong-pass"},
+        json={"account_id": "carol", "password": "wrong-pass"},
     )
     assert response.status_code == 401
 
@@ -109,18 +109,18 @@ def test_login_wrong_password(auth_client: TestClient) -> None:
 def test_login_rate_limited_after_failures(auth_client: TestClient) -> None:
     auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "limited", "password": "password1", "name": "Limited"},
+        json={"account_id": "limited", "password": "password1", "name": "Limited"},
     )
     for _ in range(settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS):
         failed = auth_client.post(
             "/api/v1/auth/login",
-            json={"account": "limited", "password": "wrong-pass"},
+            json={"account_id": "limited", "password": "wrong-pass"},
         )
         assert failed.status_code == 401
 
     blocked = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "limited", "password": "password1"},
+        json={"account_id": "limited", "password": "password1"},
     )
     assert blocked.status_code == 429
     assert blocked.json()["detail"] == LOGIN_RATE_LIMITED_DETAIL
@@ -132,26 +132,26 @@ def test_login_rate_limited_after_failures(auth_client: TestClient) -> None:
 def test_login_success_clears_account_failure_counter(auth_client: TestClient) -> None:
     auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "resetme", "password": "password1", "name": "Reset"},
+        json={"account_id": "resetme", "password": "password1", "name": "Reset"},
     )
     for _ in range(settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS - 1):
         assert (
             auth_client.post(
                 "/api/v1/auth/login",
-                json={"account": "resetme", "password": "wrong-pass"},
+                json={"account_id": "resetme", "password": "wrong-pass"},
             ).status_code
             == 401
         )
     ok = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "resetme", "password": "password1"},
+        json={"account_id": "resetme", "password": "password1"},
     )
     assert ok.status_code == 200
     # Account key cleared; success also undoes this attempt's IP bump so login works.
     assert (
         auth_client.post(
             "/api/v1/auth/login",
-            json={"account": "resetme", "password": "password1"},
+            json={"account_id": "resetme", "password": "password1"},
         ).status_code
         == 200
     )
@@ -164,11 +164,11 @@ def test_me_requires_auth(auth_client: TestClient) -> None:
 def test_logout_clears_session(auth_client: TestClient) -> None:
     auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "dave", "password": "password1", "name": "Dave"},
+        json={"account_id": "dave", "password": "password1", "name": "Dave"},
     )
     auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "dave", "password": "password1"},
+        json={"account_id": "dave", "password": "password1"},
     )
     csrf = auth_client.cookies.get(CSRF_COOKIE)
     assert csrf
@@ -183,11 +183,11 @@ def test_logout_clears_session(auth_client: TestClient) -> None:
 def test_logout_csrf_mismatch_forbidden(auth_client: TestClient) -> None:
     auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "erin", "password": "password1", "name": "Erin"},
+        json={"account_id": "erin", "password": "password1", "name": "Erin"},
     )
     auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "erin", "password": "password1"},
+        json={"account_id": "erin", "password": "password1"},
     )
     out = auth_client.post(
         "/api/v1/auth/logout",
@@ -199,11 +199,11 @@ def test_logout_csrf_mismatch_forbidden(auth_client: TestClient) -> None:
 def test_logout_missing_csrf_cookie_forbidden(auth_client: TestClient) -> None:
     auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "frank", "password": "password1", "name": "Frank"},
+        json={"account_id": "frank", "password": "password1", "name": "Frank"},
     )
     auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "frank", "password": "password1"},
+        json={"account_id": "frank", "password": "password1"},
     )
     auth_client.cookies.pop(CSRF_COOKIE, None)
     out = auth_client.post("/api/v1/auth/logout")
@@ -213,11 +213,11 @@ def test_logout_missing_csrf_cookie_forbidden(auth_client: TestClient) -> None:
 def test_me_rejected_refresh_clears_cookies(auth_client: TestClient) -> None:
     auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "gina", "password": "password1", "name": "Gina"},
+        json={"account_id": "gina", "password": "password1", "name": "Gina"},
     )
     auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "gina", "password": "password1"},
+        json={"account_id": "gina", "password": "password1"},
     )
     # Drop the login refresh first: httpx2 2.16+ reuses the jar, so set() alone
     # may leave the real cookie on the next request.
@@ -276,11 +276,11 @@ def test_password_hash_roundtrip() -> None:
 def test_change_password_success(auth_client: TestClient, store: FakeStore) -> None:
     auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "pwduser", "password": "password1", "name": "Pwd"},
+        json={"account_id": "pwduser", "password": "password1", "name": "Pwd"},
     )
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "pwduser", "password": "password1"},
+        json={"account_id": "pwduser", "password": "password1"},
     )
     bearer = bearer_from(login)
     assert store.refresh_by_raw  # session established
@@ -300,14 +300,14 @@ def test_change_password_success(auth_client: TestClient, store: FakeStore) -> N
     assert (
         auth_client.post(
             "/api/v1/auth/login",
-            json={"account": "pwduser", "password": "password1"},
+            json={"account_id": "pwduser", "password": "password1"},
         ).status_code
         == 401
     )
     assert (
         auth_client.post(
             "/api/v1/auth/login",
-            json={"account": "pwduser", "password": "password2"},
+            json={"account_id": "pwduser", "password": "password2"},
         ).status_code
         == 200
     )
@@ -338,7 +338,7 @@ def test_must_change_password_gate_cleared_after_change(
 
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "forced", "password": "password1"},
+        json={"account_id": "forced", "password": "password1"},
     )
     assert login.status_code == 200
     assert login.json()["must_change_password"] is True
@@ -361,7 +361,7 @@ def test_must_change_password_gate_cleared_after_change(
     # Re-login after revoke; flag must be clear and /me unblocked.
     relogin = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "forced", "password": "password2"},
+        json={"account_id": "forced", "password": "password2"},
     )
     assert relogin.status_code == 200
     assert relogin.json()["must_change_password"] is False
@@ -378,11 +378,11 @@ def test_must_change_password_gate_cleared_after_change(
 def test_change_password_wrong_old(auth_client: TestClient) -> None:
     auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "pwdbad", "password": "password1", "name": "Pwd"},
+        json={"account_id": "pwdbad", "password": "password1", "name": "Pwd"},
     )
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "pwdbad", "password": "password1"},
+        json={"account_id": "pwdbad", "password": "password1"},
     )
     bearer = bearer_from(login)
     response = auth_client.put(
@@ -397,11 +397,11 @@ def test_change_password_wrong_old(auth_client: TestClient) -> None:
 def test_change_password_rejects_same_as_current(auth_client: TestClient) -> None:
     auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "pwdsame", "password": "password1", "name": "Pwd"},
+        json={"account_id": "pwdsame", "password": "password1", "name": "Pwd"},
     )
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "pwdsame", "password": "password1"},
+        json={"account_id": "pwdsame", "password": "password1"},
     )
     bearer = bearer_from(login)
     response = auth_client.put(
@@ -416,11 +416,11 @@ def test_change_password_rejects_same_as_current(auth_client: TestClient) -> Non
 def test_change_password_validation(auth_client: TestClient) -> None:
     auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "pwdval", "password": "password1", "name": "Pwd"},
+        json={"account_id": "pwdval", "password": "password1", "name": "Pwd"},
     )
     login = auth_client.post(
         "/api/v1/auth/login",
-        json={"account": "pwdval", "password": "password1"},
+        json={"account_id": "pwdval", "password": "password1"},
     )
     bearer = bearer_from(login)
     response = auth_client.put(
@@ -439,7 +439,7 @@ def test_register_422_redacts_password_on_sibling_field_error(
 ) -> None:
     response = auth_client.post(
         "/api/v1/auth/register",
-        json={"account": "nopath", "password": "password1"},
+        json={"account_id": "nopath", "password": "password1"},
     )
     assert response.status_code == 422
     detail = response.json()["detail"]

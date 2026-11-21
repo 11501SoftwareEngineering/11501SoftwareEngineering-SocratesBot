@@ -56,6 +56,8 @@ class Settings(BaseSettings):
 
     # Security & JWT
     JWT_SECRET_KEY: Annotated[SecretStr, Field(min_length=32)]
+    # Encrypts a teacher's OpenRouter key at rest. Losing it makes stored keys unreadable.
+    TEACHER_API_KEY_SECRET: Annotated[SecretStr, Field(min_length=32)]
     JWT_ALGORITHM: NonEmptyStr
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -67,9 +69,11 @@ class Settings(BaseSettings):
     # Cookie flags: SameSite=None for cross-origin SPA; Secure off in development.
     COOKIE_SAMESITE: NonEmptyStr = "none"
 
-    # LLM API
+    # LLM API via OpenRouter. The model id stays in server config; clients never send or read it.
     OPENAI_API_KEY: SecretStr
     ANTHROPIC_API_KEY: SecretStr
+    OPENAI_MODEL: NonEmptyStr = "openai/gpt-4o-mini"
+    OPENAI_BASE_URL: NonEmptyStr = "https://openrouter.ai/api/v1"
 
     @model_validator(mode="after")
     def _default_language_must_be_supported(self) -> Self:
