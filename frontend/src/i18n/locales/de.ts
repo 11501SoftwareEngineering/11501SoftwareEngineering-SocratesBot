@@ -189,8 +189,6 @@ export default {
     password: {
       label: 'Passwort',
       required: 'Bitte Passwort eingeben',
-      forgot: 'Passwort vergessen?',
-      forgotHint: 'Bitten Sie Ihre Lehrkraft oder einen Administrator, es zurückzusetzen.',
       create: 'Passwort',
       hint: 'Mindestens 8 Zeichen',
       tooShort: 'Das Passwort muss mindestens 8 Zeichen haben',

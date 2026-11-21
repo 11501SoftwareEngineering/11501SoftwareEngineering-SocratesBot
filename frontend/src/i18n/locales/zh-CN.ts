@@ -181,8 +181,6 @@ export default {
     password: {
       label: '密码',
       required: '请输入密码',
-      forgot: '忘记密码?',
-      forgotHint: '请联系老师或管理员协助重设密码。',
       create: '创建密码',
       hint: '至少 8 个字符',
       tooShort: '密码至少要 8 个字符',

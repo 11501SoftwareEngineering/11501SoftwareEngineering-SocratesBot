@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
  * 文字連結。對應 Figma 元件頁「忘記密碼?」（node 66:123）：22px、底線；
- * 預設文字輔色，滑過變文字主色。麵包屑、登入頁「忘記密碼?」都用這個。
+ * 預設文字輔色，滑過變文字主色。麵包屑、課程列表的空狀態都用這個。
  * 滑過另外加一層底色（Foundations「圖形外框」#EBE9E1，圓角 radius/8），讓可以點的範圍更明顯。
  *
  * 用法：
  *   <TextLink :to="{ name: 'StudentCourses' }">我的課程</TextLink>   （站內連結）
- *   <TextLink @click="…">忘記密碼?</TextLink>                        （沒有 to 就是按鈕）
+ *   <TextLink @click="…">說明</TextLink>                             （沒有 to 就是按鈕）
  *   <TextLink inline @click="…">新增課程</TextLink>                  （在句子裡：字級、顏色跟著句子）
  */
 import { computed } from 'vue'

@@ -186,8 +186,6 @@ export default {
     password: {
       label: 'Contraseña',
       required: 'Escribe tu contraseña',
-      forgot: '¿Olvidaste la contraseña?',
-      forgotHint: 'Pide a tu docente o a un administrador que restablezca tu contraseña.',
       create: 'Contraseña',
       hint: 'Al menos 8 caracteres',
       tooShort: 'La contraseña necesita al menos 8 caracteres',

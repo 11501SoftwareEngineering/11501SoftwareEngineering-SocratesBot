@@ -185,8 +185,6 @@ export default {
     password: {
       label: 'Password',
       required: 'Please enter your password',
-      forgot: 'Forgot password?',
-      forgotHint: 'Please ask your teacher or an admin to reset your password.',
       create: 'Password',
       hint: 'At least 8 characters',
       tooShort: 'Passwords need at least 8 characters',

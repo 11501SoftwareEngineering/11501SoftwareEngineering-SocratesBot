@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import TextLink from '@/components/common/TextLink.vue'
 /**
  * 登入頁。對應 Figma「Login」（node 125:62）。
  * API：POST /auth/login（token 在回應的 Authorization header）
@@ -19,7 +18,6 @@ import { useI18n } from 'vue-i18n'
 const { t } = useI18n()
 
 const authStore = useAuthStore()
-const showForgotHint = ref(false)
 const route = useRoute()
 const router = useRouter()
 
@@ -97,13 +95,6 @@ function handleSubmit() {
             {{ mutation.isPending.value ? t('auth.loggingIn') : t('auth.login') }}
           </Button>
         </div>
-        <!-- 後端沒有忘記密碼的 API：點了提示找老師或管理員重設 -->
-        <TextLink :aria-expanded="showForgotHint" @click="showForgotHint = !showForgotHint">
-          {{ t('auth.password.forgot') }}
-        </TextLink>
-        <p v-if="showForgotHint" role="status" class="mt-1 text-body text-muted-foreground">
-          {{ t('auth.password.forgotHint') }}
-        </p>
       </div>
     </form>
   </AuthCard>

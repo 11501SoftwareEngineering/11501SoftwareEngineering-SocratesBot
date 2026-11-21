@@ -186,8 +186,6 @@ export default {
     password: {
       label: 'Mot de passe',
       required: 'Saisissez votre mot de passe',
-      forgot: 'Mot de passe oublié ?',
-      forgotHint: 'Demandez à votre enseignant ou à un administrateur de le réinitialiser.',
       create: 'Mot de passe',
       hint: 'Au moins 8 caractères',
       tooShort: 'Le mot de passe doit contenir au moins 8 caractères',

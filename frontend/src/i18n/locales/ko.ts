@@ -183,8 +183,6 @@ export default {
     password: {
       label: '비밀번호',
       required: '비밀번호를 입력해 주세요',
-      forgot: '비밀번호를 잊으셨나요?',
-      forgotHint: '선생님이나 관리자에게 비밀번호 재설정을 요청해 주세요.',
       create: '비밀번호',
       hint: '8자 이상',
       tooShort: '비밀번호는 8자 이상이어야 합니다',

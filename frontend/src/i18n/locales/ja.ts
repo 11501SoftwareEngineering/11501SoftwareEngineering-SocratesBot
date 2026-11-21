@@ -183,8 +183,6 @@ export default {
     password: {
       label: 'パスワード',
       required: 'パスワードを入力してください',
-      forgot: 'パスワードを忘れた場合',
-      forgotHint: '先生または管理者にパスワードの再設定を依頼してください。',
       create: 'パスワード',
       hint: '8 文字以上',
       tooShort: 'パスワードは 8 文字以上にしてください',
