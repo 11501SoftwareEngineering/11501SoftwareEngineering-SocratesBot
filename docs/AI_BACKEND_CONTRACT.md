@@ -789,3 +789,8 @@ The regression fixtures in `backend/tests/fixtures/ai_status/` preserve the reda
 - Existing truncated-output handling remains strict: no partial state/reply is accepted. No automatic extra inference or billing fallback is introduced.
 
 Focused reproduction command, from backend: `uv run --locked pytest tests/unit/test_status_truncation_regression.py -q`. Live confirmation and full regression results are recorded with the candidate handoff; the earlier diagnostic walkthrough's1000-token example remains a historical illustrative failure signature, not the new configured cap.
+
+
+Live candidate confirmation (`b7fa1dc`): the actual updated prompt completed catch-up with1157 completion tokens and a full three-call Luna turn (validity/status/planning); all returned stop and passed the backend checks. Nine paid calls across baseline/control/candidate cost approximatelyUS$0.0039. All nine returned provider HTTP200; no402/429/timeout occurred. No source files were edited during each live batch. This is a focused reliability check, not certification of all dialogue quality or all future provider failures.
+
+Offline verification for the hot-fix implementation:639 API/unit/migration checks passed, with7 inherited mock warnings; Ruff/format passed. OpenAPI was regenerated and its JSON hash is unchanged. No database schema changed; final-head remote CI will run after publication approval.
