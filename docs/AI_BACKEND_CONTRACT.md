@@ -84,7 +84,7 @@ data: What would change your view?
 data: Consider who pays for the service.
 
 event: done
-data: {"message_id":"44444444-4444-4444-4444-444444444444","completed_turns":1,"is_completed":false,"awaiting_end_consent":true}
+data: {"message_id":"44444444-4444-4444-4444-444444444444","completed_turns":3,"is_completed":false,"awaiting_end_consent":true,"session_status":"open","goal_reached":true,"report_eligible":false,"ending_reason":null,"can_finish_early":true}
 
 ```
 
@@ -269,3 +269,138 @@ sequenceDiagram
         API-->>Student: Anonymous aggregate projection
     end
 ```
+
+
+## API change log and caller migration guide
+
+This guide describes the accumulated AI/backend stack (PRs260–264,267,268,272), with implementation verified at `cf2c335` and published documentation corrections at `459b816`. It is a change/adoption guide, not a claim that every listed endpoint is newly introduced: many existing paths retain their public shape while their behavior is repaired. This expanded guide is a documentation follow-up on the same PR branch; publication does not imply backend deployment. All paths below are relative to `/api/v1`.
+
+### 1. Stage1: setup generation and persistence
+
+| Endpoint | Changed or clarified contract | Caller action |
+|---|---|---|
+| POST `/courses/{courseId}/topics` | Optional `model_id` and `content_language`. Model fallback uses the course owner's saved default, including when a TA creates the topic, then server default. Invalid catalog selections/defaults return422. Creation waits for valid generation before persisting the topic. | Send explicit selections when overriding defaults. Preserve the entered draft after an error. |
+| GET `/topics/{topicId}/setup` | Optional null-valued fields can be omitted, including nested setup fields. | Do not require every optional key to exist. |
+| POST `/topics/{topicId}/setup/generate` | Returns generated setup and feedback plus effective model/language. Generation does not save the proposed setup or model/language. | Present the suggestion for adoption; send its selections on Save/Publish. |
+| POST `/topics/{topicId}/setup/refine` | Returns an unsaved suggestion from `setup` and `feedback`, using the topic's effective model/language. | Do not treat refinement success as a durable save. |
+| PUT `/topics/{topicId}/setup` | Accepts `setup` and optional `model_id`, `content_language`. Omission preserves stored selections; explicit null/blank is rejected. | Include changed selections explicitly, alongside the displayed setup. |
+| POST `/topics/{topicId}/publish` | Same explicit selection persistence, with save and publication in one transaction. Publication remains teacher-only. | Handle validation failure without assuming any partial save. |
+| POST `/topics/{topicId}/setup/opening-message` | Dedicated opening-only model output; effective language supplied. Saves only the generated opening and its revision. Concurrent edits return409; invalid opening returns502 without overwriting the prior one. | Replace the opening only after success. Do not assume other displayed setup edits were saved. |
+
+Setup read/save/generation/refinement/opening support the course teacher and authorized TA (`edit_topics`). This permission change does not grant TAs the teacher-only report/summary APIs. Feedback fields are `assessments`, `clarification_questions`, `suggestions`, `warnings`; feedback is guidance, not separately saved content. Stage1 request/semantic validation can return422, provider output502, service/substantive availability503, timeout504, and non-setup operations400. Authentication and ownership checks still apply.
+
+### 2. Stage2: session entry, history and SSE
+
+No direct frontend-to-model integration is needed. Frontend submits answers to the backend; backend owns inference, evidence validation and persistence.
+
+| Endpoint | Change / actual behavior |
+|---|---|
+| POST `/topics/{topicId}/sessions` | Reuses this student's existing session without reopening it. A new session is refused with409 while a summary attempt has an active lease. Existing sessions remain retrievable. New entry after topic stage `summary` returns400; setup is hidden with404. |
+| GET `/sessions/{sessionId}/messages` | Includes historical `goal_reached` and separate `current_progress`. Also exposes `report_eligible`, `ending_reason`, `can_finish_early`. Current milestones may regress without erasing previously earned completion eligibility. |
+| POST `/sessions/{sessionId}/messages/stream` | Request remains `content` (nonblank, at most6000 characters) and `request_id`. One unnamed SSE text event precedes named `done`; inference finishes before SSE begins. `done` includes lifecycle fields below. |
+
+The complete `done` payload has `message_id`, `completed_turns`, `is_completed`, `awaiting_end_consent`, `session_status`, `goal_reached`, `report_eligible`, `ending_reason`, `can_finish_early`. `current_progress` is available from history, not part of the SSE done schema. Reply text is in the unnamed event, not a JSON `text` field in done.
+
+| Field | Meaning / integration consequence |
+|---|---|
+| `session_status` | Actual dialogue outcome: `open`, `completed`, `ended`, `abandoned`, legacy `closed_by_summary`. Do not confuse it with course-list legacy status labels. |
+| `goal_reached` | Historical achievement, preserved through Continue and report-producing endings. It is not equivalent to the newest progress snapshot. |
+| `awaiting_end_consent` | Offer the end/continue decision. It is not a server-enforced requirement to submit that decision before another reply. |
+| `is_completed` | True only for outcome `completed`; an `ended` session can have a report while this remains false. |
+| `report_eligible` | Whether this ending permits a report. It is not report readiness. Poll the report endpoint separately. |
+| `can_finish_early` | Server-computed eligibility for explicit early finish; do not count the opening as a student answer. |
+| `ending_reason` | `goal_reached`, `student_requested_stop`, `turn_limit`, or null when no such ending applies. |
+
+Pre-stream errors are ordinary JSON, not SSE:400 closed/capped or invalid topic phase;404 missing/non-owned session;409 busy/stale state;413 context budget;422 bad request;502 model/output failure;503 unavailable service/tokenizer. For ambiguous network failures, reload history and retry the same logical answer using the same request ID and content. Committed answers replay; a new answer needs a new ID. This does not promise exactly-once provider billing across workers or failures.
+
+### 3. Ending: actions, outcomes and automatic reporting
+
+POST `/sessions/{sessionId}/end` accepts `{"action":"complete"}`, `continue`, `finish`, or `abandon`.
+
+| Action/event | Preconditions | Stored outcome | Report behavior |
+|---|---|---|---|
+| `complete` | Goal eligibility achieved | `completed`; reason `goal_reached` | Pending report queued atomically with ending |
+| `continue` | Dialogue still accepts this action | Remains `open`; consent cleared, achievement retained | No ending/report yet; cap unchanged |
+| `finish` | At least three stored student answers | `ended`; reason `student_requested_stop` | Pending report queued, regardless of goal achievement |
+| Final allowed answer | Reply successfully persisted at cap | `ended`; reason `turn_limit` | Automatic backend ending and report enqueue; no extra end POST required |
+| `abandon` | Existing abandon action | `abandoned` | No report; do not use for the report-producing Finish early flow |
+| Browser closure | No API ending | Unchanged | Does not automatically end or queue a report |
+
+End responses contain `session_id`, `session_status`, `message`, `goal_reached`, `report_eligible`, `ending_reason`, `can_finish_early`. Insufficient turns for finish or missing goal for complete returns409. Same terminal action is idempotent; incompatible terminal action returns409. Finish after automatic cap ending returns the existing ended result. Malformed action returns422; missing/non-owned session404.
+
+Caller flow: show end/continue on consent; offer early finish when eligible; after done/end reports an eligible ending, navigate to personal-report polling even if `goal_reached=false` or `is_completed=false`.
+
+### 4. Personal reports: eligibility, content and recovery
+
+| Endpoint | Contract |
+|---|---|
+| GET `/sessions/{sessionId}/report` | Owner-only read. Does not start generation. 200 contains `report_status` and `report`;409 ineligible outcome;404 missing/non-owned session or no attempt yet. |
+| POST `/sessions/{sessionId}/report` | Owner-only recovery/start. Reuses a ready attempt or a live pending/processing attempt. Missing, failed or expired attempt starts a new one. It is not an unconditional regenerate operation. |
+| POST `/topics/{topicId}/reports/{sessionId}` | Teacher/instructor recovery, with the additional ability to regenerate ready reports that lack valid native evidence or no longer match the inquiry. Compatible ready reports are reused. |
+| GET `/topics/{topicId}/reports` | Teacher/instructor list. Includes `class_size`, `completed_count`, new `ended_count`, `ready_count`, `processing_count`, `failed_count`, and `reports` items containing `report_status`, `report`, `student_display_name`. |
+
+Both `completed` and `ended` are eligible; abandoned/historical closed-by-summary sessions are not. `report_status` is `pending`, `processing`, `ready` or `failed`. Latest status and latest available ready body are separate: a failed/rebuilding attempt may accompany an older readable report. Stop routine polling at ready/failed; use POST for appropriate recovery.
+
+Report content preserves the existing projection: `viewpoint_summary`, `final_viewpoint`, `viewpoint_status`, `reasons`, `strongest_reason`, `challenges`, `revision_or_defense`, `focus_connection`, `other_perspectives`, `open_questions`, `evidence_status`, `limitations`, `timeline`, plus report/session/topic identifiers and version/turn metadata. Optional or unsupported fields may be absent or empty; do not invent defaults that imply evidence.
+
+Additions/clarifications:
+
+- `ended_at` records a report-producing end; `completed_at` retains successful-completion meaning. `goal_reached` is independent of report readiness.
+- `completion_reason` reflects goal achievement, explicit early stop or turn limit. Legacy `completed` values remain readable.
+- `evidence_status`: `sufficient`, `partial`, `insufficient`. Insufficient evidence is a valid **ready structured report**, with useful supported observations and limitations; it is not automatically a failed job or a one-line replacement for the report.
+- New timeline items preserve `evidence` and add `evidence_reference` with `message_id`, `turn`, `quote`, checked against stored student messages. Legacy items remain readable without retroactive validation.
+- Native summary/source/provenance stay private. `anonymous_id` is not guaranteed. The teaching report list does not supply per-student `group_ids`, a group catalog or `summary_version`.
+- Students may read their ready personal report immediately; teacher publication applies to the class summary, not personal reports.
+
+### 5. Stage3: stricter readiness, background synthesis, same public projection
+
+POST `/topics/{topicId}/summary` remains the synthesis entry point. It now requires all existing topic dialogues non-open and the latest report attempt for **every** completed/ended session ready with compatible native evidence. A never-started student does not count as an open dialogue. An older ready body does not bypass a newer failed/pending attempt. Abandoned/historical closed-by-summary sessions are excluded. Ready inconclusive reports are included in the denominator.
+
+A successful enqueue/reuse returns HTTP200, for example:
+
+```json
+{
+  "topic_status": "conversation",
+  "published_version": null,
+  "summary": null,
+  "preparation_status": "pending"
+}
+```
+
+This is not a completed draft. Existing topic/publication state can differ during regeneration. Poll GET `/topics/{topicId}/summary`: `preparation_status` reports pending/processing/ready/failed (null without an attempt); `summary` is the available stored version, and `published_version` independently identifies the student-visible version. Topic changes to summary only when a ready draft is committed. Background failures appear as failed status, not a retroactive HTTP error on the original POST.
+
+| Start error | Meaning / recovery |
+|---|---|
+|400|Topic still setup or no eligible ready cohort; correct the phase/cohort first.|
+|403/404|Role/course access denied or topic missing; summary routes currently require global teacher plus course instructor membership, not general TA permissions.|
+|409|Open dialogue, missing/nonready latest report, or incompatible native evidence. End dialogues, wait/retry reports, or use teacher report regeneration as appropriate.|
+|413|More than50 reports, more than180000 model-material bytes, or configured request/output token budget exceeded. No silent truncation or batching.|
+|422|Request/path validation.|
+|503|Configured model tokenizer unsupported before enqueue.|
+
+The backend freezes source versions, rejects invalid group membership, computes counts/percentages itself, and rechecks cohort validity before saving. An all-unclassifiable cohort produces an honest deterministic result without a provider call. There is no longer an automatic close-all-dialogues step in synthesis. Failed/expired leases stop blocking new entry; successful synthesis moves the topic to summary, where normal new-entry restrictions apply.
+
+Teacher draft structure remains `summary_id`, `version`, `summary_status`, `overview`, `viewpoint_summary`, `denominator`, `groups` (`group_id`, `name`, `conditions`, `count`, `percentage`, `report_ids`), `ungrouped_report_ids`. Rich native arguments/discussion material are retained privately and projected into existing text fields; there is no new public native-synthesis object.
+
+Existing publication paths remain:
+
+| Endpoint | Request / behavior |
+|---|---|
+| GET `/topics/{topicId}/summary?version=N` | Optional positive version;404 when that version does not exist. Without version, reads latest stored draft and job state. |
+| PATCH `/topics/{topicId}/summary` | `overview`, `viewpoint_summary`; changed text produces a new draft version and invalidates review for that version. |
+| POST `/topics/{topicId}/summary/review` | Same text fields; stores changed text then marks that version reviewed. |
+| POST `/topics/{topicId}/summary/publish` | No body; publishes latest version only if reviewed. A newer unreviewed draft returns400, even if an older version was reviewed. |
+| POST `/topics/{topicId}/summary/withdraw` | No body; removes student visibility of the publication. |
+| GET `/topics/{topicId}/summary/published` | Course-member read of anonymous aggregate, or `summary:null` without publication. No report IDs/private native sources in the response. |
+
+Published aggregate fields remain `overview`, `viewpoint_summary`, `groups` (`name`, `conditions`, `count`, `percentage`), `ungrouped_count`, `ungrouped_percentage`, `denominator`. Ungrouped reports count in the denominator. Regenerating/editing a draft does not remove a previously published view. Teacher review is still needed for interpretation and potentially identifying prose.
+
+### 6. Configuration changes, rollout and validation boundaries
+
+Teacher-selected model is used consistently across dialogue tasks, personal reports and class synthesis. Default model is `openai/gpt-6.1-sol` absent explicit/saved/environment overrides. `OPENAI_VALIDITY_MODEL` remains accepted for configuration compatibility but no longer selects a separate course-dialogue validity model. Report/synthesis attempts capture the selected model; credentials are resolved at execution and never stored in public evidence.
+
+Course owner's personal credential takes priority; otherwise the single server credential is used. No new credential fields are required in these frontend calls, no teacher-to-server failover occurs after provider failure, and no rotating key pool is included (PR266 deferred).
+
+Rollout must include the Chunk06 database migration for the new ending lifecycle; native Stage3 uses existing JSON storage and introduces no additional migration. Keep frontend outcome handling compatible with `ended`, poll job status independently from dialogue/goal state, and account for stricter Stage3 readiness and the temporary409 new-entry gate. Verify the deployed backend schema before adopting PR documentation.
+
+Evidence: implementation `cf2c335` passed584 API/unit/migration checks and32 real-Postgres integration tests. Documentation correction `459b816` passed12 focused export/example checks locally and SonarCloud remotely. This expanded guide changes prose only; no new runtime behavior or live-model quality claim. The full HTTP acceptance journey and latest preview deployment verification remain separate outstanding work.
