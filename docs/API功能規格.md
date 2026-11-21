@@ -714,3 +714,5 @@ SQL_ECHO 預設 false。AI_TRACE_ENABLED 預設 false；僅 development 啟用�
 已用 Luna 重現 legacy progress catch-up 的 provider HTTP200/finish_reason=length：1000 completion tokens 後 JSON 字串未結束，backend 映射502。僅將 cap 改3000 的對照呼叫以1017 tokens 完成，schema/證據均通過；測試用 key/account 有可用額度，非402/429。
 
 status prompt 升版 stage2_status-1.0.1，輸出上限1000→3000，同時套用一般回合與舊對話進度補算；原有 context budget 會計入新 reserve。沒有新增 API 欄位、migration、model 替換、放寬驗證或重試。新增 progress_catch_up_started 診斷 marker。詳見 [truncation hot fix](AI_BACKEND_CONTRACT.md#stage2-status-truncation-hot-fix-local-follow-up-above-pr274)。原始 session/log 未提供，不能斷言每個歷史502皆同因。
+
+Stage2 相關性修正（PR275）：validity 提示詞 stage2_validity-1.0.2 將相關但未提供理由、表達不確定或質疑問題前提的回答判為 YES；只有離題才為 NO。理由證據與達標條件仍由後續 status 及伺服器檢查。API 欄位不變，更新後須重啟後端。詳見 [AI backend contract](AI_BACKEND_CONTRACT.md#stage2-relevance-gate-correction-pr275)。
