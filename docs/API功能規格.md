@@ -569,7 +569,7 @@ version: 0.2
     - 非老師身分 (403)
 
 ### 設定 API key
-- 功能說明: 設定本人 API key；回應與日誌不得包含完整 key
+- 功能說明: 設定本人 API key；回應與日誌不得包含完整 key。設定後，本人課程內的模型呼叫（出題、學生對話、個人報告、班級摘要）都使用此 key；未設定時使用伺服器 key
 - 呼叫方式: PUT /users/me/ai/api-key
 - 輸入資料: `api_key`
 - 成功回應: `configured`, `masked_key`, `updated_at`

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -36,7 +36,12 @@ def _login(
 
 
 def _course(**overrides):
-    base = {"id": uuid4(), "name": "SE", "invitation_code": "ABCD2345"}
+    base = {
+        "id": uuid4(),
+        "name": "SE",
+        "invitation_code": "ABCD2345",
+        "created_by": uuid4(),
+    }
     base.update(overrides)
     return SimpleNamespace(**base)
 
@@ -327,8 +332,12 @@ def test_ta_with_edit_topics_can_create_a_topic(
     created = _topic(course.id, stage="setup")
     monkeypatch.setattr(topic_crud, "create_topic", AsyncMock(return_value=created))
     monkeypatch.setattr(topic_crud, "record_inquiry_change", AsyncMock())
+    key_lookup = AsyncMock(return_value="sk-or-course-teacher")
+    monkeypatch.setattr("app.services.inquiry.teacher_api_key", key_lookup)
+    sent_keys: list[str | None] = []
 
-    async def complete(self, *, instructions, material, model=None, **_extra):
+    async def complete(self, *, instructions, material, model=None, **extra):
+        sent_keys.append(extra.get("api_key"))
         return stage1_output(_GENERATED)
 
     monkeypatch.setattr(
@@ -343,6 +352,9 @@ def test_ta_with_edit_topics_can_create_a_topic(
 
     assert response.status_code == 200
     assert response.json()["topic_status"] == "setup"
+    # A TA's call bills the course teacher, not the TA.
+    key_lookup.assert_awaited_once_with(ANY, course.created_by)
+    assert sent_keys == ["sk-or-course-teacher"]
 
 
 def test_create_topic_does_not_store_a_row_when_the_model_fails(

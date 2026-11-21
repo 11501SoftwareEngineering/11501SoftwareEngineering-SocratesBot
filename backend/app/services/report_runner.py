@@ -8,6 +8,8 @@ import logging
 from contextlib import suppress
 from uuid import UUID
 
+from fastapi import HTTPException
+
 from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.prompts import PromptStage, prompt_for
@@ -17,6 +19,7 @@ from app.services.attempt_lease import refresh
 from app.services.dialogue_context import reply_material
 from app.services.model_client import ModelCallError, OpenAIChatClient
 from app.services.report_text import validate_report
+from app.services.teacher_ai_settings import course_api_key
 
 logger = logging.getLogger("app.model")
 client = OpenAIChatClient()
@@ -123,7 +126,7 @@ async def run_report(attempt_id: UUID) -> None:
             refresh(report_crud.extend_lease, attempt_id, _live)
         )
         try:
-            material = await _material(session_id, progress)
+            material, api_key = await _prepare(session_id, progress)
             parsed = await client.complete_object(
                 name="personal_report",
                 schema=_SCHEMA,
@@ -131,9 +134,11 @@ async def run_report(attempt_id: UUID) -> None:
                 material=material,
                 model=model_id,
                 max_tokens=prompt.max_output_tokens,
+                api_key=api_key,
             )
             body = validate_report(parsed)
-        except (ModelCallError, ValueError, TypeError):
+        # HTTPException: the course teacher's stored key cannot be decrypted.
+        except (ModelCallError, HTTPException, ValueError, TypeError):
             await _fail(attempt_id)
             return
         await _ready(attempt_id, body, prompt.stage.value, prompt.version)
@@ -157,7 +162,8 @@ async def _begin(attempt_id: UUID) -> tuple[UUID, dict | None] | None:
         return session_id, progress
 
 
-async def _material(session_id: UUID, progress: dict | None) -> str:
+async def _prepare(session_id: UUID, progress: dict | None) -> tuple[str, str | None]:
+    """Return the report material and the course teacher's key (None: server pool)."""
     async with AsyncSessionLocal() as db:
         from app.models.session import Session
         from app.models.topic import Topic
@@ -173,7 +179,9 @@ async def _material(session_id: UUID, progress: dict | None) -> str:
         )
         messages = [] if loaded is None else loaded[2]
         snapshot = json.dumps(progress, ensure_ascii=False) if progress else "null"
-        return f"{reply_material(topic, messages)}\nprogressSnapshot:\n{snapshot}"
+        material = f"{reply_material(topic, messages)}\nprogressSnapshot:\n{snapshot}"
+        api_key = await course_api_key(db, topic.course_id)
+        return material, api_key
 
 
 async def _fail(attempt_id: UUID) -> None:

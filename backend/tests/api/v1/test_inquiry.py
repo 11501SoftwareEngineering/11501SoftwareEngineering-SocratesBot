@@ -14,9 +14,14 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.core.enums import UserRole
+from app.core.security import encrypt_api_key
 from app.crud import course as course_crud
 from app.crud import topic as topic_crud
-from app.services.model_client import ModelCallError, OpenAIChatClient
+from app.services.model_client import (
+    ModelCallError,
+    ModelKeysExhausted,
+    OpenAIChatClient,
+)
 from tests.api.v1.conftest import (
     FakeStore,
     bearer_from,
@@ -38,6 +43,17 @@ GENERATED = {
 }
 
 
+_REFINE = {
+    "feedback": "shorter",
+    "setup": {
+        "topic": "edited on screen",
+        "core_question": "Why now?",
+        "age_band": "16-18",
+        "max_turns": 10,
+    },
+}
+
+
 def _login(client: TestClient, store: FakeStore, account: str = "teacher1"):
     user = seed_user(store, account_id=account, role=UserRole.TEACHER)
     response = client.post(
@@ -54,7 +70,7 @@ def _topic(**overrides) -> SimpleNamespace:
         "course_id": uuid4(),
         "stage": "setup",
         "content_language": None,
-        "model_id": "openai/gpt-4o-mini",
+        "model_id": "openai/gpt-6.1-terra",
         "age_band": None,
         "max_turns": None,
         "inquiry_topic": None,
@@ -82,7 +98,9 @@ def _ready(monkeypatch: pytest.MonkeyPatch, topic, *, instructor_id=None) -> Asy
 
     monkeypatch.setattr(course_crud, "is_course_instructor", is_instructor)
     monkeypatch.setattr(topic_crud, "lock_topic", AsyncMock(return_value=topic))
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", type(settings.OPENAI_API_KEY)(KEY))
+    monkeypatch.setattr(
+        settings, "OPENAI_API_KEYS", type(settings.OPENAI_API_KEYS)(KEY)
+    )
     return recorded
 
 
@@ -277,15 +295,7 @@ def test_refine_uses_the_screen_setup(
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/refine",
         headers={"Authorization": bearer},
-        json={
-            "feedback": "shorter",
-            "setup": {
-                "topic": "edited on screen",
-                "core_question": "Why now?",
-                "age_band": "16-18",
-                "max_turns": 10,
-            },
-        },
+        json=_REFINE,
     )
 
     assert response.status_code == 200
@@ -299,7 +309,7 @@ def test_refine_uses_the_screen_setup(
     assert body["topic_id"] == str(topic.id)
     assert body["course_id"] == str(topic.course_id)
     assert body["topic_status"] == "setup"
-    assert body["model_id"] == "openai/gpt-4o-mini"
+    assert body["model_id"] == "openai/gpt-6.1-terra"
     assert topic.inquiry_topic == "saved topic"
     assert topic.core_question == "saved question"
     recorded.assert_not_awaited()
@@ -311,7 +321,7 @@ def test_refine_uses_the_screen_setup(
     )
     assert saved.status_code == 200
     assert saved.json()["setup"]["topic"] == "saved topic"
-    assert saved.json()["model_id"] == "openai/gpt-4o-mini"
+    assert saved.json()["model_id"] == "openai/gpt-6.1-terra"
 
 
 def test_failed_regeneration_keeps_the_saved_inquiry(
@@ -482,7 +492,7 @@ def test_generate_returns_a_suggestion_and_leaves_the_topic(
     assert body["setup"]["core_question"] == "generated question"
     assert topic.inquiry_topic == "saved topic"
     assert topic.core_question == "saved question"
-    assert topic.model_id == "openai/gpt-4o-mini"
+    assert topic.model_id == "openai/gpt-6.1-terra"
     assert topic.content_language is None
     recorded.assert_not_awaited()
     course_route_db.add.assert_not_called()
@@ -493,7 +503,7 @@ def test_generate_returns_a_suggestion_and_leaves_the_topic(
     )
     assert saved.status_code == 200
     assert saved.json()["setup"]["topic"] == "saved topic"
-    assert saved.json()["model_id"] == "openai/gpt-4o-mini"
+    assert saved.json()["model_id"] == "openai/gpt-6.1-terra"
 
 
 def test_generate_rejects_an_unknown_model(
@@ -751,3 +761,79 @@ def test_teacher_or_ta_lists_inquiry_models_as_a_json_array(
             "output_price_usd": 0.5,
         }
     ]
+
+
+@pytest.mark.parametrize(
+    ("stored", "expected"),
+    [(None, None), ("sk-teacher-own-key", "sk-teacher-own-key")],
+)
+def test_refine_sends_the_teacher_key_or_leaves_it_to_the_server_pool(
+    stored: str | None,
+    expected: str | None,
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store)
+    topic = _topic(inquiry_topic="saved topic", core_question="saved question")
+    _ready(monkeypatch, topic)
+    row = (
+        None
+        if stored is None
+        else SimpleNamespace(api_key_ciphertext=encrypt_api_key(stored))
+    )
+    monkeypatch.setattr(
+        "app.crud.teacher_ai_settings.get_settings", AsyncMock(return_value=row)
+    )
+    seen: dict[str, str | None] = {}
+
+    async def complete(
+        self,
+        *,
+        instructions: str,
+        material: str,
+        model: str | None = None,
+        api_key: str | None = None,
+        **_extra,
+    ):
+        seen["api_key"] = api_key
+        return stage1_output(GENERATED)
+
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", complete)
+
+    response = auth_client.post(
+        f"/api/v1/topics/{topic.id}/setup/refine",
+        headers={"Authorization": bearer},
+        json=_REFINE,
+    )
+
+    assert response.status_code == 200
+    assert seen == {"api_key": expected}
+
+
+def test_resting_server_keys_make_inquiry_unavailable(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer, _ = _login(auth_client, store)
+    topic = _topic(inquiry_topic="saved topic", core_question="saved question")
+    recorded = _ready(monkeypatch, topic)
+
+    async def exhausted(self, **_kwargs):
+        raise ModelKeysExhausted
+
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", exhausted)
+
+    response = auth_client.post(
+        f"/api/v1/topics/{topic.id}/setup/refine",
+        headers={"Authorization": bearer},
+        json=_REFINE,
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Inquiry generation failed"
+    assert topic.inquiry_topic == "saved topic"
+    recorded.assert_not_awaited()

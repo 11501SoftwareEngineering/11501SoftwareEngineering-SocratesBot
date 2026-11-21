@@ -13,7 +13,12 @@
     cp backend/config.yaml.example backend/config.yaml
     ```
     `.env` 放密鑰；`config.yaml` 放非密鑰本機設定（見下方 Super Admin）。
-    老師自備的 OpenRouter key 會加密後存進資料庫。`.env` 的 `TEACHER_API_KEY_SECRET` 是解密用的伺服器金鑰，至少 32 字元，可用 `openssl rand -hex 32` 產生。沒設老師 key 時，模型呼叫仍用 `OPENAI_API_KEY`。換掉 `TEACHER_API_KEY_SECRET` 之後，已存的老師 key 無法解密。
+    `.env.example` 列出後端會讀取的所有環境變數，沒有註解掉的項目；非密鑰項目已填入程式預設值，需要時再改，密鑰（`JWT_SECRET_KEY`、`TEACHER_API_KEY_SECRET`、`OPENAI_API_KEYS`）請換成自己的值。
+    老師自備的 OpenRouter key 會加密後存進資料庫。`.env` 的 `TEACHER_API_KEY_SECRET` 是解密用的伺服器金鑰，至少 32 字元，可用 `openssl rand -hex 32` 產生。課程內的模型呼叫（出題、學生對話、個人報告、班級摘要）都使用課程老師的 key，助教或學生觸發的呼叫也一樣；老師沒設 key 時，改用 `OPENAI_API_KEYS` 的伺服器 key。老師的 key 被限流時不會改用伺服器 key。換掉 `TEACHER_API_KEY_SECRET` 之後，已存的老師 key 無法解密。
+
+    伺服器 key 放在 `OPENAI_API_KEYS`，以逗號分隔，可只放一把。舊的 `OPENAI_API_KEY` 已不再使用，請改名。呼叫依序輪流使用 key；某把 key 回 `429` 或 `402` 時，該模型會停用那把 key（依 `Retry-After`，最多一小時；沒有就用 `OPENAI_KEY_COOLDOWN_SECONDS`，預設 60 秒），並立刻換下一把重試，每次呼叫最多試 3 把。上游供應商造成的 `429` 不會停用 key。只有一把 key 時不會停用。所有 key 都在停用中時，API 回 `503`。老師自己的 key 不參與輪替。
+
+    注意：OpenRouter 的速率上限以帳號計算，同一帳號多開 key 不會提高上限；要多 key 才有效，key 需來自不同帳號或各自設有額度上限。停用狀態只存在各個行程內。要撤下外洩的 key，從變數中移除後重啟所有後端行程。
 
 3. 在 repo 根目錄安裝鎖定的 Python 套件並啟用 pre-commit：
     ```bash
@@ -59,7 +64,7 @@ make -C backend db-reset CONFIRM=1   # 非互動（腳本用）
 
 ### `SEED_PACKS`（可選：只跑部分 seed pack）
 
-Seed 依 **pack** 分段灌資料。平常不設即可；預設會跑完整核心組，等同前端測試資料文件裡的整套 catalog。
+Seed 依 **pack** 分段灌資料。平常保持 `.env.example` 的 `SEED_PACKS=`（空字串）即可；預設會跑完整核心組，等同前端測試資料文件裡的整套 catalog。
 
 | Pack | 灌入內容 |
 |------|----------|

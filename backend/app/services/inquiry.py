@@ -42,7 +42,7 @@ from app.services.model_client import (
     ModelTimeoutError,
     OpenAIChatClient,
 )
-from app.services.teacher_ai_settings import openrouter_api_key
+from app.services.teacher_ai_settings import teacher_api_key
 from app.services.teacher_input import topic_issue, topic_issue_message
 from app.services.topics import get_instructed_topic
 
@@ -162,7 +162,7 @@ def _model_failure(exc: ModelCallError) -> HTTPException:
 
 
 async def _model_json(
-    model_id: str, prompt: PromptDefinition, material: str, api_key: str
+    model_id: str, prompt: PromptDefinition, material: str, api_key: str | None
 ) -> dict:
     try:
         return await OpenAIChatClient().complete_json(
@@ -189,7 +189,7 @@ def _validated[Parsed: (GeneratedInquiry, OpeningMessageDraft, DesignOutput)](
 
 
 async def _design_json(
-    model_id: str, prompt: PromptDefinition, material: str, api_key: str
+    model_id: str, prompt: PromptDefinition, material: str, api_key: str | None
 ) -> dict:
     try:
         return await OpenAIChatClient().complete_design(
@@ -240,7 +240,7 @@ async def _design(
     model_id: str,
     prompt: PromptDefinition,
     material: str,
-    api_key: str,
+    api_key: str | None,
     *,
     age_band: str | None,
     max_turns: int | None,
@@ -340,7 +340,7 @@ async def create_inquiry_topic(
         )
     language = settings.DEFAULT_LANGUAGE_CODE
     model_id = settings.OPENAI_MODEL
-    api_key = await openrouter_api_key(db, user.id)
+    api_key = await teacher_api_key(db, course.created_by)
     prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
     generated, feedback = await _design(
         model_id,
@@ -519,7 +519,7 @@ async def generate_inquiry(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Invalid model id",
         )
-    api_key = await openrouter_api_key(db, teacher.id)
+    api_key = await teacher_api_key(db, teacher.id)
     prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
     await db.commit()
     generated, feedback = await _design(
@@ -552,7 +552,7 @@ async def refine_inquiry(
     await _require_setup(topic)
     model_id = topic.model_id or settings.OPENAI_MODEL
     language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
-    api_key = await openrouter_api_key(db, teacher.id)
+    api_key = await teacher_api_key(db, teacher.id)
     prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
     await db.commit()
     generated, feedback = await _design(
@@ -589,7 +589,7 @@ async def opening_message(
     topic_id = topic.id
     model_id = topic.model_id or settings.OPENAI_MODEL
     draft = payload.setup
-    api_key = await openrouter_api_key(db, teacher.id)
+    api_key = await teacher_api_key(db, teacher.id)
     prompt = prompt_for(PromptStage.OPENING)
     await db.commit()
     raw = await _model_json(

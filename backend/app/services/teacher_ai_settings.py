@@ -5,8 +5,8 @@ import uuid
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.security import decrypt_api_key, encrypt_api_key
+from app.crud import course as course_crud
 from app.crud import teacher_ai_settings as settings_crud
 from app.models.inquiry_model import InquiryModel
 from app.models.teacher_ai_settings import TeacherAiSettings
@@ -78,12 +78,12 @@ async def save_api_key(
     )
 
 
-async def openrouter_api_key(db: AsyncSession, user_id: uuid.UUID) -> str:
-    """Return the teacher's OpenRouter key, or the server key when none is stored."""
+async def teacher_api_key(db: AsyncSession, user_id: uuid.UUID) -> str | None:
+    """Return the teacher's OpenRouter key, or None to use the server key pool."""
     row = await settings_crud.get_settings(db, user_id)
     stored = None if row is None else row.api_key_ciphertext
     if not isinstance(stored, str) or stored == "":
-        return settings.OPENAI_API_KEY.get_secret_value()
+        return None
     try:
         return decrypt_api_key(stored)
     except RuntimeError:
@@ -91,6 +91,20 @@ async def openrouter_api_key(db: AsyncSession, user_id: uuid.UUID) -> str:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Teacher API key cannot be read",
         ) from None
+
+
+async def course_api_key(db: AsyncSession, course_id: uuid.UUID) -> str | None:
+    """Return the course teacher's key, or None to use the server key pool.
+
+    Every model call inside a course bills the course teacher when one is set.
+
+    Raises:
+        HTTPException: 503 if the stored teacher key cannot be decrypted.
+    """
+    course = await course_crud.get_course_by_id(db, course_id)
+    if course is None:
+        return None
+    return await teacher_api_key(db, course.created_by)
 
 
 async def clear_api_key(db: AsyncSession, current_user: User) -> None:

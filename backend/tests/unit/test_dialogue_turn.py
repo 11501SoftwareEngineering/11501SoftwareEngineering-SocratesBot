@@ -26,14 +26,18 @@ def anyio_backend() -> str:
 
 
 class ScriptedClient:
-    """Returns one scripted object per call, in order, and records the call names."""
+    """Returns one scripted object per call, in order, and records names and keys."""
 
     def __init__(self, *responses: dict) -> None:
         self._responses = list(responses)
         self.calls: list[str] = []
+        self.keys: list[str | None] = []
 
-    async def complete_object(self, *, name: str, **_: Any) -> dict:
+    async def complete_object(
+        self, *, name: str, api_key: str | None = None, **_: Any
+    ) -> dict:
         self.calls.append(name)
+        self.keys.append(api_key)
         return self._responses.pop(0)
 
 
@@ -77,7 +81,7 @@ def _prompts() -> TurnPrompts:
     )
 
 
-async def _run(client: ScriptedClient, exchange: int = 3):
+async def _run(client: ScriptedClient, exchange: int = 3, api_key: str | None = None):
     return await run_turn(
         client,
         prompts=_prompts(),
@@ -89,6 +93,7 @@ async def _run(client: ScriptedClient, exchange: int = 3):
         exchange=exchange,
         model_id="openai/gpt-6-luna",
         validity_model="openai/gpt-6-luna",
+        api_key=api_key,
     )
 
 
@@ -154,3 +159,27 @@ async def test_legacy_session_catches_up_with_one_status_call() -> None:
 
     assert client.calls == ["dialogue_status"]
     assert progress["response"]["met"] is True
+
+
+@pytest.mark.parametrize("api_key", ["sk-or-course-teacher", None])
+async def test_every_turn_stage_sends_the_course_key(api_key: str | None) -> None:
+    client = ScriptedClient(VALIDITY_YES, _status(), PLANNING)
+
+    await _run(client, api_key=api_key)
+
+    assert client.keys == [api_key, api_key, api_key]
+
+
+async def test_progress_catch_up_sends_the_course_key() -> None:
+    client = ScriptedClient(_status())
+
+    await catch_up_progress(
+        client,
+        prompt=prompt_for(PromptStage.STATUS),
+        topic=_topic(),
+        messages=[],
+        model_id="openai/gpt-6-luna",
+        api_key="sk-or-course-teacher",
+    )
+
+    assert client.keys == ["sk-or-course-teacher"]
