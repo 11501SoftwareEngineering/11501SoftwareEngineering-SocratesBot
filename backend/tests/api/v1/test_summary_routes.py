@@ -445,3 +445,64 @@ def test_privacy_and_result_routes_are_gone(auth_client: TestClient) -> None:
 
     assert privacy.status_code == 404
     assert result.status_code == 404
+
+
+def test_teacher_closure_count_and_confirmation_api(auth_client, store, monkeypatch):
+    from fastapi import HTTPException
+
+    from app.services import conversation_closure
+
+    teacher_bearer, _ = _login(auth_client, store, "closure-teacher", UserRole.TEACHER)
+    student_bearer, _ = _login(auth_client, store, "closure-student", UserRole.USER)
+    topic_id = uuid4()
+    status = {
+        "topic_id": topic_id,
+        "topic_status": "conversation",
+        "open_dialogue_count": 2,
+        "stage2_closed": False,
+        "confirmation_required": True,
+        "preparation_status": None,
+    }
+    read = AsyncMock(return_value=status)
+    close = AsyncMock(
+        side_effect=HTTPException(
+            409,
+            {"code": "open_dialogues_confirmation_required", "open_dialogue_count": 2},
+        )
+    )
+    monkeypatch.setattr(conversation_closure, "read_status", read)
+    monkeypatch.setattr(conversation_closure, "close", close)
+    headers = {"Authorization": teacher_bearer}
+    url = f"/api/v1/topics/{topic_id}"
+    response = auth_client.get(url + "/conversation-status", headers=headers)
+    assert response.status_code == 200 and response.json()["open_dialogue_count"] == 2
+    close.assert_not_awaited()
+    blocked = auth_client.post(url + "/end-conversation", headers=headers, json={})
+    assert (
+        blocked.status_code == 409
+        and blocked.json()["detail"]["open_dialogue_count"] == 2
+    )
+    close.side_effect = None
+    close.return_value = {
+        **status,
+        "topic_status": "summary",
+        "open_dialogue_count": 0,
+        "stage2_closed": True,
+        "confirmation_required": False,
+        "ended_dialogue_count": 2,
+        "preparation_status": "pending",
+    }
+    ended = auth_client.post(
+        url + "/end-conversation",
+        headers=headers,
+        json={"confirm_open_dialogues": True},
+    )
+    assert ended.status_code == 200 and ended.json()["preparation_status"] == "pending"
+    assert close.await_args.kwargs["confirm"] is True
+    denied = auth_client.post(
+        url + "/end-conversation",
+        headers={"Authorization": student_bearer},
+        json={"confirm_open_dialogues": True},
+    )
+    assert denied.status_code == 403
+    assert close.await_count == 2

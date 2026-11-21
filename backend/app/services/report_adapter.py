@@ -177,3 +177,25 @@ def project_summary(raw: dict, source: dict) -> tuple[dict, dict]:
         ],
     }
     return body, native.model_dump()
+
+
+def no_responses_summary(language: str) -> dict:
+    """An empty transcript supports no interpretation and requires no provider."""
+    english = language == "en"
+    return {
+        "outcome": "inconclusive",
+        "workingPosition": "",
+        "strongestReason": "",
+        "challengeExamined": "",
+        "revisionOrDefence": "",
+        "focalTensionConnection": "",
+        "remainingQuestion": "",
+        "reflection": "No student responses were submitted; there is no evidence to assess."
+        if english
+        else "學生尚未提交任何回答,沒有可供評估的對話證據。",
+        "unmetElements": [
+            "No student responses; excluded as a nonparticipant from class-summary counts."
+            if english
+            else "未提交學生回答;不計入全班摘要的參與者分母。"
+        ],
+    }
