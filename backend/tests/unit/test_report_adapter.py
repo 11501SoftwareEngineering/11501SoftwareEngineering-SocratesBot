@@ -30,6 +30,7 @@ def inputs():
     )
     topic = SimpleNamespace(
         content_language="en",
+        model_id="openai/gpt-4o-mini",
         age_band="16-18",
         max_turns=10,
         inquiry_topic="Fairness",
@@ -207,6 +208,9 @@ async def test_runner_persists_native_privately_or_marks_failure(monkeypatch, fa
     attempt_id, session_id = uuid4(), uuid4()
     snapshot = source()
     monkeypatch.setattr(
+        report_runner, "_api_key", AsyncMock(return_value="private-course-key")
+    )
+    monkeypatch.setattr(
         report_runner, "_begin", AsyncMock(return_value=(session_id, None))
     )
     monkeypatch.setattr(
@@ -245,6 +249,9 @@ async def test_runner_persists_native_privately_or_marks_failure(monkeypatch, fa
         assert args[4]["source_digest"] == source_digest(snapshot)
         assert "native_summary" not in args[1]
         assert provider.call_args.kwargs["schema"] == NATIVE_SCHEMA
+        assert provider.call_args.kwargs["model"] == snapshot["model_id"]
+        assert provider.call_args.kwargs["api_key"] == "private-course-key"
+        assert "private-course-key" not in str(ready.call_args)
         assert "finalProgress" in provider.call_args.kwargs["material"]
     assert attempt_id not in report_runner.live_attempts()
 

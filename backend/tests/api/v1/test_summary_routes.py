@@ -41,7 +41,11 @@ def _login(client: TestClient, store: FakeStore, account: str, role: UserRole):
 class _Memory:
     def __init__(self) -> None:
         self.topic = SimpleNamespace(
-            id=uuid4(), course_id=uuid4(), stage="conversation"
+            id=uuid4(),
+            course_id=uuid4(),
+            stage="conversation",
+            model_id="openai/gpt-4o-mini",
+            content_language="en",
         )
         self.session = SimpleNamespace(
             id=uuid4(),

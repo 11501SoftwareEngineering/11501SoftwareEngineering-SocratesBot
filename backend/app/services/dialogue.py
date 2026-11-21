@@ -40,6 +40,7 @@ from app.services.dialogue_turn import (
 )
 from app.services.model_client import ModelCallError, ModelClient
 from app.services.reports import queue_ending_report
+from app.services.teacher_ai_settings import course_api_key
 
 # ponytail: one process. A second worker will not see this lock; a DB lease is the upgrade.
 _BUSY: set[UUID] = set()
@@ -296,6 +297,7 @@ async def _ask_and_store(
     messages: list[DialogueMessage],
     content: str,
     request_id: UUID,
+    api_key: str | None = None,
 ) -> StreamDone:
     reply_prompt = prompt_for(PromptStage.DIALOGUE)
     summary_prompt = prompt_for(PromptStage.DIALOGUE_CONTEXT_SUMMARY)
@@ -320,6 +322,7 @@ async def _ask_and_store(
                 reply=reply_prompt,
                 summary=summary_prompt,
             ),
+            api_key=api_key,
         )
         previous_progress = _progress_of(session)
         if previous_progress is None and _turn_count(messages) > 0:
@@ -329,6 +332,7 @@ async def _ask_and_store(
                 topic=topic,
                 messages=messages,
                 model_id=model_id,
+                api_key=api_key,
             )
         turn = await run_turn(
             client,
@@ -340,7 +344,8 @@ async def _ask_and_store(
             previous_progress=previous_progress,
             exchange=_turn_count(messages) + 1,
             model_id=model_id,
-            validity_model=settings.OPENAI_VALIDITY_MODEL,
+            validity_model=model_id,
+            api_key=api_key,
         )
         text, goal_reached = turn.reply, turn.goal_reached
         locked = await message_crud.lock_session(db, session.id)
@@ -389,6 +394,7 @@ async def _ask_and_store(
                 "status": turn.status,
                 "safetyLevel": turn.safety_level,
                 "promptVersions": turn.prompt_versions,
+                "model_id": model_id,
             },
             progress=turn.progress,
         )
@@ -493,6 +499,7 @@ async def send_reply(
         )
     except ReplyRejected as exc:
         raise _rejected(exc) from exc
+    api_key = await course_api_key(db, topic.course_id)
     _hold(session_id)
     try:
         return await _ask_and_store(
@@ -503,6 +510,7 @@ async def send_reply(
             messages=messages,
             content=content,
             request_id=request_id,
+            api_key=api_key,
         )
     finally:
         _BUSY.discard(session_id)

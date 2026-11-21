@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.enums import GenerationStatus, TopicStage
 from app.crud import course as course_crud
 from app.crud import session as session_crud
@@ -46,12 +46,19 @@ def _attempt_running(latest) -> bool:
 async def _enqueue(
     db: AsyncSession, topic_id: UUID, bodies: list[tuple[str, dict]]
 ) -> None:
-    await db.execute(select(Topic).where(Topic.id == topic_id).with_for_update())
+    topic = await topic_crud.lock_topic(db, topic_id)
+    if topic is None:
+        raise HTTPException(status_code=404, detail="Topic not found")
     latest = await summary_crud.latest_attempt(db, topic_id)
     if _attempt_running(latest):
         return
+    request = _request(bodies)
+    request["model_id"] = topic.model_id or settings.OPENAI_MODEL
+    request["content_language"] = (
+        topic.content_language or settings.DEFAULT_LANGUAGE_CODE
+    )
     created = await summary_crud.insert_attempt(
-        db, topic_id=topic_id, request_json=_request(bodies)
+        db, topic_id=topic_id, request_json=request
     )
     await db.commit()
     summary_runner.schedule(created.id)

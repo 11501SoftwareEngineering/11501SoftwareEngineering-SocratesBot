@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import decrypt_api_key, encrypt_api_key
+from app.crud import course as course_crud
 from app.crud import teacher_ai_settings as settings_crud
 from app.models.inquiry_model import InquiryModel
 from app.models.teacher_ai_settings import TeacherAiSettings
@@ -128,3 +129,11 @@ async def effective_default_model(db: AsyncSession, teacher_id: uuid.UUID) -> st
             status_code=422, detail="Saved default model is unavailable"
         )
     return selected
+
+
+async def course_api_key(db: AsyncSession, course_id: uuid.UUID) -> str:
+    """Resolve the course owner's key, never the caller's billing identity."""
+    course = await course_crud.get_course_by_id(db, course_id)
+    if course is None:
+        raise HTTPException(status_code=503, detail="AI course is unavailable")
+    return await openrouter_api_key(db, course.created_by)
