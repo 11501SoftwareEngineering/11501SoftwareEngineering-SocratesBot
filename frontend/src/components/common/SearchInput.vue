@@ -14,6 +14,9 @@ import type { HTMLAttributes } from 'vue'
 import { ref } from 'vue'
 import { CloseRingIcon, SearchIcon } from '@/components/icons'
 import { cn } from '@/lib/utils'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -22,7 +25,7 @@ const props = withDefaults(
     disabled?: boolean
     class?: HTMLAttributes['class']
   }>(),
-  { label: '搜尋', placeholder: '搜尋' },
+  {},
 )
 
 const keyword = defineModel<string>({ default: '' })
@@ -50,15 +53,15 @@ function handleClear() {
       ref="inputRef"
       v-model="keyword"
       type="search"
-      :aria-label="label"
-      :placeholder="placeholder"
+      :aria-label="label ?? t('common.search')"
+      :placeholder="placeholder ?? t('common.search')"
       :disabled="disabled"
       class="min-w-0 flex-1 bg-transparent text-body-lg text-foreground outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:appearance-none"
       @keydown.esc="handleClear"
     />
     <button
       type="button"
-      aria-label="清除搜尋"
+      :aria-label="t('common.clearSearch')"
       :disabled="disabled || !keyword"
       class="flex size-6 shrink-0 items-center justify-center rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 enabled:hover:brightness-75"
       @click="handleClear"

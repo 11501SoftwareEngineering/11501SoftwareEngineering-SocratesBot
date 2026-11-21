@@ -12,6 +12,9 @@
  *   </ListSection>
  */
 import SearchInput from '@/components/common/SearchInput.vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 withDefaults(
   defineProps<{
@@ -20,7 +23,7 @@ withDefaults(
     /** 標題用 h1（整頁只有一個列表）還是 h2（一頁有兩個列表） */
     level?: 1 | 2
   }>(),
-  { searchLabel: '搜尋', level: 1 },
+  { level: 1 },
 )
 
 const search = defineModel<string>('search', { default: '' })
@@ -38,7 +41,7 @@ const search = defineModel<string>('search', { default: '' })
       <slot name="toolbar" />
     </div>
     <div class="mb-3 flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
-      <SearchInput v-model="search" :label="searchLabel" class="sm:flex-1" />
+      <SearchInput v-model="search" :label="searchLabel ?? t('common.search')" class="sm:flex-1" />
       <div v-if="$slots.actions" class="flex shrink-0 justify-end gap-3">
         <slot name="actions" />
       </div>

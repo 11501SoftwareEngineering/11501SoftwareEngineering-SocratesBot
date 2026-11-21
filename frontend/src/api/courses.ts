@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import { translate } from '@/i18n'
 
 /**
  * 課程、課程名單、助教（docs/API功能規格.md v0.2「課程 Course」「課程名單」）。
@@ -13,12 +14,19 @@ export type CourseRole = 'teacher' | 'ta' | 'student'
 /** 助教權限 */
 export type TaPermission = 'edit_topics' | 'view_reports' | 'edit_summary' | 'view_members'
 
-export const TA_PERMISSIONS: { value: TaPermission; label: string; hint: string }[] = [
-  { value: 'view_members', label: '檢視學生名單', hint: '不能移除學生或管理助教' },
-  { value: 'view_reports', label: '檢視學生報告', hint: '包含觀點 tag 與學生姓名' },
-  { value: 'edit_topics', label: '編輯活動', hint: '新增活動、修改草稿的設定' },
-  { value: 'edit_summary', label: '編輯全班摘要', hint: '重新產生、修改摘要；不能發布' },
-]
+// label、hint 用 getter：每次讀取都依目前的介面語言翻譯
+const permission = (value: TaPermission) => ({
+  value,
+  get label() {
+    return translate(`permissions.${value}`)
+  },
+  get hint() {
+    return translate(`permissions.${value}_hint`)
+  },
+})
+export const TA_PERMISSIONS: { value: TaPermission; label: string; hint: string }[] = (
+  ['view_members', 'view_reports', 'edit_topics', 'edit_summary'] as const
+).map(permission)
 
 /** GET /courses 的一筆 */
 export interface CourseSummary {
@@ -53,11 +61,14 @@ export interface CoursePayload {
 
 /** 題目年齡層 */
 export type AgeBand = '13-15' | '16-18' | 'university_plus'
-export const AGE_BANDS: { value: AgeBand; label: string }[] = [
-  { value: '13-15', label: '13-15 歲' },
-  { value: '16-18', label: '16-18 歲' },
-  { value: 'university_plus', label: '大學以上' },
-]
+export const AGE_BANDS: { value: AgeBand; label: string }[] = (
+  ['13-15', '16-18', 'university_plus'] as const
+).map((value) => ({
+  value,
+  get label() {
+    return translate(`ageBands.${value}`)
+  },
+}))
 export const ageBandLabel = (value: AgeBand | null | undefined) =>
   AGE_BANDS.find((a) => a.value === value)?.label ?? '—'
 

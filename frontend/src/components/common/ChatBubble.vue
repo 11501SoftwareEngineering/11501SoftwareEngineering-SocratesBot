@@ -13,6 +13,9 @@
  */
 import { computed } from 'vue'
 import logoIconUrl from '@/assets/brand/logo-icon.svg'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = withDefaults(
   defineProps<{
@@ -26,7 +29,9 @@ const props = withDefaults(
 )
 
 const isAi = computed(() => props.from === 'ai')
-const displayName = computed(() => props.name ?? (isAi.value ? '導魷' : '學生'))
+const displayName = computed(
+  () => props.name ?? (isAi.value ? t('common.ai') : t('common.student')),
+)
 </script>
 
 <template>
@@ -49,7 +54,12 @@ const displayName = computed(() => props.name ?? (isAi.value ? '導魷' : '學�
       class="w-full px-4 py-2.5 text-body break-words whitespace-pre-line text-foreground"
       :class="isAi ? 'rounded-2xl rounded-tl bg-border' : 'rounded-2xl rounded-tr bg-primary/80'"
     >
-      <span v-if="pending" class="inline-flex gap-1 py-2" role="status" aria-label="導魷正在思考">
+      <span
+        v-if="pending"
+        class="inline-flex gap-1 py-2"
+        role="status"
+        :aria-label="t('chat.thinking')"
+      >
         <span
           v-for="i in 3"
           :key="i"

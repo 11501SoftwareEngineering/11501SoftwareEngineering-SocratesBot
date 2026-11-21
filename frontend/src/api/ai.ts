@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import { translate } from '@/i18n'
 
 /**
  * 老師的 AI 金鑰、用量、預設模型（docs/API功能規格.md v0.2「AI 金鑰與用量」）。
@@ -7,17 +8,22 @@ import { apiClient } from './client'
 /** 用量的階段（規格沒有定義 by_stage 的格式，這是前端先假設的，後端做好後要核對） */
 export type UsageStage = 'setup' | 'dialogue' | 'report' | 'summary'
 
-export const USAGE_STAGES: { value: UsageStage; label: string }[] = [
-  { value: 'setup', label: '課程設定' },
-  { value: 'dialogue', label: '學生對話' },
-  { value: 'report', label: '個人報告' },
-  { value: 'summary', label: '全班摘要' },
-]
+export const USAGE_STAGES: { value: UsageStage; label: string }[] = (
+  ['setup', 'dialogue', 'report', 'summary'] as const
+).map((value) => ({
+  value,
+  get label() {
+    return translate(`usageStages.${value}`)
+  },
+}))
 
 export interface StageUsage {
   stage: UsageStage
   request_count: number
   total_tokens: number
+  /** 規格沒寫；Figma 的「各階段用量」有輸入／輸出兩欄，後端有給就顯示 */
+  input_tokens?: number
+  output_tokens?: number
   cost_usd: number | null
 }
 

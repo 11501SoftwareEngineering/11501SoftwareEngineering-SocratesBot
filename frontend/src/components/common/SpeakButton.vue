@@ -8,6 +8,9 @@
 import { onBeforeUnmount } from 'vue'
 import { SoundIcon } from '@/components/icons'
 import { useSpeech } from '@/composables/useSpeech'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   /** 用來分辨是哪一則在朗讀，例如 message_id */
@@ -29,7 +32,7 @@ onBeforeUnmount(() => {
     type="button"
     class="rounded outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
     :class="isSpeaking(props.id) && 'animate-pulse'"
-    :aria-label="isSpeaking(props.id) ? '停止朗讀' : '朗讀這則訊息'"
+    :aria-label="isSpeaking(props.id) ? t('chat.stopSpeak') : t('chat.speak')"
     :aria-pressed="isSpeaking(props.id)"
     @click="toggle(props.id, props.text)"
   >

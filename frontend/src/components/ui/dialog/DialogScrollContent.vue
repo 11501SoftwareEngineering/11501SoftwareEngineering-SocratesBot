@@ -12,6 +12,9 @@ import {
   DialogPortal,
   useForwardPropsEmits,
 } from 'reka-ui'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineOptions({
   inheritAttrs: false,
@@ -58,7 +61,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
           class="absolute top-8 right-8 rounded-full text-foreground outline-none transition-colors hover:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <CloseRingIcon class="size-8" />
-          <span class="sr-only">關閉</span>
+          <span class="sr-only">{{ t('common.close') }}</span>
         </DialogClose>
       </DialogContent>
     </DialogOverlay>

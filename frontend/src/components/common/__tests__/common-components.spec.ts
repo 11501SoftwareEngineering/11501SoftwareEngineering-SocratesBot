@@ -7,6 +7,8 @@ import NewsCard from '../NewsCard.vue'
 import QueryState from '../QueryState.vue'
 import ChatInput from '../ChatInput.vue'
 import AppCheckbox from '../AppCheckbox.vue'
+import FormDialog from '../FormDialog.vue'
+import { setLocale } from '@/i18n'
 
 const router = createRouter({
   history: createMemoryHistory(),
@@ -152,5 +154,22 @@ describe('AppCheckbox', () => {
     const input = wrapper.find('input')
     expect(wrapper.find('label').attributes('for')).toBe(input.attributes('id'))
     expect(wrapper.find('label').text()).toBe('匿名分享')
+  })
+})
+
+describe('FormDialog', () => {
+  it('沒給按鈕文字時用目前語言的「取消／新增」', async () => {
+    const wrapper = mount(FormDialog, {
+      props: { title: 'T', open: true },
+      attachTo: document.body,
+    })
+    await new Promise((r) => setTimeout(r))
+    expect(document.body.textContent).toContain('取消')
+    expect(document.body.textContent).toContain('新增')
+    await setLocale('en')
+    await wrapper.vm.$nextTick()
+    expect(document.body.textContent).toContain('Cancel')
+    await setLocale('zh-TW')
+    wrapper.unmount()
   })
 })
