@@ -8,6 +8,9 @@
  *     :options="[{ value: '13-15', label: '13-15' }, …]" />
  */
 import { useId } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{
   label: string
@@ -26,7 +29,7 @@ const name = useId()
       <span
         aria-hidden="true"
         class="text-header font-bold text-foreground sm:self-center sm:text-right"
-        >{{ label }}：</span
+        >{{ t('common.labelColon', { label }) }}</span
       >
       <div class="flex flex-wrap gap-2">
         <label

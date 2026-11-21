@@ -41,21 +41,43 @@ export interface TeacherSummaryResponse {
   summary: ClassSummary | null
 }
 
+/** 全班報告表格的一列：個人報告加上學生姓名（前端把後端的巢狀格式攤平成這樣） */
 export interface TeachingReport extends PersonalReport {
   student_display_name: string
-  /** 這份報告屬於哪些觀點群組（#195 規格） */
-  group_ids?: string[]
 }
 
-export interface TopicReports {
+/** GET /topics/{topicId}/reports 後端原始格式：每一筆是 { report_status, report, student_display_name } */
+interface TopicReportsResponse {
   class_size: number
   completed_count: number
   ready_count: number
   processing_count: number
   failed_count: number
-  summary_version?: number | null
-  groups?: { group_id: string; name: string; count: number }[]
+  reports: {
+    report_status: GenerationStatus
+    report: PersonalReport | null
+    student_display_name: string
+  }[]
+}
+
+export interface TopicReports extends Omit<TopicReportsResponse, 'reports'> {
+  /** 只放已經產生好的報告（還在產生、失敗的只算在上面的數量裡） */
   reports: TeachingReport[]
+}
+
+/** 學生報告分頁用來篩選的觀點群組：從摘要的 groups 來（後端沒有 group_id，用順序當代號） */
+export interface ReportGroup {
+  group_id: string
+  name: string
+  report_ids: string[]
+}
+
+export function reportGroups(summary: ClassSummary | null | undefined): ReportGroup[] {
+  return (summary?.groups ?? []).map((g, i) => ({
+    group_id: g.group_id ?? `g${i + 1}`,
+    name: g.name,
+    report_ids: g.report_ids,
+  }))
 }
 
 export interface PublishedSummary {
@@ -84,9 +106,15 @@ export const summaryKeys = {
 }
 
 export const summariesApi = {
-  async reports(topicId: string) {
-    const res = await apiClient.get<TopicReports>(`/topics/${enc(topicId)}/reports`)
-    return res.data
+  async reports(topicId: string): Promise<TopicReports> {
+    const res = await apiClient.get<TopicReportsResponse>(`/topics/${enc(topicId)}/reports`)
+    const { reports, ...counts } = res.data
+    return {
+      ...counts,
+      reports: reports.flatMap(({ report_status, report, student_display_name }) =>
+        report_status === 'ready' && report ? [{ ...report, student_display_name }] : [],
+      ),
+    }
   },
   async get(topicId: string, version?: number) {
     const res = await apiClient.get<TeacherSummaryResponse>(`/topics/${enc(topicId)}/summary`, {
@@ -135,7 +163,7 @@ export const summariesApi = {
     )
     return res.data.summary
   },
-  /** 報告產生失敗時，老師幫學生重試（實作已有，規格還沒寫） */
+  /** 報告產生失敗時，老師幫學生重試：POST /topics/{topicId}/reports/{sessionId} */
   async retryReport(topicId: string, sessionId: string) {
     return apiClient.post(`/topics/${enc(topicId)}/reports/${enc(sessionId)}`)
   },

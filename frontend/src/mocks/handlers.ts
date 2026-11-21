@@ -164,6 +164,9 @@ function topicFor(user: DbUser, topicId: string | undefined) {
 }
 
 const sessionsOf = (topicId: string) => db.sessions.filter((s) => s.topic_id === topicId)
+/** 對話 API 回傳的狀態是小寫的 outcome（open／completed／…），課程題目列表才用 IN_PROGRESS／COMPLETED */
+const dialogueStatus = (session: DbSession) =>
+  session.status === 'COMPLETED' ? 'completed' : 'open'
 const reportOf = (sessionId: string) => db.reports.find((r) => r.session_id === sessionId)
 const turnsOf = (session: DbSession) =>
   session.messages.filter((m) => m.sender === 'student').length
@@ -728,19 +731,32 @@ export const handlers = [
     const found = courseFor(user, params.courseId)
     if (found instanceof Response) return found
     const [course, access] = found
-    if (access.role !== 'teacher') return fail(403, 'Not the course teacher')
-    const data = await body<{ account_id: string; permissions: TaPermission[] }>(request)
+    if (access.role !== 'teacher') return fail(403, 'Course teacher required')
+    const data = await body<{
+      account_id: string
+      permissions?: TaPermission[] | null
+      check?: boolean
+    }>(request)
     const account = (data.account_id ?? '').trim()
     if (!account) return validationError('account_id', 'Field required')
     const target = db.users.find((u) => u.account_id === account)
     if (!target) return fail(404, 'Account not found')
-    if (target.role !== 'USER' || course.teacher_id === target.id)
-      return fail(409, 'This account cannot be a TA')
+    if (target.role === 'SUPERADMIN') return fail(400, 'Admins cannot be TAs')
+    if (target.role !== 'USER') return fail(400, 'Teacher accounts cannot be TAs')
     const existing = db.members.find((m) => m.course_id === course.id && m.user_id === target.id)
-    if (existing?.role === 'ta') return fail(409, 'Already a TA of this course')
-    const permissions = (data.permissions ?? []).filter((p) =>
-      ['edit_topics', 'view_reports', 'edit_summary', 'view_members'].includes(p),
-    )
+    if (existing?.role === 'ta') return fail(400, 'Already a TA of this course')
+    const ALL: TaPermission[] = ['edit_topics', 'view_reports', 'edit_summary', 'view_members']
+    // 沒給權限 = 四項全開（跟真後端一樣）
+    const permissions = data.permissions ? ALL.filter((p) => data.permissions!.includes(p)) : ALL
+    // check: true 只檢查、不寫入，回傳姓名給確認視窗
+    if (data.check)
+      return HttpResponse.json({
+        user_id: target.id,
+        account_id: target.account_id,
+        name: target.name,
+        permissions,
+        message: 'TA can be assigned',
+      })
     if (existing) {
       existing.role = 'ta'
       existing.permissions = permissions
@@ -953,11 +969,17 @@ export const handlers = [
     const found = topicFor(user, params.topicId)
     if (found instanceof Response) return found
     const [topic, , access] = found
-    if (access.role !== 'student') return fail(403, 'Not a student of this course')
-    if (topic.status === 'setup') return fail(404, 'Topic not found')
-    if (topic.status === 'summary') return fail(400, 'Topic is closed')
+    if (access.role !== 'student') return fail(403, 'Course membership required')
+    if (topic.status === 'setup') return fail(404, 'Topic is still in setup')
+    // 跟真後端一樣：已經有對話就直接回傳那一段（不會報錯）
     const existing = sessionsOf(topic.id).find((s) => s.student_id === user.id)
-    if (existing) return fail(400, 'Session already exists')
+    if (existing)
+      return HttpResponse.json({
+        session_id: existing.id,
+        topic_id: topic.id,
+        session_status: dialogueStatus(existing),
+      })
+    if (topic.status === 'summary') return fail(400, 'Topic is in summary')
     const session: DbSession = {
       id: newId('ss'),
       topic_id: topic.id,
@@ -976,7 +998,7 @@ export const handlers = [
     }
     db.sessions.push(session)
     return HttpResponse.json(
-      { session_id: session.id, topic_id: topic.id, session_status: session.status },
+      { session_id: session.id, topic_id: topic.id, session_status: dialogueStatus(session) },
       { status: 201 },
     )
   }),
@@ -986,7 +1008,7 @@ export const handlers = [
     if (user instanceof Response) return user
     const session = db.sessions.find((s) => s.id === params.sessionId)
     if (!session) return fail(404, 'Session not found')
-    if (session.student_id !== user.id) return fail(403, 'Not the session owner')
+    if (session.student_id !== user.id) return fail(404, 'Session not found')
     const topic = db.topics.find((t) => t.id === session.topic_id)
     return HttpResponse.json({
       messages: session.messages.map((m) => ({
@@ -995,7 +1017,7 @@ export const handlers = [
         content: m.content,
         created_at: m.created_at,
       })),
-      session_status: session.status,
+      session_status: dialogueStatus(session),
       max_turns: topic?.setup.max_turns ?? 5,
       completed_turns: turnsOf(session),
       goal_reached: session.awaiting_end_consent || session.status === 'COMPLETED',
@@ -1008,11 +1030,11 @@ export const handlers = [
     if (user instanceof Response) return user
     const session = db.sessions.find((s) => s.id === params.sessionId)
     if (!session) return fail(404, 'Session not found')
-    if (session.student_id !== user.id) return fail(403, 'Not the session owner')
+    if (session.student_id !== user.id) return fail(404, 'Session not found')
     const topic = db.topics.find((t) => t.id === session.topic_id)
     if (!topic) return fail(404, 'Session not found')
-    if (session.status === 'COMPLETED') return fail(400, 'Session already completed')
-    if (topic.status === 'summary') return fail(400, 'Topic is closed')
+    if (session.status === 'COMPLETED' || topic.status === 'summary')
+      return fail(409, 'Dialogue is not accepting replies')
     const data = await body<{ content: string; request_id: string }>(request)
     const content = (data.content ?? '').trim()
     if (!content) return validationError('content', 'Field required')
@@ -1059,22 +1081,28 @@ export const handlers = [
     if (user instanceof Response) return user
     const session = db.sessions.find((s) => s.id === params.sessionId)
     if (!session) return fail(404, 'Session not found')
-    if (session.student_id !== user.id) return fail(403, 'Not the session owner')
-    if (session.status === 'COMPLETED') return fail(400, 'Session already ended')
+    if (session.student_id !== user.id) return fail(404, 'Session not found')
+    if (session.status === 'COMPLETED') return fail(409, 'Dialogue is not accepting replies')
     const data = await body<{ action: EndAction }>(request)
     if (data.action === 'complete') {
-      if (!session.awaiting_end_consent) return fail(409, 'Goal not reached yet')
+      if (!session.awaiting_end_consent) return fail(409, 'Inquiry goal is not met')
       completeSession(session)
     } else if (data.action === 'continue') {
       session.awaiting_end_consent = false
     } else if (data.action === 'abandon') {
+      // 假後端放棄後直接刪掉，方便重新體驗（真後端會留著、狀態 abandoned，不能再回答）
       db.sessions = db.sessions.filter((s) => s !== session)
+      return HttpResponse.json({
+        session_id: session.id,
+        session_status: 'abandoned',
+        message: 'Dialogue abandoned',
+      })
     } else {
       return validationError('action', 'Invalid action')
     }
     return HttpResponse.json({
       session_id: session.id,
-      session_status: session.status,
+      session_status: dialogueStatus(session),
       message: 'OK',
     })
   }),
@@ -1116,22 +1144,7 @@ export const handlers = [
       return json ? [{ session, json }] : []
     })
     const statuses = withReports.map(({ json }) => json)
-    const latest = latestSummary(topic.id)
-    const reports = empty
-      ? []
-      : withReports
-          .filter(({ json }) => json.report_status === 'ready')
-          .map(({ session, json }) => {
-            const report = json.report!
-            return {
-              ...report,
-              student_display_name: userById(session.student_id)?.name ?? '',
-              group_ids:
-                latest?.groups
-                  .filter((g) => g.report_ids.includes(report.report_id))
-                  .map((g) => g.group_id) ?? [],
-            }
-          })
+    // 格式照真後端：每一筆是 { report_status, report, student_display_name }，產生中、失敗的也會列出
     return HttpResponse.json({
       class_size: studentsOf(course.id).length,
       completed_count: sessions.length,
@@ -1140,10 +1153,13 @@ export const handlers = [
         (s) => s.report_status === 'processing' || s.report_status === 'pending',
       ).length,
       failed_count: statuses.filter((s) => s.report_status === 'failed').length,
-      summary_version: latest?.version ?? null,
-      groups:
-        latest?.groups.map((g) => ({ group_id: g.group_id, name: g.name, count: g.count })) ?? [],
-      reports,
+      reports: empty
+        ? []
+        : withReports.map(({ session, json }) => ({
+            report_status: json.report_status,
+            report: json.report,
+            student_display_name: userById(session.student_id)?.name ?? '',
+          })),
     })
   }),
 
@@ -1359,7 +1375,7 @@ export const handlers = [
       input_tokens: input,
       output_tokens: output,
       request_count: requests,
-      by_stage: stages.map(({ input_tokens: _i, output_tokens: _o, ...s }) => s),
+      by_stage: stages,
       cost_usd: requests ? cost(input, output) : null,
       cost_source: requests ? 'estimate' : null,
       updated_at: requests ? now() : null,

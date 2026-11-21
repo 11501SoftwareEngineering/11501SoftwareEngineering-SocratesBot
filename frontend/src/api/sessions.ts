@@ -1,5 +1,4 @@
 import { apiClient } from './client'
-import type { SessionStatus } from './courses'
 
 /**
  * 學生的對話與個人報告（docs/API功能規格.md v0.2「題目對話階段」）。
@@ -7,6 +6,13 @@ import type { SessionStatus } from './courses'
  */
 
 const enc = encodeURIComponent
+
+/**
+ * 對話本身的狀態（對話相關 API：建立、訊息、結束 都回這個，小寫）：
+ *   open 進行中｜completed 完成（可以產生報告）｜abandoned 放棄｜closed_by_summary 老師產生摘要時被關閉
+ * 注意：課程題目列表 GET /courses/{id}/topics 的 session_status 是另一套（IN_PROGRESS／COMPLETED，見 courses.ts）。
+ */
+export type DialogueStatus = 'open' | 'completed' | 'abandoned' | 'closed_by_summary'
 
 export interface SessionMessage {
   message_id: string
@@ -18,8 +24,9 @@ export interface SessionMessage {
 /** GET /sessions/{sessionId}/messages */
 export interface SessionMessages {
   messages: SessionMessage[]
-  session_status: SessionStatus
-  max_turns: number
+  session_status: DialogueStatus
+  /** 題目沒設定回合上限時是 null */
+  max_turns: number | null
   completed_turns: number
   goal_reached: boolean
   /** AI 判斷可以結束了，等學生選「結束」或「繼續」 */
@@ -88,7 +95,7 @@ export const sessionsApi = {
     const res = await apiClient.post<{
       session_id: string
       topic_id: string
-      session_status: SessionStatus
+      session_status: DialogueStatus
     }>(`/topics/${enc(topicId)}/sessions`)
     return res.data
   },
@@ -97,10 +104,11 @@ export const sessionsApi = {
     return res.data
   },
   async end(sessionId: string, action: EndAction) {
-    const res = await apiClient.post<{ session_id: string; session_status: SessionStatus }>(
-      `/sessions/${enc(sessionId)}/end`,
-      { action },
-    )
+    const res = await apiClient.post<{
+      session_id: string
+      session_status: DialogueStatus
+      message: string
+    }>(`/sessions/${enc(sessionId)}/end`, { action })
     return res.data
   },
   /**

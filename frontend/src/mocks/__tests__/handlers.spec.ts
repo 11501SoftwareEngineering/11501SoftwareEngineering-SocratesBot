@@ -178,6 +178,65 @@ describe('假後端（v0.2）', () => {
     expect(pub.summary.overview).toBe('新的總覽')
   })
 
+  it('對話 API 回小寫狀態（open／completed）；再進入同一題沿用同一段對話', async () => {
+    const { token } = await login('s004')
+    const { data: created } = await call('/topics/t-ai/sessions', { method: 'POST', token })
+    expect(created.session_status).toBe('open')
+    const again = await call('/topics/t-ai/sessions', { method: 'POST', token })
+    expect(again.data).toMatchObject({ session_id: created.session_id, session_status: 'open' })
+    completeSession(db.sessions.find((s) => s.id === created.session_id)!)
+    const { data: history } = await call(`/sessions/${created.session_id}/messages`, { token })
+    expect(history.session_status).toBe('completed')
+    const reply = await call(`/sessions/${created.session_id}/messages/stream`, {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ content: '再說一句', request_id: 'r2' }),
+    })
+    expect(reply.res.status).toBe(409)
+    expect(reply.data.detail).toBe('Dialogue is not accepting replies')
+  })
+
+  it('全班報告：每一筆是 { report_status, report, student_display_name }', async () => {
+    finishTopicForClass('t-ai')
+    const { token } = await login('wang')
+    const { data } = await call('/topics/t-ai/reports', { token })
+    expect(data).not.toHaveProperty('groups')
+    expect(data.reports.length).toBeGreaterThan(0)
+    expect(Object.keys(data.reports[0]).sort()).toEqual([
+      'report',
+      'report_status',
+      'student_display_name',
+    ])
+  })
+
+  it('指派助教：check: true 只回傳姓名、不寫入；不能指派的帳號回錯誤', async () => {
+    const { token } = await login('wang')
+    const before = db.members.filter((m) => m.course_id === 'c-phil' && m.role === 'ta').length
+    const checked = await call('/courses/c-phil/tas', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ account_id: 's001', check: true }),
+    })
+    expect(checked.res.status).toBe(200)
+    expect(checked.data).toMatchObject({ account_id: 's001', message: 'TA can be assigned' })
+    expect(checked.data.name).toBeTruthy()
+    expect(db.members.filter((m) => m.course_id === 'c-phil' && m.role === 'ta')).toHaveLength(
+      before,
+    )
+    const teacher = await call('/courses/c-phil/tas', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ account_id: 'chen', check: true }),
+    })
+    expect(teacher.data.detail).toBe('Teacher accounts cannot be TAs')
+    const already = await call('/courses/c-phil/tas', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ account_id: 's011', check: true }),
+    })
+    expect(already.data.detail).toBe('Already a TA of this course')
+  })
+
   it('Debug「讓全班完成」：每位學生都有完成的對話', async () => {
     finishTopicForClass('t-ai')
     const { token } = await login('wang')
