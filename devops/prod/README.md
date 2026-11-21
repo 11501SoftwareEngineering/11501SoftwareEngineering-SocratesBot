@@ -7,43 +7,46 @@ Database (Must be first to create docker network):
 
 2. 
 ```
-make -C devops db-prod
+sudo make -C devops db-prod
 ```
 
 Backend:
 1. At `/backend/.env`, followed by `/backend/.env.example`
-2. Sync DB alembic version
+   
+2. Sync DB alembic version (`alembic upgrade` is outside backend container, `POSTGRES_HOST` should be `127.0.0.1`, not `db` in `/backend/.env`)
 ```
-make -C backend db-upgrade
+POSTGRES_HOST=127.0.0.1 make -C backend db-upgrade
+POSTGRES_HOST=127.0.0.1 make -C backend db-migration-check
 ```
-2.
+
+3.
 To update backend to newer version
 ```
-make -C devops backend-prod-build
+sudo make -C devops backend-prod-build
 ```
 
 To restart current version
 ```
-make -C devops backend-prod
+sudo make -C devops backend-prod
 ```
 
 Frontend:
 1.
 ```
-make -C devops frontend-prod-build
+sudo make -C devops frontend-prod-build
 ```
 
-1. check if there is new build in `/frontend/dist`.
+2. check if there is new build in `/frontend/dist`.
 
 Nginx:
 1.
 ```
-make -C devops nginx-prod
+sudo make -C devops nginx-prod
 ```
 
 To check containers
 ```
-docker ps
+sudo docker ps
 ```
 
 open your local browser and type: `https://squicrates.ssr.ntnu.cc`
