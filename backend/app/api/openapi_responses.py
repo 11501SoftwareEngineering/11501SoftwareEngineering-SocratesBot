@@ -407,6 +407,10 @@ TOPIC_EXPLANATION_RESPONSES: dict[int | str, dict[str, Any]] = {
 }
 
 SESSION_ENTRY_RESPONSES: dict[int | str, dict[str, Any]] = {
+    409: json_detail_example(
+        "Class synthesis temporarily blocks new dialogues",
+        "Class synthesis is in progress; new dialogues are temporarily closed",
+    ),
     400: json_detail_example(
         "New session cannot be created in summary", "Topic is in summary"
     ),

@@ -84,7 +84,7 @@ async def start_teacher_retry(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
         )
-    return await _start(db, session)
+    return await _start(db, session, compatibility_topic=topic)
 
 
 async def read_teaching_reports(
@@ -151,7 +151,9 @@ def _still_running(attempt: ReportAttempt) -> bool:
     return lease is not None and lease >= datetime.now(UTC)
 
 
-async def _start(db: AsyncSession, session: Session) -> dict:
+async def _start(
+    db: AsyncSession, session: Session, *, compatibility_topic: Topic | None = None
+) -> dict:
     await db.execute(select(Session).where(Session.id == session.id).with_for_update())
     attempts = await report_crud.list_for_session(db, session.id)
     newest = attempts[-1] if attempts else None
@@ -162,6 +164,22 @@ async def _start(db: AsyncSession, session: Session) -> dict:
     }
     if newest is not None and stale and not _still_running(newest):
         status_value = GenerationStatus.FAILED.value
+    # Decide from the latest attempt AFTER acquiring the session lock. Another
+    # retry may have produced a compatible report while we waited for the lock.
+    if (
+        compatibility_topic is not None
+        and newest is not None
+        and status_value == "ready"
+    ):
+        from app.services.central_synthesis import from_native, inquiry_key
+        from app.services.dialogue_turn import brief_of
+
+        try:
+            report = from_native(str(newest.id), newest.generation_meta or {})
+            if report.topicKey != inquiry_key(brief_of(compatibility_topic)):
+                status_value = "failed"
+        except (AttributeError, KeyError, ValueError, TypeError):
+            status_value = "failed"
     action = report_start(session.outcome, status_value)
     if action == "reject":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_NOT_COMPLETED)

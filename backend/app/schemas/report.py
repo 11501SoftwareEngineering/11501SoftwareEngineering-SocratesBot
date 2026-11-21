@@ -15,7 +15,9 @@ _REPORT = {
     "session_id": "33333333-3333-3333-3333-333333333333",
     "topic_id": "22222222-2222-2222-2222-222222222222",
     "completed_turns": 4,
-    "completion_reason": "completed",
+    "completion_reason": "goal_reached",
+    "goal_reached": True,
+    "ended_at": "2026-11-21T10:00:00Z",
     "viewpoint_summary": "The student narrowed the claim to classroom use.",
     "final_viewpoint": "AI should assist, not replace, teachers.",
     "viewpoint_status": "revised",
@@ -139,6 +141,7 @@ class TeachingReportsResponse(BaseModel):
             "example": {
                 "class_size": 28,
                 "completed_count": 20,
+                "ended_count": 0,
                 "ready_count": 18,
                 "processing_count": 1,
                 "failed_count": 1,
