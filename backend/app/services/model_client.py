@@ -6,11 +6,13 @@ import asyncio
 import json
 import logging
 import math
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx
 
 from app.core.config import settings
+from app.core.model_catalog import INQUIRY_CATALOG_MODELS
 
 logger = logging.getLogger("app.model")
 # A provider can ask for a long pause. This request does not wait past two seconds.
@@ -65,6 +67,36 @@ class ModelCallError(Exception):
     def __init__(self, status_code: int | None) -> None:
         self.status_code = status_code
         super().__init__("model call failed")
+
+
+class ModelTimeoutError(ModelCallError):
+    """The provider did not finish within the task's time limit."""
+
+    def __init__(self) -> None:
+        super().__init__(None)
+
+
+# Every inquiry catalog model is listed with the "reasoning" parameter in
+# OpenRouter's public models list, checked 2026-11-20.
+REASONING_MODELS = frozenset(INQUIRY_CATALOG_MODELS)
+
+
+@dataclass(frozen=True)
+class TaskLimits:
+    timeout_s: float
+    max_tokens: int
+    low_reasoning: bool
+
+
+# Course setup is time-boxed and may use low reasoning; everything else keeps the
+# general budget. Values follow the prototype's structured-request settings.
+DESIGN_LIMITS = TaskLimits(timeout_s=45.0, max_tokens=2400, low_reasoning=True)
+DEFAULT_LIMITS = TaskLimits(timeout_s=60.0, max_tokens=4500, low_reasoning=False)
+DESIGN_SCHEMA_NAME = "inquiry_setup"
+
+
+def limits_for(name: str) -> TaskLimits:
+    return DESIGN_LIMITS if name == DESIGN_SCHEMA_NAME else DEFAULT_LIMITS
 
 
 _REPLY_SCHEMA: dict[str, Any] = {
@@ -191,14 +223,16 @@ class OpenAIChatClient:
         api_key: str | None = None,
         max_tokens: int | None = None,
     ) -> dict:
+        limits = limits_for(name)
+        model_id = model or settings.OPENAI_MODEL
         key = (
             api_key
             if api_key is not None
             else settings.OPENAI_API_KEY.get_secret_value()
         )
         system, user = _outbound(instructions, material)
-        payload = {
-            "model": model or settings.OPENAI_MODEL,
+        payload: dict[str, Any] = {
+            "model": model_id,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -211,18 +245,37 @@ class OpenAIChatClient:
                     "schema": schema,
                 },
             },
+            # A caller may ask for less than the task cap, never more.
+            "max_tokens": limits.max_tokens
+            if max_tokens is None
+            else min(max_tokens, limits.max_tokens),
         }
-        if max_tokens is not None:
-            payload["max_tokens"] = max_tokens
+        if limits.low_reasoning and model_id in REASONING_MODELS:
+            payload["reasoning"] = {"effort": "low"}
+        headers = {"Authorization": f"Bearer {key}"}
+        try:
+            async with asyncio.timeout(limits.timeout_s):
+                response = await self._send(payload, headers, limits.timeout_s)
+        except TimeoutError:
+            logger.info("model provider timed out")
+            raise ModelTimeoutError() from None
+        if response.status_code >= 400:
+            logger.info("model provider status %s", response.status_code)
+            raise ModelCallError(response.status_code) from None
+        return _parse_completion(response)
+
+    async def _send(
+        self, payload: dict[str, Any], headers: dict[str, str], timeout_s: float
+    ) -> httpx.Response:
         response: httpx.Response | None = None
         for attempt in (1, 2):
             try:
                 async with httpx.AsyncClient(
-                    transport=self._transport, timeout=60.0
+                    transport=self._transport, timeout=timeout_s
                 ) as client:
                     response = await client.post(
                         f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
-                        headers={"Authorization": f"Bearer {key}"},
+                        headers=headers,
                         json=payload,
                     )
             except httpx.HTTPError:
@@ -239,10 +292,7 @@ class OpenAIChatClient:
                 continue
             break
         assert response is not None
-        if response.status_code >= 400:
-            logger.info("model provider status %s", response.status_code)
-            raise ModelCallError(response.status_code) from None
-        return _parse_completion(response)
+        return response
 
 
 def _retry_delay(response: httpx.Response) -> float | None:

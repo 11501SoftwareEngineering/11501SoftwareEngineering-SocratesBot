@@ -256,7 +256,7 @@ async def _ask_and_store(
 ) -> StreamDone:
     reply_prompt = prompt_for(PromptStage.DIALOGUE)
     summary_prompt = prompt_for(PromptStage.DIALOGUE_CONTEXT_SUMMARY)
-    model_id = settings.OPENAI_MODEL
+    model_id = topic.model_id or settings.OPENAI_MODEL
     try:
         # The loaded ORM objects remain usable because expire_on_commit is false.
         # Close the read transaction before either provider call.
