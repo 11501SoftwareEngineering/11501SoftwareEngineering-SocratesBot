@@ -679,7 +679,7 @@ Inconclusive reports retain the full report structure, with `evidence_status=ins
 
 各階段優先使用題目已儲存的模型；未設定時使用 `OPENAI_MODEL`，包含 validity、status、planning、context/catch-up、個人報告與班級摘要。Stage1 generate 的明確模型選擇仍只影響該次產生，需 Save/Publish 才儲存。報告來源快照與摘要請求保留非機密模型資訊；重試已捕捉的請求不改用其他模型。
 
-課程擁有者的個人 key 優先，無個人 key 才使用單一伺服器 `OPENAI_API_KEY`；助教／學生觸發不改變付費者。無法解密或個人 key 呼叫失敗不轉用伺服器額度。憑證不寫入報告、來源快照或摘要 JSON。沒有 key rotation，也沒有新增前端欄位或端點。完整順序圖見 [AI backend contract](AI_BACKEND_CONTRACT.md#model-and-credential-routing-combined-chunk0708)。
+課程擁有者的個人 key 優先，無個人 key 才使用單一伺服器 `OPENAI_API_KEY`；助教／學生觸發不改變付費者。無法解密或個人 key 呼叫失敗不轉用伺服器額度。憑證不寫入報告、來源快照或摘要 JSON。伺服器憑證可設定 key 輪替池，老師 key 不會改用伺服器額度；沒有新增前端欄位或端點。完整順序圖見 [AI backend contract](AI_BACKEND_CONTRACT.md#model-and-credential-routing-combined-chunk0708)。
 
 
 ## Stage3 原生整合與報告就緒條件
@@ -717,3 +717,5 @@ SQL_ECHO 預設 false。AI_TRACE_ENABLED 預設 false；僅 development 啟用�
 status prompt 升版 stage2_status-1.0.1，輸出上限1000→3000，同時套用一般回合與舊對話進度補算；原有 context budget 會計入新 reserve。沒有新增 API 欄位、migration、model 替換、放寬驗證或重試。新增 progress_catch_up_started 診斷 marker。詳見 [truncation hot fix](AI_BACKEND_CONTRACT.md#stage2-status-truncation-hot-fix-local-follow-up-above-pr274)。原始 session/log 未提供，不能斷言每個歷史502皆同因。
 
 Stage2 相關性修正（PR275）：validity 提示詞 stage2_validity-1.0.2 將相關但未提供理由、表達不確定或質疑問題前提的回答判為 YES；只有離題才為 NO。理由證據與達標條件仍由後續 status 及伺服器檢查。API 欄位不變，更新後須重啟後端。詳見 [AI backend contract](AI_BACKEND_CONTRACT.md#stage2-relevance-gate-correction-pr275)。
+
+伺服器 key rotation：OPENAI_API_KEYS 可設定多組伺服器 key；老師個人 key 優先且不切換到伺服器額度。429/402 冷卻後改用其他健康 key，每次模型呼叫最多3次、保持模型與輸入不變。既有公開 API、欄位及錯誤轉換不變，無 migration。設定、完整順序圖與診斷見 [server key rotation](AI_BACKEND_CONTRACT.md#server-key-rotation)。

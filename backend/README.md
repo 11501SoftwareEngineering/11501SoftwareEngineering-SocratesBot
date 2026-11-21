@@ -13,7 +13,7 @@
     cp backend/config.yaml.example backend/config.yaml
     ```
     `.env` 放密鑰；`config.yaml` 放非密鑰本機設定（見下方 Super Admin）。
-    老師自備的 OpenRouter key 會加密後存進資料庫。`.env` 的 `TEACHER_API_KEY_SECRET` 是解密用的伺服器金鑰，至少 32 字元，可用 `openssl rand -hex 32` 產生。所有課程 AI 工作（含助教／學生觸發與背景報告）使用課程擁有者的 key；沒設時用單一 `OPENAI_API_KEY`。老師 key 解密或呼叫失敗不會改用伺服器額度；本版本沒有 key rotation。換掉 `TEACHER_API_KEY_SECRET` 之後，已存的老師 key 無法解密。
+    老師自備的 OpenRouter key 會加密後存進資料庫。`.env` 的 `TEACHER_API_KEY_SECRET` 是解密用的伺服器金鑰，至少 32 字元，可用 `openssl rand -hex 32` 產生。所有課程 AI 工作（含助教／學生觸發與背景報告）使用課程擁有者的 key；沒設時使用 `OPENAI_API_KEYS` 健康 key 輪替池（未設定時沿用單一 `OPENAI_API_KEY`）。老師 key 解密或呼叫失敗不會改用伺服器額度；伺服器池支援 429/402 冷卻與有限次故障轉移。換掉 `TEACHER_API_KEY_SECRET` 之後，已存的老師 key 無法解密。
 
 3. 在 repo 根目錄安裝鎖定的 Python 套件並啟用 pre-commit：
     ```bash
@@ -251,3 +251,5 @@ Developer handoff: the [step-by-step diagnostics walkthrough](../docs/AI_BACKEND
 Stage2 truncation follow-up: status prompt `stage2_status-1.0.1` provides3000 output-token headroom for both new-turn status and old-dialogue progress catch-up (formerly1000). Restart the backend after upgrading; confirm version/cap in `call_started` logs. `progress_catch_up_started` identifies catch-up. Read the [measured reproduction and compatibility notes](../docs/AI_BACKEND_CONTRACT.md#stage2-status-truncation-hot-fix-local-follow-up-above-pr274). The captured-response regression test uses mocks and makes no paid requests.
 
 Stage2 relevance follow-up: validity prompt `stage2_validity-1.0.2` accepts relevant answers without reasons, including uncertainty and premise challenges. Status still evaluates evidence and goal readiness. See [gate correction and verification limits](../docs/AI_BACKEND_CONTRACT.md#stage2-relevance-gate-correction-pr275). Restart to load the new prompt.
+
+Server key rotation: set optional OPENAI_API_KEYS to a comma-separated server pool and restart. Teacher keys keep priority;429/402 cool the failed server key and try another, at most3 distinct keys per model call. Without a pool, OPENAI_API_KEY behavior is preserved. See [configuration, sequence and operational limits](../docs/AI_BACKEND_CONTRACT.md#server-key-rotation). State is per worker; additional keys do not guarantee extra OpenRouter capacity.

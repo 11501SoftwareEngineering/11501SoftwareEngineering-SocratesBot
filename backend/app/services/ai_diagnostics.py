@@ -185,6 +185,13 @@ def write_trace(response, metadata, secret):
                 return [redact(item) for item in value]
             if isinstance(value, str):
                 value = value.replace(secret, "[REDACTED]") if secret else value
+                from app.services.key_pool import parse_keys
+
+                secrets = parse_keys(settings.OPENAI_API_KEYS.get_secret_value())
+                secrets += (settings.OPENAI_API_KEY.get_secret_value(),)
+                for configured_key in sorted(secrets, key=len, reverse=True):
+                    if configured_key:
+                        value = value.replace(configured_key, "[REDACTED]")
                 return re.sub(r"sk-[A-Za-z0-9_-]+", "[REDACTED]", value)
             return value
 
