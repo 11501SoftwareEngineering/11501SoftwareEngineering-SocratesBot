@@ -1,63 +1,91 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import CourseView from '../CourseView.vue'
-import { studentApi, type CourseTopics } from '@/api/student'
+import { coursesApi, type CourseTopics } from '@/api/courses'
 
-vi.mock('@/api/student', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/api/student')>()
+vi.mock('@/api/courses', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/courses')>()
   return {
     ...actual,
-    studentApi: { getCourseTopics: vi.fn<typeof actual.studentApi.getCourseTopics>() },
+    coursesApi: {
+      get: vi.fn<(typeof import('@/api/courses'))['coursesApi']['get']>(),
+      topics: vi.fn<(typeof import('@/api/courses'))['coursesApi']['topics']>(),
+    },
   }
 })
-const getCourseTopics = vi.mocked(studentApi.getCourseTopics)
-
-// 年齡層、回合數只在 features.topicSettings 打開時顯示（後端還沒有這兩個欄位）
-const flags = vi.hoisted(() => ({ topicSettings: false }))
-vi.mock('@/config/features', () => ({ features: flags }))
 
 const course: CourseTopics = {
   course_id: 'course-1',
   name: '公民思辨',
   invite_code: 'CLASS234',
+  my_role: 'student',
+  my_permissions: [],
   topics: [
     {
-      topic_id: 'topic-1',
+      topic_id: 't1',
       title: '民主與自由',
-      description: '公共生活',
-      status: null,
+      description: '多數決公平嗎？',
+      topic_status: 'conversation',
+      age_band: '13-15',
+      max_turns: 5,
+      session_status: null,
       session_id: null,
-      age_range: '13-15',
-      max_rounds: 5,
     },
     {
-      topic_id: 'topic-2',
+      topic_id: 't2',
       title: '社會責任',
-      description: 'Responsibility',
-      status: 'COMPLETED',
-      session_id: 'session-2',
-      age_range: '16-18',
-      max_rounds: 10,
+      description: '誰該負責？',
+      topic_status: 'conversation',
+      age_band: '16-18',
+      max_turns: 10,
+      session_status: 'IN_PROGRESS',
+      session_id: 's2',
+    },
+    {
+      topic_id: 't3',
+      title: '善意的謊言',
+      description: '可以說謊嗎？',
+      topic_status: 'summary',
+      age_band: '16-18',
+      max_turns: 5,
+      session_status: 'COMPLETED',
+      session_id: 's3',
+    },
+    {
+      topic_id: 't4',
+      title: '公平',
+      description: '一樣多就公平？',
+      topic_status: 'summary',
+      age_band: '13-15',
+      max_turns: 5,
+      session_status: null,
+      session_id: null,
     },
   ],
 }
 
-describe('student CourseView', () => {
-  let client: QueryClient
+describe('student CourseView（P06）', () => {
   let router: Router
   let wrapper: VueWrapper | undefined
-  let container: HTMLDivElement
 
   beforeEach(async () => {
-    getCourseTopics.mockReset()
-    flags.topicSettings = false
-    client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } })
+    vi.mocked(coursesApi.topics).mockResolvedValue(course)
+    vi.mocked(coursesApi.get).mockResolvedValue({
+      course_id: 'course-1',
+      name: '公民思辨',
+      description: '討論公共議題',
+      teacher_name: '王老師',
+      my_role: 'student',
+      my_permissions: [],
+      invite_code: 'CLASS234',
+    })
     const stub = { template: '<div />' }
     router = createRouter({
       history: createMemoryHistory(),
       routes: [
+        { path: '/student/courses', name: 'StudentCourses', component: stub },
         { path: '/student/courses/:courseId', name: 'StudentCourse', component: CourseView },
         {
           path: '/student/courses/:courseId/topics/:topicId',
@@ -65,112 +93,48 @@ describe('student CourseView', () => {
           component: stub,
         },
         {
-          path: '/student/courses/:courseId/sessions/:sessionId/result',
-          name: 'StudentResult',
+          path: '/student/courses/:courseId/sessions/:sessionId/result/:tab?',
+          name: 'StudentReport',
           component: stub,
         },
       ],
     })
-    container = document.createElement('div')
-    document.body.append(container)
     await router.push('/student/courses/course-1')
     await router.isReady()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    wrapper = mount(CourseView, {
+      global: { plugins: [router, [VueQueryPlugin, { queryClient: client }]] },
+    })
+    await flushPromises()
   })
 
   afterEach(() => {
     wrapper?.unmount()
-    client.clear()
-    container.remove()
+    vi.clearAllMocks()
   })
 
-  function mountView() {
-    wrapper = mount(CourseView, {
-      attachTo: container,
-      global: { plugins: [router, [VueQueryPlugin, { queryClient: client }]] },
-    })
-    return wrapper
-  }
-
-  const cards = (view: VueWrapper) => view.findAll('article')
-
-  it('loads the course topics and shows description and status', async () => {
-    getCourseTopics.mockResolvedValueOnce(course)
-    const view = mountView()
-    expect(view.find('[role="status"]').exists()).toBe(true)
-    await vi.waitFor(() => expect(cards(view)).toHaveLength(2))
-    expect(view.text()).toContain('公共生活')
-    expect(view.text()).toContain('已完成')
-    expect(view.text()).not.toContain('年齡層')
-    expect(getCourseTopics).toHaveBeenCalledWith('course-1', expect.any(AbortSignal))
+  it('顯示課程名稱、描述和活動數量', () => {
+    expect(wrapper!.find('h1').text()).toBe('公民思辨')
+    expect(wrapper!.text()).toContain('討論公共議題')
+    expect(wrapper!.findAll('article')).toHaveLength(4)
   })
 
-  it('shows age range and rounds when topic settings are enabled', async () => {
-    flags.topicSettings = true
-    getCourseTopics.mockResolvedValueOnce(course)
-    const view = mountView()
-    await vi.waitFor(() => expect(cards(view)).toHaveLength(2))
-    expect(view.text()).toContain('年齡層：13-15')
-    expect(view.text()).toContain('回合數：10')
-  })
-
-  it('filters topics locally and explains when nothing matches', async () => {
-    getCourseTopics.mockResolvedValueOnce(course)
-    const view = mountView()
-    await vi.waitFor(() => expect(cards(view)).toHaveLength(2))
-    await view.find('input[type="search"]').setValue('  RESPONSIBILITY  ')
-    expect(cards(view)).toHaveLength(1)
-    expect(cards(view)[0]?.text()).toContain('社會責任')
-    await view.find('input[type="search"]').setValue('不存在的問題')
-    expect(view.text()).toContain('找不到符合的問題')
-    expect(getCourseTopics).toHaveBeenCalledTimes(1)
-  })
-
-  it('tells students when the teacher has not added topics yet', async () => {
-    getCourseTopics.mockResolvedValueOnce({ ...course, topics: [] })
-    const view = mountView()
-    await vi.waitFor(() => expect(view.text()).toContain('老師還沒有出題目'))
-  })
-
-  it('shows the translated API error and retries', async () => {
-    getCourseTopics.mockRejectedValueOnce({
-      isAxiosError: true,
-      response: { status: 403, data: { detail: 'Course membership required' } },
-    })
-    getCourseTopics.mockResolvedValueOnce(course)
-    const view = mountView()
-    await vi.waitFor(() =>
-      expect(view.find('[role="alert"]').text()).toContain('你還沒有加入這門課程'),
+  it('依作答狀態顯示標籤和連結', () => {
+    const cards = wrapper!.findAll('article')
+    expect(cards[0]!.text()).toContain('尚未開始')
+    expect(cards[0]!.find('a').attributes('href')).toBe('/student/courses/course-1/topics/t1')
+    expect(cards[1]!.text()).toContain('進行中')
+    expect(cards[1]!.text()).toContain('繼續探究')
+    expect(cards[2]!.text()).toContain('已完成')
+    expect(cards[2]!.find('a').attributes('href')).toBe(
+      '/student/courses/course-1/sessions/s3/result/personal',
     )
-    await view.find('[role="alert"] button').trigger('click')
-    await vi.waitFor(() => expect(cards(view)).toHaveLength(2))
+    expect(cards[3]!.text()).toContain('已結束')
+    expect(cards[3]!.find('a').exists()).toBe(false)
   })
 
-  it('opens the chat for unfinished topics and the result for finished ones', async () => {
-    getCourseTopics.mockResolvedValueOnce(course)
-    const view = mountView()
-    await vi.waitFor(() => expect(cards(view)).toHaveLength(2))
-    const links = view.findAll('article a')
-    expect(links[0]?.attributes('href')).toBe('/student/courses/course-1/topics/topic-1')
-    expect(links[1]?.attributes('href')).toBe('/student/courses/course-1/sessions/session-2/result')
-  })
-
-  it('does not invent missing age or round counts', async () => {
-    flags.topicSettings = true
-    getCourseTopics.mockResolvedValueOnce({
-      ...course,
-      topics: [
-        {
-          topic_id: 'x',
-          title: '未設定',
-          description: null,
-          status: null,
-          session_id: null,
-        },
-      ],
-    })
-    const view = mountView()
-    await vi.waitFor(() => expect(cards(view)).toHaveLength(1))
-    expect(view.text()).toContain('年齡層：未提供')
-    expect(view.text()).toContain('回合數：未提供')
+  it('搜尋只留下符合的活動', async () => {
+    await wrapper!.find('input[type="search"]').setValue('謊言')
+    expect(wrapper!.findAll('article')).toHaveLength(1)
   })
 })

@@ -3,10 +3,10 @@
  * 頁首。對應 Figma「Header/Course」（例如 P10-1 的 node 206:1572）：
  *   左邊：魷魚圖示＋「問導魷」（回首頁）
  *   右邊：介面語言（正體中文）、帳號（名稱／身分／頭像）
- *         帳號選單：助教「學生課程」、修改密碼、登出
+ *         帳號選單：助教「學生課程」、老師「AI 用量與金鑰」、修改密碼、登出
  *   沒登入：語言、「註冊」「登入」
  * 照 Figma 頁首不放導覽：Logo 回自己的首頁，頁內用麵包屑回上一層；
- * 助教切到學生課程放在帳號選單（Prototype 的帳號選單也有）。
+ * 助教切到學生課程、老師的 AI 用量與金鑰放在帳號選單（Prototype 的帳號選單也有這兩項）。
  */
 import { computed } from 'vue'
 import { RouterLink, useRoute, type RouteLocationRaw } from 'vue-router'
@@ -72,6 +72,9 @@ const menuItemClass = 'cursor-pointer px-3 py-2 text-body-lg focus:bg-muted focu
           >
             <DropdownMenuItem v-if="isTa" as-child :class="menuItemClass">
               <RouterLink :to="{ name: 'StudentCourses' }">學生課程</RouterLink>
+            </DropdownMenuItem>
+            <DropdownMenuItem v-if="role === 'TEACHER'" as-child :class="menuItemClass">
+              <RouterLink :to="{ name: 'TeacherAiSettings' }">AI 用量與金鑰</RouterLink>
             </DropdownMenuItem>
             <DropdownMenuItem :class="menuItemClass" @select="passwordDialog.open()"
               >修改密碼</DropdownMenuItem

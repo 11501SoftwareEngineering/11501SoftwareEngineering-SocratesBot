@@ -5,7 +5,7 @@ import { getApiErrorMessage } from '@/lib/utils'
 /**
  * 「先問一次再執行」的操作（刪除、退出課程…），搭配 <ConfirmDialog> 使用。
  *
- *   const remove = useConfirmAction((course: TeacherCourse) => teacherApi.deleteCourse(course.course_id), {
+ *   const remove = useConfirmAction((course: CourseSummary) => coursesApi.remove(course.course_id), {
  *     onSuccess: () => queryClient.invalidateQueries(...),
  *   })
  *
