@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.services import report_runner, summary_runner
 from app.services import teacher_ai_settings as keys
 from app.services.model_client import ModelCallError, OpenAIChatClient
+from tests.unit.test_central_synthesis import output, report
 
 pytestmark = pytest.mark.anyio
 
@@ -196,7 +197,13 @@ async def test_actual_provider_payload_preserves_model_and_teacher_key(
 
 async def test_summary_begin_pins_legacy_model_once_without_keys(monkeypatch):
     attempt = SimpleNamespace(
-        status="pending", topic_id=uuid4(), request_json={"material": [], "labels": {}}
+        status="pending",
+        topic_id=uuid4(),
+        request_json={
+            "schema_version": "native-central-request-v1",
+            "reports": [],
+            "sources": [],
+        },
     )
     db = AsyncMock()
     db.__aenter__.return_value = db
@@ -214,8 +221,9 @@ async def test_summary_begin_pins_legacy_model_once_without_keys(monkeypatch):
     assert first["model_id"] == second["model_id"] == "openai/gpt-4o-mini"
     assert lookup.await_count == 1
     assert set(attempt.request_json) == {
-        "material",
-        "labels",
+        "schema_version",
+        "reports",
+        "sources",
         "model_id",
         "content_language",
     }
@@ -226,8 +234,9 @@ async def test_summary_runner_uses_pinned_model_and_private_key(monkeypatch, fai
     request = {
         "topic_id": uuid4(),
         "model_id": "openai/gpt-4o-mini",
-        "material": [],
-        "labels": {},
+        "reports": [report().model_dump()],
+        "sources": [],
+        "content_language": "en",
     }
     monkeypatch.setattr(summary_runner, "_begin", AsyncMock(return_value=request))
     monkeypatch.setattr(summary_runner, "refresh", AsyncMock())
@@ -240,14 +249,11 @@ async def test_summary_runner_uses_pinned_model_and_private_key(monkeypatch, fai
         ),
     )
     provider = AsyncMock(
-        return_value={},
+        return_value=output(["report_1"]),
         side_effect=ModelCallError(402) if failure == "provider" else None,
     )
     monkeypatch.setattr(
         summary_runner, "client", SimpleNamespace(complete_object=provider)
-    )
-    monkeypatch.setattr(
-        summary_runner, "validate_summary", lambda *args: {"overview": "safe"}
     )
     ready, failed = AsyncMock(), AsyncMock()
     monkeypatch.setattr(summary_runner, "_ready", ready)

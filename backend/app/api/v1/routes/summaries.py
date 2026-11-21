@@ -27,13 +27,23 @@ class SummaryTextRequest(BaseModel):
     viewpoint_summary: str = Field(min_length=1)
 
 
-@router.post("/topics/{topicId}/summary")
+@router.post(
+    "/topics/{topicId}/summary",
+    responses={
+        409: {
+            "description": "End all dialogues, wait for every eligible report, or regenerate incompatible native reports before synthesis."
+        },
+        413: {
+            "description": "At most 50 reports; payload or model request budget exceeded."
+        },
+    },
+)
 async def start_summary(
     topicId: UUID,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TeacherSummaryResponse:
-    """Start a class-summary draft from the ready reports."""
+    """Start native class synthesis only after every dialogue ends and every eligible report is ready."""
     return await summary_service.start_summary(db, teacher=teacher, topic_id=topicId)
 
 

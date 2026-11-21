@@ -84,7 +84,22 @@ async def start_teacher_retry(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
         )
-    return await _start(db, session)
+    # A teacher retry can replace an incompatible ready report, without
+    # discarding its readable result while the replacement is prepared.
+    from app.services.central_synthesis import from_native, inquiry_key
+    from app.services.dialogue_turn import brief_of
+
+    attempts = await report_crud.list_for_session(db, session.id)
+    replace_ready = False
+    if attempts and attempts[-1].status == "ready":
+        try:
+            report = from_native(
+                str(attempts[-1].id), attempts[-1].generation_meta or {}
+            )
+            replace_ready = report.topicKey != inquiry_key(brief_of(topic))
+        except (AttributeError, KeyError, ValueError, TypeError):
+            replace_ready = True
+    return await _start(db, session, replace_ready=replace_ready)
 
 
 async def read_teaching_reports(
@@ -151,7 +166,9 @@ def _still_running(attempt: ReportAttempt) -> bool:
     return lease is not None and lease >= datetime.now(UTC)
 
 
-async def _start(db: AsyncSession, session: Session) -> dict:
+async def _start(
+    db: AsyncSession, session: Session, *, replace_ready: bool = False
+) -> dict:
     await db.execute(select(Session).where(Session.id == session.id).with_for_update())
     attempts = await report_crud.list_for_session(db, session.id)
     newest = attempts[-1] if attempts else None
@@ -162,6 +179,8 @@ async def _start(db: AsyncSession, session: Session) -> dict:
     }
     if newest is not None and stale and not _still_running(newest):
         status_value = GenerationStatus.FAILED.value
+    if replace_ready and status_value == "ready":
+        status_value = "failed"
     action = report_start(session.outcome, status_value)
     if action == "reject":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_NOT_COMPLETED)
