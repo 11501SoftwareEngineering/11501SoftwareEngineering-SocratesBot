@@ -13,11 +13,13 @@ import AppBanner from '@/components/common/AppBanner.vue'
  *   - 回合用完 → 後端自動結束（session_status: ended、ending_reason: turn_limit），不用學生按
  *   - 學生回答 3 次後（can_finish_early）標題旁出現「提早結束」，先確認再送 finish
  *   - 不提供「放棄」：沒回答滿 3 次的學生直接離開就好，對話留著之後可以回來（後端的 abandon 不用）
- *   - 對話一結束（三種方式都一樣）直接跳到個人報告頁；已經結束的對話打開時也直接跳過去
+ *   - 對話一結束（三種方式都一樣）：最後一句顯示完後，對話最下面出現一條從中間往左右展開的分隔線
+ *     「回合結束，正在製作報告」（像 Discord 的換日線），停 3 秒讓學生看完最後一句，再跳到個人報告頁
+ *     （報告頁本身會顯示「正在整理」並自動更新，所以不用等報告做好）；已經結束的對話打開時直接跳過去
  *   - completed、ended 後端都會自動開始產生報告；這裡還是會呼叫一次 startReport（可重複呼叫），相容還沒更新的後端
  * 語音輸入用瀏覽器內建的語音辨識（useSpeechInput）；AI 訊息下面的喇叭用瀏覽器語音朗讀。
  */
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { courseKeys } from '@/api/courses'
@@ -94,6 +96,13 @@ const endingReason = ref<EndingReason | null>(null)
 const awaitingConsent = ref(false)
 /** 學生已經回答 3 次以上：可以提早結束 */
 const canFinishEarly = ref(false)
+/** 結束分隔線停留多久再跳到報告頁 */
+const ENDING_DELAY_MS = 3000
+/** 正在顯示結束分隔線、等待跳轉 */
+const ending = ref(false)
+let endingTimer: ReturnType<typeof setTimeout> | undefined
+onBeforeUnmount(() => clearTimeout(endingTimer))
+
 /** 對話結束、可以看報告了（達成目標後結束，或回合用完／提早結束） */
 const finished = computed(() => status.value === 'completed' || status.value === 'ended')
 
@@ -108,7 +117,9 @@ watch(
     endingReason.value = data.ending_reason ?? null
     awaitingConsent.value = data.session_status === 'open' && data.awaiting_end_consent
     canFinishEarly.value = !!data.can_finish_early
-    if (data.session_status === 'completed' || data.session_status === 'ended') markFinished()
+    // 已經結束的對話（重新整理、從別的頁面進來）：直接到報告頁；正在播結束動畫時不打斷
+    if ((data.session_status === 'completed' || data.session_status === 'ended') && !ending.value)
+      markFinished(false)
   },
   { immediate: true },
 )
@@ -144,15 +155,30 @@ function scrollToBottom() {
 watch(() => messages.value.length, scrollToBottom)
 
 /**
- * 對話結束：更新課程頁的活動狀態，確保報告開始產生，然後直接到個人報告頁。
+ * 對話結束：更新課程頁的活動狀態，確保報告開始產生，然後到個人報告頁。
  * 新的後端結束時就會自動開始產生報告；舊的後端要呼叫 startReport 才會開始。可以重複呼叫，不會重做。
+ * animate：剛在這一頁結束的 → 先顯示結束分隔線、停 3 秒；打開時就已經結束的 → 直接跳。
  * 用 replace：按上一頁不會回到已經結束的對話頁。
  */
-function markFinished() {
+function markFinished(animate = true) {
+  if (ending.value) return
   void queryClient.invalidateQueries({ queryKey: courseKeys.topics(courseId.value) })
   void sessionsApi.startReport(sessionId.value).catch(() => undefined)
-  void router.replace(reportLink.value)
+  if (!animate) {
+    void router.replace(reportLink.value)
+    return
+  }
+  ending.value = true
+  scrollToBottom()
+  endingTimer = setTimeout(() => void router.replace(reportLink.value), ENDING_DELAY_MS)
 }
+const endingText = computed(() =>
+  endingReason.value === 'turn_limit'
+    ? t('chat.endingTurnLimit')
+    : endingReason.value === 'student_requested_stop'
+      ? t('chat.endingEarly')
+      : t('chat.endingGoal'),
+)
 
 async function handleSend(text: string) {
   if (!sessionId.value || isStreaming.value) return
@@ -303,9 +329,10 @@ const remaining = computed(() => Math.max(0, maxTurns.value - usedTurns.value))
         ]"
       >
         <template v-if="sessionId && canFinishEarly && !finished && !closed" #after-title>
+          <!-- 照 Figma：主色按鈕，靠右、跟對話框右邊對齊（對話框最寬 1000px、置中） -->
           <Button
-            variant="secondary"
             size="sm"
+            class="ml-auto lg:mr-[max(0px,calc((100%-1000px)/2))]"
             :disabled="isStreaming || finishEarly.isPending.value || endNow.isPending.value"
             @click="askFinish"
             >{{ t('chat.finishEarly') }}</Button
@@ -335,6 +362,19 @@ const remaining = computed(() => Math.max(0, maxTurns.value - usedTurns.value))
                 <SpeakButton :id="message.message_id" :text="message.content" />
               </template>
             </ChatBubble>
+          </li>
+          <li v-if="ending" class="chat-ending flex items-center gap-4 py-3" role="status">
+            <span
+              class="chat-ending-line chat-ending-left h-px flex-1 bg-border"
+              aria-hidden="true"
+            />
+            <span class="chat-ending-text shrink-0 text-body text-muted-foreground">{{
+              endingText
+            }}</span>
+            <span
+              class="chat-ending-line chat-ending-right h-px flex-1 bg-border"
+              aria-hidden="true"
+            />
           </li>
         </ol>
 
@@ -390,3 +430,37 @@ const remaining = computed(() => Math.max(0, maxTurns.value - usedTurns.value))
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 結束分隔線：兩條線從中間往左右展開，文字淡入 */
+@media (prefers-reduced-motion: no-preference) {
+  .chat-ending-line {
+    animation: chat-ending-grow 600ms ease-out both;
+  }
+  .chat-ending-left {
+    transform-origin: right;
+  }
+  .chat-ending-right {
+    transform-origin: left;
+  }
+  .chat-ending-text {
+    animation: chat-ending-fade 400ms ease-out 200ms both;
+  }
+}
+@keyframes chat-ending-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes chat-ending-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+</style>

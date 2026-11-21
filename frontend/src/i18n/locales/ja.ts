@@ -382,6 +382,9 @@ export default {
     summary: 'クラスのまとめ',
   },
   chat: {
+    endingTurnLimit: '回答回数終了 — レポートを作成中',
+    endingGoal: '探究完了 — レポートを作成中',
+    endingEarly: '早めに終了 — レポートを作成中',
     finishEarly: '早めに終える',
     finishEarlyTitle: '今回の探究を早めに終えますか？',
     finishEarlyDescription:

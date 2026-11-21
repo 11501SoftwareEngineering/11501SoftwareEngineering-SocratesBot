@@ -389,6 +389,9 @@ export default {
     summary: 'Klassenzusammenfassung',
   },
   chat: {
+    endingTurnLimit: 'Runden verbraucht – Bericht wird erstellt',
+    endingGoal: 'Untersuchung abgeschlossen – Bericht wird erstellt',
+    endingEarly: 'Vorzeitig beendet – Bericht wird erstellt',
     finishEarly: 'Vorzeitig beenden',
     finishEarlyTitle: 'Diese Untersuchung vorzeitig beenden?',
     finishEarlyDescription:

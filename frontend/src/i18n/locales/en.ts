@@ -383,6 +383,9 @@ export default {
     summary: 'Class summary',
   },
   chat: {
+    endingTurnLimit: 'Out of turns — preparing your report',
+    endingGoal: 'Inquiry complete — preparing your report',
+    endingEarly: 'Finished early — preparing your report',
     finishEarly: 'Finish early',
     finishEarlyTitle: 'Finish this inquiry early?',
     finishEarlyDescription:

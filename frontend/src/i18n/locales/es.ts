@@ -384,6 +384,9 @@ export default {
     summary: 'Resumen de la clase',
   },
   chat: {
+    endingTurnLimit: 'Turnos agotados: preparando tu informe',
+    endingGoal: 'Indagación completada: preparando tu informe',
+    endingEarly: 'Terminada antes: preparando tu informe',
     finishEarly: 'Terminar antes',
     finishEarlyTitle: '¿Terminar esta indagación antes de tiempo?',
     finishEarlyDescription:

@@ -383,6 +383,9 @@ export default {
     summary: '학급 정리',
   },
   chat: {
+    endingTurnLimit: '답변 횟수 종료 — 보고서를 만드는 중',
+    endingGoal: '탐구 완료 — 보고서를 만드는 중',
+    endingEarly: '일찍 마침 — 보고서를 만드는 중',
     finishEarly: '일찍 마치기',
     finishEarlyTitle: '이번 탐구를 일찍 마칠까요?',
     finishEarlyDescription:

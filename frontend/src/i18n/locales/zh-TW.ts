@@ -381,6 +381,9 @@ export default {
     summary: '全班摘要',
   },
   chat: {
+    endingTurnLimit: '回合結束，正在製作報告',
+    endingGoal: '探究完成，正在製作報告',
+    endingEarly: '提早結束，正在製作報告',
     finishEarly: '提早結束',
     finishEarlyTitle: '提早結束這次探究？',
     finishEarlyDescription:
