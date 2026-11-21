@@ -116,7 +116,6 @@ async def test_on_topic_answer_runs_all_three_stages() -> None:
     ("exchange", "status", "expected"),
     [
         (3, "ready", True),  # structure and model agree
-        (2, "ready", False),  # too early, whatever the model says
         (3, "continue", False),  # structure is met but the model is not ready
     ],
 )
@@ -142,6 +141,12 @@ async def test_legacy_session_catches_up_with_one_status_call() -> None:
     messages = [
         DialogueMessage(sender=MessageSender.AI, content="Why?"),
         DialogueMessage(sender=MessageSender.STUDENT, content="Fair."),
+        DialogueMessage(sender=MessageSender.AI, content="What about exceptions?"),
+        DialogueMessage(
+            sender=MessageSender.STUDENT, content="There may be exceptions."
+        ),
+        DialogueMessage(sender=MessageSender.AI, content="How would you revise it?"),
+        DialogueMessage(sender=MessageSender.STUDENT, content="Limit the claim."),
     ]
 
     progress = await catch_up_progress(
@@ -154,3 +159,132 @@ async def test_legacy_session_catches_up_with_one_status_call() -> None:
 
     assert client.calls == ["dialogue_status"]
     assert progress["response"]["met"] is True
+
+
+@pytest.mark.parametrize("reference", [0, -1, 4, True, "1"])
+async def test_invalid_evidence_reference_rejected_before_planning(reference):
+    status = _status()
+    status["progress"]["reasons"] = [
+        {"text": "A reason", "evidenceExchanges": [reference]}
+    ]
+    client = ScriptedClient(VALIDITY_YES, status, PLANNING)
+    with pytest.raises(ModelCallError):
+        await _run(client)
+    assert client.calls == ["dialogue_validity", "dialogue_status"]
+
+
+async def test_future_milestone_rejected():
+    with pytest.raises(ModelCallError):
+        await _run(ScriptedClient(VALIDITY_YES, _status(), PLANNING), exchange=2)
+
+
+async def test_planner_receives_named_brief_language_and_record():
+    import json
+
+    from app.services.dialogue_turn import planning_material
+
+    result = json.loads(planning_material(_topic(), "student: a reason"))
+    assert result["interfaceLanguage"] == "en"
+    assert result["approvedInquiryBrief"]["targetExchanges"] == 10
+    assert result["dialogueRecord"] == "student: a reason"
+
+
+async def test_phase_request_budget_blocks_before_provider(monkeypatch):
+    from app.core.config import settings
+    from app.services.token_budget import ContextWindowExceeded
+
+    monkeypatch.setattr(settings, "DIALOGUE_CONTEXT_TOKEN_BUDGET", 1)
+    client = ScriptedClient(VALIDITY_YES)
+    with pytest.raises(ContextWindowExceeded):
+        await _run(client)
+    assert client.calls == []
+
+
+async def test_legacy_catchup_rejects_future_evidence():
+    client = ScriptedClient(_status())
+    with pytest.raises(ModelCallError):
+        await catch_up_progress(
+            client,
+            prompt=_prompts().status,
+            topic=_topic(),
+            messages=[
+                DialogueMessage(sender=MessageSender.STUDENT, content="Only one turn")
+            ],
+            model_id="openai/gpt-6-luna",
+        )
+
+
+async def test_achieved_goal_survives_off_topic_turn(monkeypatch):
+    from unittest.mock import AsyncMock
+    from uuid import uuid4
+
+    from app.crud import message as message_crud
+    from app.services import dialogue
+    from app.services.dialogue_context import BoundedDialogueContext
+
+    topic = _topic()
+    topic.model_id = "openai/gpt-6-luna"
+    session = SimpleNamespace(
+        id=uuid4(),
+        outcome="open",
+        goal_reached=True,
+        awaiting_end_consent=False,
+        generation_meta={"progress": _ready_progress()},
+    )
+    bounded = BoundedDialogueContext("transcript", None, 0, None, None)
+    monkeypatch.setattr(
+        dialogue, "build_bounded_context", AsyncMock(return_value=bounded)
+    )
+    monkeypatch.setattr(message_crud, "lock_session", AsyncMock(return_value=session))
+    monkeypatch.setattr(message_crud, "count_messages", AsyncMock(return_value=0))
+    monkeypatch.setattr(message_crud, "count_student_turns", AsyncMock(return_value=0))
+    monkeypatch.setattr(message_crud, "merge_session_meta", AsyncMock())
+    saved = AsyncMock(return_value=uuid4())
+    monkeypatch.setattr(message_crud, "save_exchange", saved)
+    done = await dialogue._ask_and_store(
+        AsyncMock(),
+        ScriptedClient(VALIDITY_NO),
+        session=session,
+        topic=topic,
+        messages=[],
+        content="Off topic",
+        request_id=uuid4(),
+    )
+    assert saved.call_args.kwargs["goal_reached"] is True
+    assert saved.call_args.kwargs["progress"]["position"]["met"] is False
+    assert done.awaiting_end_consent is True
+
+
+@pytest.mark.parametrize(
+    "blocked,expected_calls",
+    [
+        ("dialogue_validity", []),
+        ("dialogue_status", ["dialogue_validity"]),
+        ("dialogue_planning", ["dialogue_validity", "dialogue_status"]),
+    ],
+)
+async def test_every_phase_checks_its_actual_schema(
+    monkeypatch, blocked, expected_calls
+):
+    from app.core.config import settings
+    from app.services import dialogue_turn
+    from app.services.token_budget import ContextWindowExceeded
+
+    schemas = {
+        "dialogue_validity": dialogue_turn.VALIDITY_SCHEMA,
+        "dialogue_status": dialogue_turn.STATUS_SCHEMA,
+        "dialogue_planning": dialogue_turn.PLANNING_SCHEMA,
+    }
+
+    def estimate(**request):
+        return (
+            settings.DIALOGUE_CONTEXT_TOKEN_BUDGET + 1
+            if request["schema"] is schemas[blocked]
+            else 1
+        )
+
+    monkeypatch.setattr(dialogue_turn, "estimate_total_request_tokens", estimate)
+    client = ScriptedClient(VALIDITY_YES, _status(), PLANNING)
+    with pytest.raises(ContextWindowExceeded):
+        await _run(client)
+    assert client.calls == expected_calls

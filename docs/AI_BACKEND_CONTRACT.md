@@ -163,3 +163,12 @@ Report format gaps remain explicit: the current formatter supplies IDs, constant
 This chunk corrects descriptions/OpenAPI and SSE text fidelity. It does not change permissions, topic settings persistence, goal logic, ending actions, report DTOs or database schemas. Those remain tracked in the project register. Historical PR sequence charts are historical; this revision is the current candidate guide.
 
 The new regression tests exercise actual ASGI routing/serialization, SSE decoding, replay and ending/report ordering with in-memory persistence. Existing service/route tests supplement them. This is not a real Postgres integration or live-model dialogue evaluation. See the local chunk handoff for exact commands and results.
+
+
+## Dialogue contract repairs (Chunk04)
+
+`goal_reached` is historical eligibility to complete, not the latest model's milestone state. Continue preserves it. After another saved reply, including an off-topic reply, the stored ending-choice flag and SSE done flag agree and offer completion again when eligibility was already achieved. History returns `current_progress` separately; its milestones may regress without erasing achievement. No stop/turn-limit lifecycle extension is included.
+
+The planner receives `approvedInquiryBrief`, `interfaceLanguage`, and `dialogueRecord`; the brief includes the turn cap. Context compaction budgets this actual envelope and planner schema. Validity, status, planning and legacy catch-up each check their request schema/material/output reserve before their provider call. Oversized requests return413; missing tokenizer support returns503. Legacy catch-up fails explicitly on oversized history rather than silently truncating evidence.
+
+Progress references must identify an existing positive student exchange. Invalid or future references are rejected as model output errors before persistence; structural references alone do not prove that the cited text supports the claim.

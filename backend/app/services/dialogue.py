@@ -185,6 +185,7 @@ def _history(
         completed_turns=_turn_count(messages),
         goal_reached=session.goal_reached,
         awaiting_end_consent=session.awaiting_end_consent,
+        current_progress=_progress_of(session),
     )
 
 
@@ -331,6 +332,7 @@ async def _ask_and_store(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Turn cap reached",
                 )
+        goal_reached = bool(locked.goal_reached or goal_reached)
         await message_crud.merge_session_meta(
             db,
             session.id,

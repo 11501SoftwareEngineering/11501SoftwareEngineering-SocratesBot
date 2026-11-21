@@ -16,7 +16,7 @@ import json
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
@@ -32,6 +32,10 @@ from app.services.dialogue_progress import (
     validate_progress,
 )
 from app.services.model_client import ModelCallError, ModelClient
+from app.services.token_budget import (
+    ContextWindowExceeded,
+    estimate_total_request_tokens,
+)
 
 _QUESTION_MARKS = ("?", "\uff1f")
 _MESSAGES_PATH = Path(__file__).resolve().parents[1] / "core" / "dialogue_messages.toml"
@@ -74,7 +78,9 @@ class MilestoneOut(_Output):
 
 class EvidenceOut(_Output):
     text: str = Field(max_length=1000)
-    evidence_exchanges: list[int] = Field(max_length=6)
+    evidence_exchanges: list[Annotated[int, Field(strict=True, ge=1, le=15)]] = Field(
+        max_length=6
+    )
 
 
 class ProgressOut(_Output):
@@ -242,6 +248,33 @@ def brief_of(topic: Topic) -> dict[str, Any]:
     }
 
 
+def planning_material(topic: Topic, transcript: str) -> str:
+    return json.dumps(
+        {
+            "approvedInquiryBrief": brief_of(topic),
+            "interfaceLanguage": topic.content_language
+            or settings.DEFAULT_LANGUAGE_CODE,
+            "dialogueRecord": transcript,
+        },
+        ensure_ascii=False,
+    )
+
+
+async def _bounded_object(client: ModelClient, **kwargs) -> dict:
+    estimate = estimate_total_request_tokens(
+        model_id=kwargs["model"],
+        instructions=kwargs["instructions"],
+        material=kwargs["material"],
+        schema=kwargs["schema"],
+        output_tokens=kwargs["max_tokens"],
+    )
+    if estimate > settings.DIALOGUE_CONTEXT_TOKEN_BUDGET:
+        raise ContextWindowExceeded(
+            f"{kwargs['name']} exceeds the dialogue context budget"
+        )
+    return await client.complete_object(**kwargs)
+
+
 def _parse[T: BaseModel](model: type[T], raw: dict[str, Any]) -> T:
     try:
         return model.model_validate(raw)
@@ -263,7 +296,8 @@ async def run_turn(
     validity_model: str,
 ) -> TurnResult:
     language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
-    validity_raw = await client.complete_object(
+    validity_raw = await _bounded_object(
+        client,
         name="dialogue_validity",
         schema=VALIDITY_SCHEMA,
         instructions=prompts.validity.instructions,
@@ -287,7 +321,8 @@ async def run_turn(
             prompt_versions={"validity": prompts.validity.version},
         )
 
-    status_raw = await client.complete_object(
+    status_raw = await _bounded_object(
+        client,
         name="dialogue_status",
         schema=STATUS_SCHEMA,
         instructions=prompts.status.instructions,
@@ -296,6 +331,7 @@ async def run_turn(
                 "approvedInquiryBrief": brief_of(topic),
                 "interfaceLanguage": language,
                 "previousProgress": base_progress,
+                "currentExchange": exchange,
                 "question": question,
                 "answer": latest,
             },
@@ -306,12 +342,16 @@ async def run_turn(
     )
     status = _parse(StatusOut, status_raw)
     progress = status.progress.model_dump(by_alias=True)
+    check = validate_progress(progress, exchange)
+    if check.issues:
+        raise ModelCallError(200)
 
-    planning_raw = await client.complete_object(
+    planning_raw = await _bounded_object(
+        client,
         name="dialogue_planning",
         schema=PLANNING_SCHEMA,
         instructions=prompts.dialogue.instructions,
-        material=transcript_material,
+        material=planning_material(topic, transcript_material),
         model=model_id,
         max_tokens=prompts.dialogue.max_output_tokens,
     )
@@ -361,7 +401,8 @@ async def catch_up_progress(
     the same terms as new ones.
     """
     language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
-    raw = await client.complete_object(
+    raw = await _bounded_object(
+        client,
         name="dialogue_status",
         schema=STATUS_SCHEMA,
         instructions=prompt.instructions,
@@ -377,4 +418,8 @@ async def catch_up_progress(
         model=model_id,
         max_tokens=prompt.max_output_tokens,
     )
-    return _parse(StatusOut, raw).progress.model_dump(by_alias=True)
+    progress = _parse(StatusOut, raw).progress.model_dump(by_alias=True)
+    exchanges = sum(message.sender == MessageSender.STUDENT for message in messages)
+    if validate_progress(progress, exchanges).issues:
+        raise ModelCallError(200)
+    return progress
