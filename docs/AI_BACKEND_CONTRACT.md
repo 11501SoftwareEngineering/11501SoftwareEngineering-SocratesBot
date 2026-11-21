@@ -1,6 +1,10 @@
 # AI backend API contract and sequences
 
-Contract revision 6, 21 November 2026. Local Chunk06 candidate on Chunk05 plus main59efe44. Early-stop/cap/report changes below are implemented locally and require review, migration and deployment before frontend adoption. Paths have the `/api/v1` prefix. Use OpenAPI from the same revision.
+Contract revision 7, 21 November 2026. Reconciled against PR #272 implementation `cf2c335` (including its dependency stack). Paths have the `/api/v1` prefix. This is a PR contract, not a statement that these changes are deployed.
+
+- [PR #272 documentation preview](https://11501SoftwareEngineering.github.io/11501SoftwareEngineering-SocratesBot/pr-preview/pr-272/docs/) follows the published PR head after its docs workflow succeeds.
+- [Main documentation](https://11501SoftwareEngineering.github.io/11501SoftwareEngineering-SocratesBot/docs/) follows the main deployment workflow; it does not include unmerged PR changes. Documentation deployment does not prove the backend service has been deployed.
+- OpenAPI is generated from this checkout: run `python scripts/export_openapi.py -o ../docs/openapi/openapi.json` from `backend/`. The generated file is ignored by Git; CI builds it for the corresponding preview/main site. Local edits are not visible on either site until published and built.
 
 ## Authentication and error responses
 
@@ -154,7 +158,7 @@ Teacher POST `/topics/{topicId}/reports/{sessionId}` uses the same retry/reuse r
 {"report_status":"pending","report":null}
 ```
 
-Reports retain validated timeline citations and private native summaries from Chunk05. Reports expose server ending metadata and goal_reached separately; anonymous_id remains undefined. Teaching counts retain completed_count for successful completion and add ended_count for early/cap endings. Ready/failed counts include both. Group tags and full native Stage3 synthesis remain a later chunk.
+Reports retain validated timeline citations and private native summaries from Chunk05. Reports expose server ending metadata and goal_reached separately; anonymous_id remains undefined. Teaching counts retain completed_count for successful completion and add ended_count for early/cap endings. Ready/failed counts include both. Native Stage3 is included below. Per-student group tags are not returned by the teaching report list.
 
 ## Scope and verification
 
@@ -176,15 +180,15 @@ The configured defaults for `OPENAI_MODEL` and `OPENAI_VALIDITY_MODEL` are `open
 
 ## Native individual reports (Chunk05)
 
-Personal report generation now sends `interfaceLanguage`, the approved inquiry brief, a numbered `transcript`, the attempt's `finalProgress`, and truthful `endingReason`. The owned completed dialogue is snapshotted and committed before the model call. A fingerprint binds the saved input to the stored native summary; model/prompt versions are recorded. The native summary and source stay in private attempt metadata, outside student/teaching report bodies and existing class-summary request bodies.
+Personal report generation now sends `interfaceLanguage`, the approved inquiry brief, a numbered `transcript`, the attempt's `finalProgress`, and truthful `endingReason`. The owned report-eligible dialogue is snapshotted and committed before the model call. A fingerprint binds the saved input to the stored native summary; model/prompt versions are recorded. The native summary and source stay in private attempt metadata, outside student/teaching report bodies. Class synthesis privately consumes the validated native evidence.
 
-The provider schema matches the native lab's outcome/workingPosition/strongestReason/challengeExamined/revisionOrDefence/focalTensionConnection/remainingQuestion/reflection/unmetElements fields. Native `outcome` describes the evidence result, not backend dialogue termination or job status. A partial/insufficient-evidence result can be a successfully generated ready report. Completed-only eligibility is unchanged.
+The provider schema matches the native lab's outcome/workingPosition/strongestReason/challengeExamined/revisionOrDefence/focalTensionConnection/remainingQuestion/reflection/unmetElements fields. Native `outcome` describes the evidence result, not backend dialogue termination or job status. A partial/insufficient-evidence result can be a successfully generated ready report. Both `completed` and `ended` dialogues are report-eligible; `abandoned` is not.
 
 Public report keys remain compatible. Reflection/working position, strongest reason, revision, focus connection, remaining question and limitations map to their existing fields. `viewpoint_status`, `other_perspectives`, and timeline viewpoint/change fields stay empty when the native contract cannot establish them. `challenges.responded` uses validated examination/response progress rather than an invented boolean. Timeline is a chronological student-evidence index, not a claim about causal changes in belief. `attribution=none` means no change attribution is made.
 
 New timeline items retain string `evidence` and add `evidence_reference: {message_id, turn, quote}`. Quotes are copied from stored student messages; the validator checks ownership-derived source, turn, ID, question and exact quote, and rejects duplicates/malformed entries. This checks source integrity, not whether every model interpretation is philosophically or semantically justified. Legacy stored reports remain readable but are not retroactively certified.
 
-`completed_at`, when available, comes from the session's server timestamp. `anonymous_id` remains unimplemented pending an agreed alias scope; clients must not assume it exists. Reports larger than `REPORT_CONTEXT_TOKEN_BUDGET` (default32000 estimated request tokens including output reserve) fail before provider invocation rather than silently dropping evidence. This is a configurable local guard, not a guarantee of provider context capacity. Existing retry/poll behavior remains. Full native Stage3 synthesis remains a later chunk.
+`completed_at`, when available, comes from the session's server timestamp. `anonymous_id` remains unimplemented pending an agreed alias scope; clients must not assume it exists. Reports larger than `REPORT_CONTEXT_TOKEN_BUDGET` (default32000 estimated request tokens including output reserve) fail before provider invocation rather than silently dropping evidence. This is a configurable local guard, not a guarantee of provider context capacity. Existing retry/poll behavior remains. Native Stage3 consumes these saved sources as described below.
 
 
 ### Model and credential routing (combined Chunk07/08)
@@ -209,7 +213,7 @@ sequenceDiagram
     API-->>Caller: Existing response / job status
 ```
 
-An unreadable credential or missing ownership record stops before a provider request. Model failures preserve existing API error/job-failure contracts. There are no new request fields or frontend changes. Summary model/language are captured when enqueued; report model is captured with its source before inference. Retrying an existing captured request retains its model; a new attempt may resolve current configuration. Native Stage3 input/grouping changes remain a later chunk.
+An unreadable credential or missing ownership record stops before a provider request. Model failures preserve existing API error/job-failure contracts. There are no new request fields or frontend changes. Summary model/language are captured when enqueued; report model is captured with its source before inference. Retrying an existing captured request retains its model; a new attempt may resolve current configuration. Native Stage3 uses the same model and credential routing.
 
 
 ## Native Stage3 class synthesis
@@ -218,7 +222,7 @@ Individual reports are queued at each qualifying dialogue ending and are immedia
 
 POST `/topics/{topicId}/summary` requires **all existing dialogues for that topic to be non-open**, and the **latest attempt for every report-eligible dialogue (`completed` or `ended`) to be ready**. Pending, processing, failed or missing personal reports block with409; an older ready result does not bypass a newer failed/pending attempt. Abandoned and historical closed_by_summary sessions are not report-eligible and are not in the denominator. Students who never entered a session are not counted as open dialogues.
 
-Ready reports without matching native summary/source evidence must be regenerated using the existing teacher report retry endpoint. Source-digest or inquiry-setting mismatches return409 rather than silently omitting records or fabricating evidence. No ready cohort returns400. More than50 reports or an oversized payload/model request returns413. There is no automatic batching or truncation.
+Ready reports without matching native summary/source evidence must be regenerated using the existing teacher report retry endpoint. Source-digest or inquiry-setting mismatches return409 rather than silently omitting records or fabricating evidence. No ready cohort returns400. More than50 reports or an oversized payload/model request returns413. Unsupported model tokenization returns503. There is no automatic batching or truncation.
 
 A summary attempt freezes the selected report IDs, session IDs, source digests, converted native arguments, language and activity model. Model material contains temporary labels and evidence-grounded argument summaries, not raw transcripts or database IDs. The model proposes groups based on positions and reasons, with shared values, assumptions, internal differences and discussion questions. Backend validation rejects duplicate, unknown or ineligible membership and computes all counts/percentages. Inconclusive and unassigned reports remain in the denominator and appear as ungrouped in the existing public DTO; privately they form Still exploring. If all reports are unclassifiable, the backend creates an honest deterministic summary without calling the provider.
 
@@ -237,6 +241,8 @@ sequenceDiagram
     participant Teacher
     Student->>API: Complete / finish early / final allowed answer
     API->>DB: End this dialogue and queue personal report
+    API-->>Student: Ending response (report queued)
+    Note over API,Model: Background personal-report job
     API->>Model: Generate personal report
     API->>DB: Store ready report
     Student->>API: GET own report (no class wait)
@@ -246,7 +252,8 @@ sequenceDiagram
         API-->>Teacher: 409 with recovery instruction
     else Cohort ready and within limits
         API->>DB: Freeze native cohort; queue synthesis
-        Note over API,DB: New session entry blocked during active lease
+        API-->>Teacher: 200 preparation_status=pending, summary=null
+        Note over API,DB: Background job; new session entry blocked during active lease
         alt At least one classifiable report
             API->>Model: Inquiry, language, temporary report labels and arguments
             Model-->>API: Qualitative groups and discussion material
@@ -255,6 +262,8 @@ sequenceDiagram
         end
         API->>API: Validate membership and compute counts
         API->>DB: Recheck cohort; save private native draft; topic becomes summary
+        Teacher->>API: GET summary (poll preparation_status)
+        API-->>Teacher: ready + draft, or failed (previous publication preserved)
         Teacher->>API: Edit / review / publish exact version
         Student->>API: GET published class summary
         API-->>Student: Anonymous aggregate projection

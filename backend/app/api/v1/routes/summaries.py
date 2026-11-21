@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ActiveUser, TeacherUser, get_db
-from app.api.openapi_responses import SUMMARY_PUBLISH_RESPONSES
+from app.api.openapi_responses import SUMMARY_PUBLISH_RESPONSES, json_detail_example
 from app.schemas.summary import (
     PublishedSummaryResponse,
     PublishSummaryResponse,
@@ -30,12 +30,36 @@ class SummaryTextRequest(BaseModel):
 @router.post(
     "/topics/{topicId}/summary",
     responses={
+        200: {
+            "description": "Queued or reused background synthesis; poll GET on the same path.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "topic_status": "conversation",
+                        "published_version": None,
+                        "summary": None,
+                        "preparation_status": "pending",
+                    }
+                }
+            },
+        },
+        400: json_detail_example(
+            "Topic still in setup or no eligible ready cohort.",
+            "Topic is still in setup",
+        ),
+        403: {"description": "Teacher role and course instructor membership required."},
+        404: {"description": "Topic not found."},
         409: {
             "description": "End all dialogues, wait for every eligible report, or regenerate incompatible native reports before synthesis."
         },
-        413: {
-            "description": "At most 50 reports; payload or model request budget exceeded."
-        },
+        413: json_detail_example(
+            "Report count, payload or model request budget exceeded.",
+            "Stage3 supports at most 50 reports per topic",
+        ),
+        503: json_detail_example(
+            "Configured tokenizer unavailable.",
+            "Configured model tokenizer is not supported",
+        ),
     },
 )
 async def start_summary(
@@ -43,7 +67,12 @@ async def start_summary(
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TeacherSummaryResponse:
-    """Start native class synthesis only after every dialogue ends and every eligible report is ready."""
+    """Queue native synthesis after all dialogues end and eligible reports are ready.
+
+    Returns pending before inference; GET exposes processing/ready/failed.
+    Provider or validation failures after enqueue are job failures, not a later
+    HTTP error on this POST. Existing published content remains available.
+    """
     return await summary_service.start_summary(db, teacher=teacher, topic_id=topicId)
 
 
