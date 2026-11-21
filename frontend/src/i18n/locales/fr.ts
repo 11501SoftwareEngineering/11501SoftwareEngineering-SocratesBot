@@ -429,6 +429,9 @@ export default {
       'Ce navigateur ne prend pas en charge la reconnaissance vocale dans cette langue. Tapez votre réponse.',
   },
   report: {
+    exportPdf: 'Exporter en PDF',
+    pdfFileName: 'Rapport d’enquête_{name}_{date}',
+    pdfHeading: 'Rapport d’enquête de {name} · Exporté le {date}',
     evidenceTagPartial: 'Preuves partielles',
     evidenceTagInsufficient: 'Preuves insuffisantes',
     title: 'Rapport d’enquête',
@@ -474,6 +477,9 @@ export default {
     viewGroupAria: 'Voir les rapports de « {name} »',
   },
   setup: {
+    apiKeyReminder:
+      "Vous n'avez pas encore défini votre propre clé API : les activités et les dialogues utiliseront la clé du système.",
+    apiKeyReminderLink: 'Définir la clé API',
     newTitle: 'Nouvelle activité',
     confirmTitle: 'Vérifier la configuration',
     title: 'Configuration de l’activité',

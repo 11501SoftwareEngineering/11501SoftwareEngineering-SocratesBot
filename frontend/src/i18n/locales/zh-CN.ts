@@ -419,6 +419,9 @@ export default {
     languageNotSupported: '这个浏览器不支持这个语言的语音识别，请改用文本输入。',
   },
   report: {
+    exportPdf: '导出 PDF',
+    pdfFileName: '探索结果报告_{name}_{date}',
+    pdfHeading: '{name} 的探索结果报告 · 导出日期 {date}',
     evidenceTagPartial: '部分证据',
     evidenceTagInsufficient: '证据不足',
     title: '探索结果报告',
@@ -461,6 +464,8 @@ export default {
     viewGroupAria: '查看「{name}」的报告',
   },
   setup: {
+    apiKeyReminder: '你还没有设置自己的 API 密钥，生成活动和对话会使用系统的密钥。',
+    apiKeyReminderLink: '设置 API 密钥',
     newTitle: '添加活动',
     confirmTitle: '确认活动设置',
     title: '活动设置',

@@ -137,6 +137,17 @@ describe('ChatInput', () => {
     expect(wrapper.emitted('send')).toBeUndefined()
     expect(wrapper.text()).toContain('剩餘回合數：0/5')
   })
+
+  it('Enter 送出；Shift+Enter 換行、輸入法選字中的 Enter 不送出', async () => {
+    const wrapper = mount(ChatInput, { props: { modelValue: '第一行\n第二行' } })
+    const textarea = wrapper.find('textarea')
+    await textarea.trigger('keydown', { key: 'Enter', shiftKey: true })
+    await textarea.trigger('keydown', { key: 'Enter', isComposing: true })
+    await textarea.trigger('keydown', { key: 'Enter', keyCode: 229 })
+    expect(wrapper.emitted('send')).toBeUndefined()
+    await textarea.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('send')?.[0]).toEqual(['第一行\n第二行'])
+  })
 })
 
 describe('AppCheckbox', () => {

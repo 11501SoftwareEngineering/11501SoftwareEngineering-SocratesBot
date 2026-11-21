@@ -434,6 +434,9 @@ export default {
       'Dieser Browser unterstützt die Spracherkennung für diese Sprache nicht. Bitte Antwort eintippen.',
   },
   report: {
+    exportPdf: 'Als PDF exportieren',
+    pdfFileName: 'Untersuchungsbericht_{name}_{date}',
+    pdfHeading: 'Untersuchungsbericht von {name} · Exportiert am {date}',
     evidenceTagPartial: 'Teilweise Belege',
     evidenceTagInsufficient: 'Unzureichende Belege',
     title: 'Forschungsbericht',
@@ -480,6 +483,9 @@ export default {
     viewGroupAria: 'Berichte von „{name}“ ansehen',
   },
   setup: {
+    apiKeyReminder:
+      'Sie haben noch keinen eigenen API-Schlüssel festgelegt. Aktivitäten und Dialoge verwenden den Systemschlüssel.',
+    apiKeyReminderLink: 'API-Schlüssel festlegen',
     newTitle: 'Neue Aktivität',
     confirmTitle: 'Einrichtung prüfen',
     title: 'Aktivität einrichten',

@@ -427,6 +427,9 @@ export default {
       'This browser does not support speech recognition for this language. Please type instead.',
   },
   report: {
+    exportPdf: 'Export PDF',
+    pdfFileName: 'Inquiry report_{name}_{date}',
+    pdfHeading: 'Inquiry report for {name} · Exported {date}',
     evidenceTagPartial: 'Partial evidence',
     evidenceTagInsufficient: 'Insufficient evidence',
     title: 'Inquiry report',
@@ -470,6 +473,9 @@ export default {
     viewGroupAria: 'View reports in “{name}”',
   },
   setup: {
+    apiKeyReminder:
+      "You haven't set your own API key, so activities and dialogues will use the system key.",
+    apiKeyReminderLink: 'Set API key',
     newTitle: 'New activity',
     confirmTitle: 'Review activity settings',
     title: 'Activity settings',

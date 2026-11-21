@@ -429,6 +429,9 @@ export default {
       'Este navegador no admite reconocimiento de voz en este idioma. Escribe tu respuesta.',
   },
   report: {
+    exportPdf: 'Exportar PDF',
+    pdfFileName: 'Informe de indagación_{name}_{date}',
+    pdfHeading: 'Informe de indagación de {name} · Exportado el {date}',
     evidenceTagPartial: 'Evidencia parcial',
     evidenceTagInsufficient: 'Evidencia insuficiente',
     title: 'Informe de indagación',
@@ -472,6 +475,9 @@ export default {
     viewGroupAria: 'Ver los informes de «{name}»',
   },
   setup: {
+    apiKeyReminder:
+      'Aún no configuraste tu propia clave API; las actividades y los diálogos usarán la clave del sistema.',
+    apiKeyReminderLink: 'Configurar clave API',
     newTitle: 'Nueva actividad',
     confirmTitle: 'Revisar la configuración',
     title: 'Configuración de la actividad',

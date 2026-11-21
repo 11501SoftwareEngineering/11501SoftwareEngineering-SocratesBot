@@ -8,12 +8,15 @@
  *   兩欄：目前立場、最強理由、已檢驗的挑戰、修正或辯護、與探究重點的連結、尚待追問
  *   未完成或證據不足（紅框，證據不足或有限制說明時才出現）
  */
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
+import { Download } from '@lucide/vue'
 import type { EvidenceQuote, PersonalReport, TimelineEntry } from '@/api/sessions'
 import StatusTag from '@/components/common/StatusTag.vue'
+import { Button } from '@/components/ui/button'
+import { printElement } from '@/lib/printElement'
 import { useI18n } from 'vue-i18n'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 
 const props = defineProps<{
   report: PersonalReport
@@ -21,6 +24,8 @@ const props = defineProps<{
   name: string
   /** 學生原話（message_id → 內容），時間軸展開「學生回覆」時用；沒有就用報告裡的引用 */
   messageText?: Record<string, string>
+  /** 放在對話框裡：「匯出 PDF」按鈕往左讓出右上角的關閉按鈕 */
+  inDialog?: boolean
 }>()
 
 const meta = computed(() =>
@@ -54,6 +59,35 @@ function quotesOf(entry: TimelineEntry): string[] {
 }
 
 const open = ref<Record<number, boolean>>({})
+
+// ===== 匯出 PDF（學生、老師都可以）=====
+// 用瀏覽器的列印視窗「另存為 PDF」；PDF 裡的「學生回覆」全部展開，最上面加上報告名稱和匯出日期
+const article = ref<HTMLElement>()
+const exporting = ref(false)
+/** 報告最上面顯示的匯出日期（依介面語言）；檔名用 2026-11-22 這種格式 */
+const exportDate = computed(() => new Intl.DateTimeFormat(locale.value).format(new Date()))
+function fileDate() {
+  const d = new Date()
+  return [d.getFullYear(), d.getMonth() + 1, d.getDate()]
+    .map((n) => String(n).padStart(2, '0'))
+    .join('-')
+}
+async function exportPdf() {
+  if (!article.value || exporting.value) return
+  exporting.value = true
+  const before = open.value
+  open.value = Object.fromEntries((props.report.timeline ?? []).map((e) => [e.turn, true]))
+  await nextTick()
+  try {
+    await printElement(
+      article.value,
+      t('report.pdfFileName', { name: props.name, date: fileDate() }),
+    )
+  } finally {
+    open.value = before
+    exporting.value = false
+  }
+}
 
 const sections = computed(() => [
   { title: t('report.currentStance'), body: props.report.final_viewpoint },
@@ -94,7 +128,15 @@ const gaps = computed(() => {
 </script>
 
 <template>
-  <article class="flex flex-col gap-6">
+  <article ref="article" class="flex flex-col gap-6">
+    <div class="flex justify-end print:hidden" :class="inDialog && 'pr-10'">
+      <Button variant="secondary" size="sm" :disabled="exporting" @click="exportPdf">
+        <Download class="size-4" aria-hidden="true" />{{ t('report.exportPdf') }}
+      </Button>
+    </div>
+    <p class="hidden border-b border-border pb-2 text-body text-muted-foreground print:block">
+      {{ t('report.pdfHeading', { name, date: exportDate }) }}
+    </p>
     <header v-if="!noResponses" class="flex flex-col gap-4">
       <div class="flex flex-wrap items-center gap-4">
         <h2 class="text-h1-title text-foreground">{{ name }}</h2>

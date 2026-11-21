@@ -138,7 +138,12 @@ const open = computed({
         <DialogTitle class="sr-only">{{
           t('perspective.reportTitle', { name: selected?.student_display_name ?? '' })
         }}</DialogTitle>
-        <PersonalReport v-if="selected" :report="selected" :name="selected.student_display_name" />
+        <PersonalReport
+          v-if="selected"
+          :report="selected"
+          :name="selected.student_display_name"
+          in-dialog
+        />
       </DialogScrollContent>
     </Dialog>
   </div>

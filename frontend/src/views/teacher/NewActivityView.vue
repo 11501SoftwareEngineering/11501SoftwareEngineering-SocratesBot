@@ -10,6 +10,9 @@ import AppBanner from '@/components/common/AppBanner.vue'
  * API：POST /courses/{courseId}/topics（docs/API功能規格.md v0.2「建立題目」）
  *   規格還要 content_language、model_id，但 Figma 沒有這兩個欄位：
  *   送目前的介面語言，模型送老師的預設模型（拿得到才送）。
+ * 課程老師還沒設定自己的 API 金鑰（GET /users/me/ai/settings 的 configured 是 false）時，
+ * 上方提醒可以到「AI 用量與金鑰」設定；不擋，後端會改用系統的金鑰。
+ * 助教看不到：AI 費用算課程老師的，助教自己的設定跟這門課無關。
  */
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -41,6 +44,10 @@ const { language } = useUiLanguage()
 const settings = useQuery({ queryKey: aiKeys.settings, queryFn: aiApi.settings, retry: false })
 const modelId = computed(
   () => settings.data.value?.default_model?.id ?? course.value?.default_model?.id,
+)
+
+const showKeyReminder = computed(
+  () => course.value?.my_role === 'teacher' && settings.data.value?.configured === false,
 )
 
 const form = reactive<{ age_band: AgeBand; max_turns: MaxTurns; course_description: string }>({
@@ -99,6 +106,14 @@ const turnOptions = computed(() =>
       :class="[cardClass, 'mt-4 flex flex-col gap-4 p-5 sm:px-8']"
       @submit.prevent="handleSubmit"
     >
+      <AppBanner v-if="showKeyReminder" type="info">
+        {{ t('setup.apiKeyReminder') }}
+        <RouterLink
+          :to="{ name: 'TeacherAiSettings' }"
+          class="font-bold underline underline-offset-2 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >{{ t('setup.apiKeyReminderLink') }}</RouterLink
+        >
+      </AppBanner>
       <div class="grid gap-4 sm:grid-cols-2">
         <AppSelect
           v-model="form.age_band"

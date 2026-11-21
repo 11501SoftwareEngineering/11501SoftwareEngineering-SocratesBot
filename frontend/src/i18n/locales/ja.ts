@@ -426,6 +426,9 @@ export default {
       'このブラウザはこの言語の音声認識に対応していません。文字で入力してください。',
   },
   report: {
+    exportPdf: 'PDF に書き出す',
+    pdfFileName: '探究結果レポート_{name}_{date}',
+    pdfHeading: '{name} の探究結果レポート · 書き出し日 {date}',
     evidenceTagPartial: '一部の証拠',
     evidenceTagInsufficient: '証拠不足',
     title: '探究レポート',
@@ -469,6 +472,9 @@ export default {
     viewGroupAria: '「{name}」のレポートを見る',
   },
   setup: {
+    apiKeyReminder:
+      'まだ自分の API キーを設定していないため、活動の作成と対話にはシステムのキーが使われます。',
+    apiKeyReminderLink: 'API キーを設定',
     newTitle: '新しいアクティビティ',
     confirmTitle: 'アクティビティ設定の確認',
     title: 'アクティビティ設定',

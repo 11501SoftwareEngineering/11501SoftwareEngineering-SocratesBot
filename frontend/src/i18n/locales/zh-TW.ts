@@ -424,6 +424,9 @@ export default {
     languageNotSupported: '這個瀏覽器不支援這個語言的語音辨識，請改用文字輸入。',
   },
   report: {
+    exportPdf: '匯出 PDF',
+    pdfFileName: '探索結果報告_{name}_{date}',
+    pdfHeading: '{name} 的探索結果報告 · 匯出日期 {date}',
     evidenceTagPartial: '部分證據',
     evidenceTagInsufficient: '證據不足',
     title: '探索結果報告',
@@ -466,6 +469,8 @@ export default {
     viewGroupAria: '檢視「{name}」的報告',
   },
   setup: {
+    apiKeyReminder: '你還沒有設定自己的 API 金鑰，產生活動和對話會使用系統的金鑰。',
+    apiKeyReminderLink: '設定 API 金鑰',
     newTitle: '新增活動',
     confirmTitle: '確認活動設定',
     title: '活動設定',

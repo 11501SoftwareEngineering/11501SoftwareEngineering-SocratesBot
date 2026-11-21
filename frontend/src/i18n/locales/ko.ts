@@ -427,6 +427,9 @@ export default {
       '이 브라우저는 이 언어의 음성 인식을 지원하지 않습니다. 직접 입력해 주세요.',
   },
   report: {
+    exportPdf: 'PDF로 내보내기',
+    pdfFileName: '탐구 결과 보고서_{name}_{date}',
+    pdfHeading: '{name}의 탐구 결과 보고서 · 내보낸 날짜 {date}',
     evidenceTagPartial: '일부 근거',
     evidenceTagInsufficient: '근거 부족',
     title: '탐구 보고서',
@@ -469,6 +472,8 @@ export default {
     viewGroupAria: '「{name}」의 보고서 보기',
   },
   setup: {
+    apiKeyReminder: '아직 내 API 키를 설정하지 않아 활동 생성과 대화에 시스템 키가 사용됩니다.',
+    apiKeyReminderLink: 'API 키 설정',
     newTitle: '새 활동',
     confirmTitle: '활동 설정 확인',
     title: '활동 설정',

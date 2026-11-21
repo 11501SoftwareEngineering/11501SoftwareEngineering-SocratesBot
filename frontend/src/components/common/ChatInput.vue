@@ -8,9 +8,13 @@
  *     :show-mic="speech.supported" :recording="speech.isListening.value"
  *     @send="handleSend" @mic="speech.toggle()" />
  *
- * - 按 Enter 送出；內容是空白、送出中、或沒有剩餘回合時不能送出
+ * - 像 Discord／Claude 一樣的多行輸入：Enter 送出、Shift+Enter 換行，輸入框隨內容長高（最多約 8 行，再多就捲動）
+ *   - 中文、日文輸入法選字時按的 Enter 只是確定選字，不會送出
+ *   - 手機（觸控螢幕）上 Enter 是換行，用右邊的送出按鈕送出（跟 Discord、Claude 的手機版一樣）
+ * - 內容是空白、送出中、或沒有剩餘回合時不能送出
+ * - 最多 6000 字（後端 StreamMessageRequest 的上限）
  */
-import { computed } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { MicIcon, SendIcon } from '@/components/icons'
 import { useI18n } from 'vue-i18n'
 
@@ -44,17 +48,42 @@ const canSend = computed(
   () => !!draft.value.trim() && !props.sending && !props.disabled && !outOfRounds.value,
 )
 
+/** 後端一則回答最多 6000 字 */
+const MAX_LENGTH = 6000
+
 function handleSend() {
   if (!canSend.value) return
   emit('send', draft.value.trim())
 }
+
+const textarea = ref<HTMLTextAreaElement>()
+const isTouch = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Enter' || event.shiftKey || isTouch) return
+  // 輸入法選字中（keyCode 229 是 Safari 的情況）
+  if (event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  handleSend()
+}
+
+/** 依內容調整高度：先縮回再量 scrollHeight，最高由 CSS 的 max-h 限制 */
+function resize() {
+  const el = textarea.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${el.scrollHeight}px`
+}
+// 送出後清空、語音輸入填入文字時也要調整
+watch(draft, () => void nextTick(resize))
+onMounted(resize)
 </script>
 
 <template>
   <div class="flex w-full justify-center border-t border-secondary bg-background px-4 py-3">
-    <div class="flex w-full max-w-[870px] items-center gap-4">
+    <div class="flex w-full max-w-[870px] items-end gap-4">
       <form
-        class="flex min-w-0 flex-1 items-center gap-2 rounded-2xl border border-secondary bg-card px-3 py-2 focus-within:ring-[3px] focus-within:ring-ring/50"
+        class="flex min-w-0 flex-1 items-end gap-2 rounded-2xl border border-secondary bg-card px-3 py-2 focus-within:ring-[3px] focus-within:ring-ring/50"
         @submit.prevent="handleSend"
       >
         <button
@@ -69,8 +98,11 @@ function handleSend() {
         >
           <MicIcon class="size-4" />
         </button>
-        <input
+        <textarea
+          ref="textarea"
           v-model="draft"
+          rows="1"
+          :maxlength="MAX_LENGTH"
           :aria-label="t('chat.inputLabel')"
           :placeholder="
             outOfRounds
@@ -81,7 +113,9 @@ function handleSend() {
           "
           :disabled="disabled || outOfRounds"
           :readonly="recording"
-          class="min-w-0 flex-1 bg-transparent text-body-lg text-foreground outline-none placeholder:text-foreground/50 disabled:cursor-not-allowed"
+          enterkeyhint="send"
+          class="max-h-52 min-w-0 flex-1 resize-none self-center bg-transparent py-1 text-body-lg text-foreground outline-none placeholder:text-foreground/50 disabled:cursor-not-allowed"
+          @keydown="onKeydown"
         />
         <button
           type="submit"
