@@ -268,27 +268,33 @@ async def test_bad_success_body_is_not_replayed():
 async def test_call_deadline_is_shared_and_not_restarted_on_failover(monkeypatch):
     from app.services import model_client
 
-    monkeypatch.setattr(
-        model_client,
-        "limits_for",
-        lambda _: model_client.TaskLimits(
-            timeout_s=0.03,
-            max_tokens=3000,
-            low_reasoning=False,
-        ),
-    )
+    original_timeout = asyncio.timeout
+    deadlines = []
+
+    def capture_timeout(seconds):
+        deadline = original_timeout(seconds)
+        deadlines.append(deadline)
+        return deadline
+
+    monkeypatch.setattr(model_client.asyncio, "timeout", capture_timeout)
     finish = AsyncMock()
     monkeypatch.setattr(ai_usage, "finish", finish)
     seen = []
 
     async def handler(request):
         seen.append(request)
-        await asyncio.sleep(0.02 if len(seen) == 1 else 1)
+        if len(seen) == 2:
+            assert len(deadlines) == 1
+            # Expire the actual encompassing deadline deterministically,
+            # independent of scheduling/CPU load on Windows or in CI.
+            deadlines[0].reschedule(asyncio.get_running_loop().time())
+            await asyncio.Event().wait()
         return httpx.Response(429)
 
     with pytest.raises(model_client.ModelTimeoutError):
         await call(OpenAIChatClient(transport=httpx.MockTransport(handler)))
     assert len(seen) == 2
+    assert len(deadlines) == 1
     assert finish.await_count == 2
     assert finish.call_args_list[-1].args[1] is None
 
