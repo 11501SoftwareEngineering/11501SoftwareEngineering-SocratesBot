@@ -175,7 +175,9 @@ Progress references must identify an existing positive student exchange. Invalid
 
 ## Default model selection
 
-The configured defaults for `OPENAI_MODEL` and `OPENAI_VALIDITY_MODEL` are `openai/gpt-6.1-sol`, as selected by the project owner. Existing environment overrides still win. Saved teacher/topic selections also remain unchanged. Validity, status, planning, context compression, progress catch-up, personal reports and class synthesis use the saved activity model, falling back to OPENAI_MODEL only when absent. OPENAI_VALIDITY_MODEL remains accepted for configuration compatibility but no longer controls course dialogue. New report source snapshots and summary requests retain the resolved model; legacy pending snapshots acquire it once from their topic. Credentials are looked up at execution and never frozen in evidence/attempt JSON. This is configuration compatibility with the existing catalog/tokenizer mapping, not a live OpenRouter availability or output-quality certification.
+The configured defaults for `OPENAI_MODEL` and `OPENAI_VALIDITY_MODEL` are `openai/gpt-6-luna`, as selected by the project owner. Existing environment overrides still win. Saved teacher/topic selections also remain unchanged. Validity, status, planning, context compression, progress catch-up, personal reports and class synthesis use the saved activity model, falling back to OPENAI_MODEL only when absent. OPENAI_VALIDITY_MODEL remains accepted for configuration compatibility but no longer controls course dialogue. New report source snapshots and summary requests retain the resolved model; legacy pending snapshots acquire it once from their topic. Credentials are looked up at execution and never frozen in evidence/attempt JSON. This is configuration compatibility with the existing catalog/tokenizer mapping, not a live OpenRouter availability or output-quality certification.
+
+`GET /users/me/ai/settings` returns the effective catalog-backed default model: the teacher's saved choice when present, otherwise `OPENAI_MODEL`. This also applies to new teachers with no settings row and teachers who have saved only an API key. Reads do not persist a model selection or change credentials. If the resolved model is absent from the catalog, `default_model` remains null; stale explicit choices are not silently replaced.
 
 
 ## Native individual reports (Chunk05)
@@ -397,7 +399,7 @@ Published aggregate fields remain `overview`, `viewpoint_summary`, `groups` (`na
 
 ### 6. Configuration changes, rollout and validation boundaries
 
-Teacher-selected model is used consistently across dialogue tasks, personal reports and class synthesis. Default model is `openai/gpt-6.1-sol` absent explicit/saved/environment overrides. `OPENAI_VALIDITY_MODEL` remains accepted for configuration compatibility but no longer selects a separate course-dialogue validity model. Report/synthesis attempts capture the selected model; credentials are resolved at execution and never stored in public evidence.
+Teacher-selected model is used consistently across dialogue tasks, personal reports and class synthesis. Default model is `openai/gpt-6-luna` absent explicit/saved/environment overrides. `OPENAI_VALIDITY_MODEL` remains accepted for configuration compatibility but no longer selects a separate course-dialogue validity model. Report/synthesis attempts capture the selected model; credentials are resolved at execution and never stored in public evidence.
 
 Course owner's personal credential takes priority; otherwise the single server credential is used. No new credential fields are required in these frontend calls, no teacher-to-server failover occurs after provider failure, and no rotating key pool is included (PR266 deferred).
 

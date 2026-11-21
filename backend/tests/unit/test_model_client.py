@@ -283,7 +283,7 @@ async def test_course_setup_times_out_as_a_model_timeout(
 def test_default_model_is_a_valid_openrouter_id() -> None:
     field = type(settings).model_fields["OPENAI_MODEL"]
 
-    assert field.default == "openai/gpt-6.1-sol"
+    assert field.default == "openai/gpt-6-luna"
 
 
 async def test_opening_has_own_schema_key_and_task_limits():

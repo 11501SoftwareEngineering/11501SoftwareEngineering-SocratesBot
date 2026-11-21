@@ -8,12 +8,15 @@ from datetime import UTC, datetime
 
 import pytest
 
+from app.core.config import settings
 from app.core.enums import UserRole
 from app.core.security import decrypt_api_key
 from tests.api.v1.conftest import bearer_from, seed_user
 
 _KNOWN_MODEL = "openai/gpt-6-luna"
 _KNOWN_NAME = "GPT-6 Luna"
+_OTHER_MODEL = "openai/gpt-6.1-sol"
+_OTHER_NAME = "GPT-6.1 Sol"
 
 
 @dataclass
@@ -36,7 +39,10 @@ class _Memory:
 
 
 def _install(monkeypatch: pytest.MonkeyPatch, memory: _Memory) -> None:
-    catalog = {_KNOWN_MODEL: _Model(model_id=_KNOWN_MODEL, name=_KNOWN_NAME)}
+    catalog = {
+        _KNOWN_MODEL: _Model(model_id=_KNOWN_MODEL, name=_KNOWN_NAME),
+        _OTHER_MODEL: _Model(model_id=_OTHER_MODEL, name=_OTHER_NAME),
+    }
 
     async def get_settings(_db, user_id: uuid.UUID) -> _Row | None:
         return memory.rows.get(user_id)
@@ -90,6 +96,67 @@ def _reject_raw_key(text: str, secret: str) -> None:
 
 def _key(width: int) -> str:
     return "a" * width
+
+
+@pytest.mark.parametrize("has_key", [False, True], ids=["new-teacher", "key-only"])
+@pytest.mark.parametrize(
+    ("default_id", "default_name"),
+    [(_KNOWN_MODEL, _KNOWN_NAME), (_OTHER_MODEL, _OTHER_NAME)],
+    ids=["luna-default", "server-override"],
+)
+def test_settings_show_effective_default_without_saving_a_teacher_selection(
+    auth_client, store, monkeypatch, has_key, default_id, default_name
+) -> None:
+    memory = _Memory()
+    _install(monkeypatch, memory)
+    monkeypatch.setattr(settings, "OPENAI_MODEL", default_id)
+    teacher = seed_user(store, account_id="ai-default", role=UserRole.TEACHER)
+    if has_key:
+        memory.rows[teacher.id] = _Row(
+            api_key_ciphertext="stored-ciphertext",
+            masked_key="aaa...aaaa",
+            key_updated_at=datetime.now(UTC),
+        )
+    response = auth_client.get(
+        "/api/v1/users/me/ai/settings",
+        headers={"Authorization": _login(auth_client, "ai-default")},
+    )
+    assert response.status_code == 200
+    assert response.json()["default_model"] == {
+        "id": default_id,
+        "name": default_name,
+    }
+    assert response.json()["configured"] is has_key
+    if has_key:
+        assert memory.rows[teacher.id].default_model_id is None
+        assert memory.rows[teacher.id].api_key_ciphertext == "stored-ciphertext"
+    else:
+        assert teacher.id not in memory.rows
+
+
+@pytest.mark.parametrize(
+    ("saved_id", "expected"),
+    [
+        (_OTHER_MODEL, {"id": _OTHER_MODEL, "name": _OTHER_NAME}),
+        ("openai/removed-model", None),
+    ],
+    ids=["saved-choice-wins", "unavailable-choice-stays-unavailable"],
+)
+def test_settings_preserve_explicit_teacher_model(
+    auth_client, store, monkeypatch, saved_id, expected
+) -> None:
+    memory = _Memory()
+    _install(monkeypatch, memory)
+    monkeypatch.setattr(settings, "OPENAI_MODEL", _KNOWN_MODEL)
+    teacher = seed_user(store, account_id="ai-saved", role=UserRole.TEACHER)
+    memory.rows[teacher.id] = _Row(default_model_id=saved_id)
+    response = auth_client.get(
+        "/api/v1/users/me/ai/settings",
+        headers={"Authorization": _login(auth_client, "ai-saved")},
+    )
+    assert response.status_code == 200
+    assert response.json()["default_model"] == expected
+    assert memory.rows[teacher.id].default_model_id == saved_id
 
 
 def test_teacher_saves_reads_and_removes_key_and_keeps_default_model(
