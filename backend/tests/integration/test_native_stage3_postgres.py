@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from app.crud import session as session_crud
 from app.crud import summary as summary_crud
+from app.models.course import CourseInstructor
 from app.models.report_attempt import ReportAttempt
 from app.models.session import Session
 from app.models.user import User
@@ -30,6 +31,7 @@ def test_native_cohort_publication_and_entry_gate(monkeypatch):
     async def run():
         async with session_test_db() as db:
             course, topic = await create_course_and_topic(db, stage="conversation")
+            db.add(CourseInstructor(course_id=course.id, teacher_id=course.created_by))
             for key, value in vars(inputs()[1]).items():
                 setattr(topic, key, value)
             student = await create_student(db)
