@@ -26,7 +26,12 @@ from app.services.dialogue_context import (
     UnsupportedModelTokenizerError,
     build_bounded_context,
 )
-from app.services.dialogue_turn import TurnPrompts, question_before, run_turn
+from app.services.dialogue_turn import (
+    TurnPrompts,
+    catch_up_progress,
+    question_before,
+    run_turn,
+)
 from app.services.model_client import ModelCallError, ModelClient
 
 # ponytail: one process. A second worker will not see this lock; a DB lease is the upgrade.
@@ -261,6 +266,11 @@ async def _ask_and_store(
 ) -> StreamDone:
     reply_prompt = prompt_for(PromptStage.DIALOGUE)
     summary_prompt = prompt_for(PromptStage.DIALOGUE_CONTEXT_SUMMARY)
+    turn_prompts = TurnPrompts(
+        validity=prompt_for(PromptStage.VALIDITY),
+        status=prompt_for(PromptStage.STATUS),
+        dialogue=reply_prompt,
+    )
     model_id = topic.model_id or settings.OPENAI_MODEL
     try:
         # The loaded ORM objects remain usable because expire_on_commit is false.
@@ -278,18 +288,23 @@ async def _ask_and_store(
                 summary=summary_prompt,
             ),
         )
+        previous_progress = _progress_of(session)
+        if previous_progress is None and _turn_count(messages) > 0:
+            previous_progress = await catch_up_progress(
+                client,
+                prompt=turn_prompts.status,
+                topic=topic,
+                messages=messages,
+                model_id=model_id,
+            )
         turn = await run_turn(
             client,
-            prompts=TurnPrompts(
-                validity=prompt_for(PromptStage.VALIDITY),
-                status=prompt_for(PromptStage.STATUS),
-                dialogue=reply_prompt,
-            ),
+            prompts=turn_prompts,
             topic=topic,
             question=question_before(messages, topic.core_question or ""),
             latest=content,
             transcript_material=bounded.material,
-            previous_progress=_progress_of(session),
+            previous_progress=previous_progress,
             exchange=_turn_count(messages) + 1,
             model_id=model_id,
             validity_model=settings.OPENAI_VALIDITY_MODEL,
