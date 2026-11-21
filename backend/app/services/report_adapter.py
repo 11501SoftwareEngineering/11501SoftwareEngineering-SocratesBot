@@ -15,7 +15,7 @@ from app.services.dialogue_turn import ProgressOut, brief_of
 
 class NativeSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    outcome: Literal["complete", "partial", "interrupted"]
+    outcome: Literal["complete", "partial", "interrupted", "inconclusive"]
     workingPosition: str = Field(max_length=1800)
     strongestReason: str = Field(max_length=1800)
     challengeExamined: str = Field(max_length=1800)
@@ -31,7 +31,7 @@ NATIVE_SCHEMA["properties"]["unmetElements"]["items"]["maxLength"] = 800
 
 
 def source_snapshot(session, topic, messages, progress: dict | None) -> dict:
-    if session.outcome != "completed":
+    if session.outcome not in {"completed", "ended"}:
         raise ValueError("Report source is not completed")
     transcript, exchanges = [], []
     turn, question = 0, topic.opening_message or ""
@@ -79,7 +79,9 @@ def source_snapshot(session, topic, messages, progress: dict | None) -> dict:
                     "approvedInquiryBrief": brief_of(topic),
                     "transcript": transcript,
                     "finalProgress": progress,
-                    "endingReason": "completed",
+                    "endingReason": getattr(session, "ending_reason", None)
+                    or "completed",
+                    "goalReached": getattr(session, "goal_reached", False),
                 },
                 "exchanges": exchanges,
                 "completed_at": session.completed_at.isoformat()
@@ -108,7 +110,17 @@ def project_summary(raw: dict, source: dict) -> tuple[dict, dict]:
     structurally_ready = bool(
         progress and validate_progress(progress, len(exchanges)).structurally_ready
     )
-    evidence = "insufficient" if not exchanges else "partial"
+    if native.outcome == "inconclusive" and (
+        not native.reflection.strip() or not native.unmetElements
+    ):
+        raise ValueError(
+            "Inconclusive report must explain observed evidence and limitations"
+        )
+    evidence = (
+        "insufficient"
+        if not exchanges or native.outcome == "inconclusive"
+        else "partial"
+    )
     if (
         structurally_ready
         and native.outcome == "complete"

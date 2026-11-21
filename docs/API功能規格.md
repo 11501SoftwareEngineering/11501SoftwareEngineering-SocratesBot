@@ -412,19 +412,19 @@ version: 0.2
 - 功能說明: 達成探究目標時學生同意結束或選擇繼續；或退出探究（outcome 標記 `abandoned`，不列完成、不產生報告）
 - 呼叫方式: POST /sessions/{sessionId}/end
 - 授權: 本人
-- 輸入資料: `action`（`complete` / `continue` / `abandon`）
+- 輸入資料: `action`（`complete` / `continue` / `abandon` / `finish`）
 - 成功回應: `session_id`, `session_status`, `message`
 - 錯誤:
     - 動作值無效 (422)
     - 查無此對話或非本人 (404)
-    - 對話已結束（已完成或已退出），無法再變更 (400)
+    - 重複相同結束動作為200；已結束後要求不相容動作為409
     - 尚未達成探究目標就要求 `complete`，或其他回覆仍在進行中 (409)
 
-`continue` 清除 consent 但保留已達成的 goal，不增加回合上限。`complete` 不會排程報告，必須另呼叫 POST report。未達標且用完回合目前仍不能完成／產生報告；提早結束報告是待團隊批准的另案，不是現有 API。
+`continue` 清除 consent 但保留已達成的 goal，不增加回合上限。`complete` 與 `finish` 結束交易時自動建立 pending 報告。`finish` 至少三次學生回答，否則409；不要求 goal_reached。最後允許的回合由後端自動設 outcome=ended、ending_reason=turn_limit，並排程報告，不需前端再呼叫 end。finish 的 reason=student_requested_stop。goal 保留原值；證據不足不阻擋報告。此為 Chunk06 分支契約，需審核、migration、部署後採用。
 
 ### 啟動本人個人報告
 - 呼叫方式: POST /sessions/{sessionId}/report
-- 授權: 本人；outcome 必須為 `completed`
+- 授權: 本人；outcome 必須為 `completed` 或 `ended`
 - 輸入資料: 無
 - 成功回應: HTTP 200，`report_status`, `report`
 - 無 attempt、最新失敗或 pending/processing lease 過期：新增 attempt 並排程。仍有效的 pending/processing 或 ready：直接沿用，不強制重新生成
@@ -437,7 +437,7 @@ version: 0.2
 - 授權: 本人
 - 輸入資料: 無
 - 成功回應: `report_status`（`pending` / `processing` / `ready` / `failed`）, `report`（最新可用的 ready 內容，沒有則 null；最新 attempt 失敗／處理中仍可能帶較早的 ready 內容）包含
-    - 目前識別及完成資訊: `report_id`, `version`（目前固定 1）, `session_id`, `topic_id`, `completed_turns`, `completion_reason`（目前為 completed）
+    - 目前識別及完成資訊: `report_id`, `version`（目前固定 1）, `session_id`, `topic_id`, `completed_turns`, `completion_reason`（goal_reached / student_requested_stop / turn_limit；舊資料可能為 completed）
     - `completed_at` 使用伺服器記錄的對話完成時間（舊資料可能省略）；`anonymous_id` 尚待定義匿名代碼範圍，前端不可假設存在
     - `viewpoint_summary`, `final_viewpoint`, `viewpoint_status`
     - `reasons`, `strongest_reason`, `challenges`[`challenge`, `responded`], `revision_or_defense`, `focus_connection`, `other_perspectives`, `open_questions`
@@ -673,3 +673,9 @@ version: 0.2
 ## 模型與語言設定補充（Chunk02）
 
 建立題目可明確傳入 `model_id`、`content_language`。老師或助教建立時，未指定模型則使用課程建立老師的預設模型，再回退到伺服器設定；失效的已儲存模型回應422。此規則不改變金鑰擁有者。PUT setup 與 POST publish 可傳入上述兩個選填欄位；省略保留原值，null／空白無效。設定讀取、儲存、AI產生、修訂、開場白允許該課程老師或有 edit_topics 的助教；發布僅允許該課程老師。
+
+### Chunk06 frontend ending contract
+
+History/end/SSE done add `report_eligible`, `ending_reason`, `can_finish_early`; SSE done also adds `session_status` and `goal_reached`. `ended` is a new outcome. Do not rely only on `is_completed` to navigate to reports. Report adds `ended_at`, `goal_reached`; teaching list adds `ended_count`. `completed_count` remains successful completions.
+
+Inconclusive reports retain the full report structure, with `evidence_status=insufficient`, observations and `limitations`. A useful partial summary is preferred; missing milestones alone are not inconclusive. `report_status=ready` means generation succeeded, not that learning goals were reached. GET polls automatically started reports; POST retries/reuses or starts legacy missing attempts. No report is created merely by closing the browser. Full sequence charts: [AI_BACKEND_CONTRACT.md](AI_BACKEND_CONTRACT.md).

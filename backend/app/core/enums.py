@@ -38,16 +38,18 @@ class MessageSender(StrEnum):
 
 
 class DialogueAction(StrEnum):
-    """complete | continue | abandon"""
+    """complete | continue | abandon | finish"""
 
     COMPLETE = "complete"
     CONTINUE = "continue"
     ABANDON = "abandon"
+    FINISH = "finish"
 
 
 class DialogueOutcome(StrEnum):
-    """open | completed | abandoned | closed_by_summary"""
+    """open | completed | ended | abandoned | closed_by_summary"""
 
+    ENDED = "ended"
     OPEN = "open"
     COMPLETED = "completed"
     ABANDONED = "abandoned"

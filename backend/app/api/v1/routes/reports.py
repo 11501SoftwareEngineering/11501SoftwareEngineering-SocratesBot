@@ -29,7 +29,7 @@ async def read_student_report(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> StudentReportResponse:
-    """Poll the owner's completed dialogue report; never starts generation.
+    """Poll the owner's report-eligible dialogue report; never starts generation.
 
     Before any attempt exists this returns 404. report_status describes the latest
     attempt; report can retain an older ready body during a later failed retry.
@@ -49,7 +49,7 @@ async def start_student_report(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> StudentReportResponse:
-    """Start or reuse a report for an outcome=completed dialogue.
+    """Start or reuse a report for an outcome=completed or ended dialogue.
 
     Reuse ready or unexpired pending/processing attempts. Insert and schedule an
     attempt when none exists, the newest failed, or its running lease expired.

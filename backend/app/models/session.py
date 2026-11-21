@@ -31,7 +31,7 @@ class Session(Base):
             name="status",
         ),
         CheckConstraint(
-            "outcome IN ('open', 'completed', 'abandoned', 'closed_by_summary')",
+            "outcome IN ('open', 'completed', 'ended', 'abandoned', 'closed_by_summary')",
             name="outcome",
         ),
         CheckConstraint(
@@ -88,6 +88,10 @@ class Session(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ending_reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

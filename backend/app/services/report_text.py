@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from app.core.enums import DialogueOutcome, GenerationStatus
+from app.core.enums import GenerationStatus
 from app.schemas.report import ReportProjection
+from app.services.dialogue_lifecycle import REPORT_OUTCOMES
 
 
 def report_start(outcome: str, newest_status: str | None) -> str:
     """Return ``reject``, ``reuse``, or ``insert``."""
-    if outcome != DialogueOutcome.COMPLETED.value:
+    if outcome not in REPORT_OUTCOMES:
         return "reject"
     if newest_status in {
         GenerationStatus.PENDING.value,
@@ -65,6 +66,9 @@ def student_report(
     topic_id: str,
     completed_turns: int,
     completed_at: str | None = None,
+    ending_reason: str = "completed",
+    ended_at: str | None = None,
+    goal_reached: bool | None = None,
 ) -> dict:
     """Shape one report attempt for the student read."""
     report = None
@@ -75,7 +79,9 @@ def student_report(
             "session_id": session_id,
             "topic_id": topic_id,
             "completed_turns": completed_turns,
-            "completion_reason": "completed",
+            "completion_reason": ending_reason,
+            "ended_at": ended_at,
+            "goal_reached": goal_reached,
             **({"completed_at": completed_at} if completed_at else {}),
             **body,
         }

@@ -19,12 +19,18 @@ from app.schemas.dialogue import (
     EndDialogueResponse,
     StreamDone,
 )
+from app.services import report_runner
 from app.services.dialogue_context import (
     ContextWindowExceeded,
     DialogueContextCheckpoint,
     DialogueContextPrompts,
     UnsupportedModelTokenizerError,
     build_bounded_context,
+)
+from app.services.dialogue_lifecycle import (
+    MIN_FINISH_TURNS,
+    REPORT_OUTCOMES,
+    lifecycle_fields,
 )
 from app.services.dialogue_turn import (
     TurnPrompts,
@@ -33,6 +39,7 @@ from app.services.dialogue_turn import (
     run_turn,
 )
 from app.services.model_client import ModelCallError, ModelClient
+from app.services.reports import queue_ending_report
 
 # ponytail: one process. A second worker will not see this lock; a DB lease is the upgrade.
 _BUSY: set[UUID] = set()
@@ -108,6 +115,7 @@ def apply_end(
     outcome: str,
     status_value: str,
     goal_reached: bool,
+    completed_turns: int = 0,
 ) -> _End:
     """Return outcome, status, goal_reached, awaiting_end_consent, message."""
     if outcome != DialogueOutcome.OPEN.value:
@@ -116,7 +124,21 @@ def apply_end(
         return _complete(goal_reached)
     if action == DialogueAction.CONTINUE:
         return _continue(status_value, goal_reached)
-    return _abandon()
+    if action == DialogueAction.FINISH:
+        if completed_turns < MIN_FINISH_TURNS:
+            raise ReplyRejected(
+                "Finish early requires three student answers", status.HTTP_409_CONFLICT
+            )
+        return (
+            "ended",
+            SessionStatus.IN_PROGRESS.value,
+            goal_reached,
+            False,
+            "Dialogue ended early",
+        )
+    if action == DialogueAction.ABANDON:
+        return _abandon()
+    raise ReplyRejected("Unknown ending action")
 
 
 def _progress_of(session: Session) -> dict | None:
@@ -186,6 +208,7 @@ def _history(
         goal_reached=session.goal_reached,
         awaiting_end_consent=session.awaiting_end_consent,
         current_progress=_progress_of(session),
+        **lifecycle_fields(session, _turn_count(messages)),
     )
 
 
@@ -196,8 +219,17 @@ def _stream(
     completed_turns: int,
     is_completed: bool,
     awaiting_end_consent: bool,
+    session_status: str = "open",
+    goal_reached: bool = False,
+    ending_reason: str | None = None,
 ) -> StreamDone:
     return StreamDone(
+        session_status=session_status,
+        goal_reached=goal_reached,
+        ending_reason=ending_reason,
+        report_eligible=session_status in REPORT_OUTCOMES,
+        can_finish_early=session_status == "open"
+        and completed_turns >= MIN_FINISH_TURNS,
         message_id=message_id,
         text=text,
         completed_turns=completed_turns,
@@ -360,7 +392,24 @@ async def _ask_and_store(
             },
             progress=turn.progress,
         )
+        cap_reached = (
+            topic.max_turns is not None and _turn_count(messages) + 1 >= topic.max_turns
+        )
+        pending = None
+        if cap_reached:
+            await message_crud.save_end(
+                db,
+                session_id=session.id,
+                outcome="ended",
+                status=SessionStatus.IN_PROGRESS.value,
+                goal_reached=goal_reached,
+                awaiting_end_consent=False,
+                ending_reason="turn_limit",
+            )
+            pending = await queue_ending_report(db, session.id, turn.progress)
         await db.commit()
+        if pending is not None:
+            report_runner.schedule(pending.id)
     except ContextWindowExceeded as exc:
         await db.rollback()
         raise HTTPException(
@@ -384,7 +433,10 @@ async def _ask_and_store(
         text=text,
         completed_turns=_turn_count(messages) + 1,
         is_completed=False,
-        awaiting_end_consent=goal_reached,
+        awaiting_end_consent=goal_reached and not cap_reached,
+        session_status="ended" if cap_reached else "open",
+        goal_reached=goal_reached,
+        ending_reason="turn_limit" if cap_reached else None,
     )
 
 
@@ -428,6 +480,9 @@ async def send_reply(
             completed_turns=_turn_count(messages),
             is_completed=session.outcome == DialogueOutcome.COMPLETED.value,
             awaiting_end_consent=session.awaiting_end_consent,
+            session_status=session.outcome,
+            goal_reached=session.goal_reached,
+            ending_reason=getattr(session, "ending_reason", None),
         )
     try:
         guard_reply(
@@ -460,19 +515,34 @@ async def end_dialogue(
     session_id: UUID,
     action: str,
 ) -> EndDialogueResponse:
-    """Complete, continue, or abandon this student's dialogue.
+    """Complete, finish early, continue, or abandon this student's dialogue.
 
     Raises:
-        HTTPException: 404 if the session is missing; 400 if it has already
-            ended; 409 if complete is requested before the goal is met.
+        HTTPException: 404 if missing; 409 for a conflicting ending, an unmet
+            complete/finish prerequisite, or an in-process reply.
     """
-    session, _topic, _messages = await _owned(
-        db, user_id=user_id, session_id=session_id
-    )
+    await _owned(db, user_id=user_id, session_id=session_id)
     if session_id in _BUSY:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Another reply is in progress",
+        raise HTTPException(status_code=409, detail="Another reply is in progress")
+    # The same row lock as reply persistence makes the cutoff stable across workers.
+    session = await message_crud.lock_session(db, session_id)
+    if session is None or session.user_id != user_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    turns = await message_crud.count_student_turns(db, session_id)
+    same_end = (
+        (action == "complete" and session.outcome == "completed")
+        or (action == "finish" and session.outcome == "ended")
+        or (action == "abandon" and session.outcome == "abandoned")
+    )
+    if session.outcome != "open":
+        if not same_end:
+            raise HTTPException(status_code=409, detail="Dialogue has already ended")
+        return EndDialogueResponse(
+            session_id=session_id,
+            session_status=session.outcome,
+            message="Dialogue has already ended",
+            goal_reached=session.goal_reached,
+            **lifecycle_fields(session, turns),
         )
     try:
         outcome, status_value, goal_reached, awaiting, message = apply_end(
@@ -480,9 +550,13 @@ async def end_dialogue(
             outcome=session.outcome,
             status_value=session.status,
             goal_reached=session.goal_reached,
+            completed_turns=turns,
         )
     except ReplyRejected as exc:
         raise _rejected(exc) from exc
+    reason = {"complete": "goal_reached", "finish": "student_requested_stop"}.get(
+        action
+    )
     await message_crud.save_end(
         db,
         session_id=session_id,
@@ -490,10 +564,20 @@ async def end_dialogue(
         status=status_value,
         goal_reached=goal_reached,
         awaiting_end_consent=awaiting,
+        ending_reason=reason,
     )
+    pending = None
+    if outcome in REPORT_OUTCOMES:
+        pending = await queue_ending_report(db, session_id, _progress_of(session))
     await db.commit()
+    if pending is not None:
+        report_runner.schedule(pending.id)
     return EndDialogueResponse(
         session_id=session_id,
         session_status=outcome,
         message=message,
+        goal_reached=goal_reached,
+        report_eligible=outcome in REPORT_OUTCOMES,
+        ending_reason=reason,
+        can_finish_early=outcome == "open" and turns >= MIN_FINISH_TURNS,
     )

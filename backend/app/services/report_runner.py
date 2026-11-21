@@ -91,7 +91,7 @@ async def run_report(attempt_id: UUID) -> None:
             prompt.version,
             {
                 "native_summary": native,
-                "report_schema_version": "native-summary-v1",
+                "report_schema_version": "native-summary-v2",
                 "model_id": model_id,
                 "source_digest": source_digest(source),
             },
