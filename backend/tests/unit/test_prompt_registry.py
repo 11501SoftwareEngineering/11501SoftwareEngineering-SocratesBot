@@ -31,7 +31,7 @@ def test_every_prompt_stage_has_versioned_instructions_and_output_limit() -> Non
 async def test_dialogue_prompt_is_sent_as_system_with_strict_schema_and_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr("sk-test"))
+    monkeypatch.setattr(settings, "OPENAI_API_KEYS", SecretStr("sk-test"))
     seen: dict = {}
 
     def respond(request: httpx.Request) -> httpx.Response:

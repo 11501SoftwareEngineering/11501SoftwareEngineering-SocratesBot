@@ -70,8 +70,12 @@ class Settings(BaseSettings):
     COOKIE_SAMESITE: NonEmptyStr = "none"
 
     # LLM API via OpenRouter. The model id stays in server config; clients never send or read it.
-    OPENAI_API_KEY: SecretStr
-    ANTHROPIC_API_KEY: SecretStr
+    # Comma-separated server OpenRouter keys. Server-funded calls rotate across
+    # them, used when the course teacher has stored no key of their own.
+    # A teacher's own key never joins the rotation.
+    OPENAI_API_KEYS: SecretStr = SecretStr("")
+    # Seconds a key cools after a 429 or 402 that has no Retry-After header.
+    OPENAI_KEY_COOLDOWN_SECONDS: Annotated[float, Field(gt=0)] = 60
     OPENAI_MODEL: NonEmptyStr = "openai/gpt-6-luna"
     # Fast model for the Stage 2 validity gate, which runs on every student turn.
     OPENAI_VALIDITY_MODEL: NonEmptyStr = "openai/gpt-6-luna"

@@ -9,10 +9,12 @@ from app.models.topic import Topic
 from app.services.dialogue import (
     ReplyRejected,
     _history,
+    _model_http,
     apply_end,
     guard_reply,
 )
 from app.services.dialogue_context import reply_material
+from app.services.model_client import ModelCallError, ModelKeysExhausted
 
 
 def test_complete_before_the_goal_stays_open() -> None:
@@ -133,3 +135,17 @@ def test_reply_material_omits_the_student_and_uses_unspecified() -> None:
     with_turn = reply_material(topic, [], latest="I think the cost is public")
     assert "ai: Where should we start?" in with_turn
     assert "student: I think the cost is public" in with_turn
+
+
+def test_resting_server_keys_map_to_service_unavailable() -> None:
+    exc = _model_http(ModelKeysExhausted())
+
+    assert exc.status_code == 503
+    assert exc.detail == "Model call failed"
+
+
+def test_other_model_failures_map_to_bad_gateway() -> None:
+    exc = _model_http(ModelCallError(None))
+
+    assert exc.status_code == 502
+    assert exc.detail == "Model call failed"

@@ -225,3 +225,37 @@ async def test_default_model_builds_the_full_context(
     assert default_model == "openai/gpt-6-luna"
     assert client.summary_inputs
     assert "compare who benefits" in context.material
+
+
+async def test_summary_call_sends_the_course_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "DIALOGUE_CONTEXT_TOKEN_BUDGET", 3_000)
+    keys: list[str | None] = []
+
+    class KeyedClient(SummaryClient):
+        async def complete_object(self, **kwargs):
+            keys.append(kwargs.get("api_key"))
+            return await super().complete_object(**kwargs)
+
+    await build_bounded_context(
+        client=KeyedClient(),
+        topic=_topic(),
+        messages=_history(10),
+        latest="Compare who benefits and who pays.",
+        checkpoint=DialogueContextCheckpoint(
+            summary=None,
+            summarized_message_count=0,
+            prompt_stage=None,
+            prompt_version=None,
+        ),
+        model_id=MODEL_ID,
+        prompts=DialogueContextPrompts(
+            reply=prompt_for(PromptStage.DIALOGUE),
+            summary=prompt_for(PromptStage.DIALOGUE_CONTEXT_SUMMARY),
+        ),
+        api_key="sk-or-course-teacher",
+    )
+
+    assert keys
+    assert set(keys) == {"sk-or-course-teacher"}

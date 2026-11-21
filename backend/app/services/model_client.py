@@ -13,10 +13,13 @@ import httpx
 
 from app.core.config import settings
 from app.core.model_catalog import INQUIRY_CATALOG_MODELS
+from app.services.key_pool import KeyPool, server_key_pool
 
 logger = logging.getLogger("app.model")
 # A provider can ask for a long pause. This request does not wait past two seconds.
 _MAX_RETRY_SECONDS = 2.0
+# One call tries at most this many server keys, so a bad episode stays bounded.
+_MAX_KEYS_PER_CALL = 3
 # httpx debug logs can print the Authorization header.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpcore").setLevel(logging.WARNING)
@@ -146,9 +149,18 @@ def _outbound(instructions: str, material: str) -> tuple[str, str]:
 class ModelCallError(Exception):
     """A provider failure. The message never includes the key or the reply text."""
 
-    def __init__(self, status_code: int | None) -> None:
+    def __init__(
+        self, status_code: int | None, message: str = "model call failed"
+    ) -> None:
         self.status_code = status_code
-        super().__init__("model call failed")
+        super().__init__(message)
+
+
+class ModelKeysExhausted(ModelCallError):
+    """Every server key is cooling for the model. Callers map 429 to HTTP 503."""
+
+    def __init__(self) -> None:
+        super().__init__(429, "all model keys are cooling down")
 
 
 class ModelTimeoutError(ModelCallError):
@@ -216,6 +228,7 @@ class ModelClient(Protocol):
         material: str,
         model: str | None = None,
         max_tokens: int | None = None,
+        api_key: str | None = None,
     ) -> tuple[str, bool]: ...
 
     async def complete_object(
@@ -227,12 +240,19 @@ class ModelClient(Protocol):
         material: str,
         model: str | None = None,
         max_tokens: int | None = None,
+        api_key: str | None = None,
     ) -> dict: ...
 
 
 class OpenAIChatClient:
-    def __init__(self, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    def __init__(
+        self,
+        transport: httpx.AsyncBaseTransport | None = None,
+        key_pool: KeyPool | None = None,
+    ) -> None:
         self._transport = transport
+        # Without an injected pool, each call reads the shared server pool.
+        self._key_pool = key_pool
 
     async def complete_json(
         self,
@@ -282,6 +302,7 @@ class OpenAIChatClient:
         material: str,
         model: str | None = None,
         max_tokens: int | None = None,
+        api_key: str | None = None,
     ) -> dict:
         return await self._post(
             name=name,
@@ -290,6 +311,7 @@ class OpenAIChatClient:
             material=material,
             model=model,
             max_tokens=max_tokens,
+            api_key=api_key,
         )
 
     async def complete_reply(
@@ -299,6 +321,7 @@ class OpenAIChatClient:
         material: str,
         model: str | None = None,
         max_tokens: int | None = None,
+        api_key: str | None = None,
     ) -> tuple[str, bool]:
         parsed = await self._post(
             name="dialogue_reply",
@@ -307,6 +330,7 @@ class OpenAIChatClient:
             material=material,
             model=model,
             max_tokens=max_tokens,
+            api_key=api_key,
         )
         reply = parsed.get("reply")
         goal_reached = parsed.get("goal_reached")
@@ -327,11 +351,6 @@ class OpenAIChatClient:
     ) -> dict:
         limits = limits_for(name)
         model_id = model or settings.OPENAI_MODEL
-        key = (
-            api_key
-            if api_key is not None
-            else settings.OPENAI_API_KEY.get_secret_value()
-        )
         system, user = _outbound(instructions, material)
         payload: dict[str, Any] = {
             "model": model_id,
@@ -354,10 +373,21 @@ class OpenAIChatClient:
         }
         if limits.low_reasoning and model_id in REASONING_MODELS:
             payload["reasoning"] = {"effort": "low"}
-        headers = {"Authorization": f"Bearer {key}"}
+        timeout_s = limits.timeout_s
         try:
-            async with asyncio.timeout(limits.timeout_s):
-                response = await self._send(payload, headers, limits.timeout_s)
+            # The time limit covers the whole call, key failover included.
+            async with asyncio.timeout(timeout_s):
+                if api_key is not None:
+                    response = await self._send_with_key(api_key, payload, timeout_s)
+                else:
+                    pool = (
+                        self._key_pool
+                        if self._key_pool is not None
+                        else server_key_pool()
+                    )
+                    response = await self._send_with_pool(
+                        pool, model_id, payload, timeout_s
+                    )
         except TimeoutError:
             logger.info("model provider timed out")
             raise ModelTimeoutError() from None
@@ -366,48 +396,139 @@ class OpenAIChatClient:
             raise ModelCallError(response.status_code) from None
         return _parse_completion(response)
 
-    async def _send(
-        self, payload: dict[str, Any], headers: dict[str, str], timeout_s: float
+    async def _send_with_key(
+        self, key: str, payload: dict[str, Any], timeout_s: float
     ) -> httpx.Response:
-        response: httpx.Response | None = None
-        for attempt in (1, 2):
-            try:
-                async with httpx.AsyncClient(
-                    transport=self._transport, timeout=timeout_s
-                ) as client:
-                    response = await client.post(
-                        f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
-                        headers=headers,
-                        json=payload,
-                    )
-            except httpx.HTTPError:
-                logger.info("model provider status unavailable")
-                raise ModelCallError(None) from None
-            delay = _retry_delay(response)
-            if (
-                response.status_code in {429, 503}
-                and attempt == 1
-                and delay is not None
-            ):
-                if delay:
-                    await asyncio.sleep(delay)
-                continue
-            break
-        assert response is not None
+        """One key, one short retry: a teacher key or a one-key server pool."""
+        response = await self._send(key, payload, timeout_s)
+        delay = _retry_delay(response)
+        if response.status_code in {429, 503} and delay is not None:
+            await _pause(delay)
+            response = await self._send(key, payload, timeout_s)
         return response
 
+    async def _send_with_pool(
+        self, pool: KeyPool, model: str, payload: dict[str, Any], timeout_s: float
+    ) -> httpx.Response:
+        """Fail over across server keys. A key that hit its limit cools for the model."""
+        if len(pool) == 0:
+            logger.info("model provider status unavailable; no server key")
+            raise ModelCallError(None)
+        picked = pool.pick(model)
+        if picked is None:
+            raise _keys_exhausted()
+        index, key = picked
+        if len(pool) == 1:
+            # Cooling the only key would fail every later call without a request.
+            return await self._send_with_key(key, payload, timeout_s)
+        budget = min(len(pool), _MAX_KEYS_PER_CALL)
+        tried = {index}
+        retried = False
+        while True:
+            response = await self._send(key, payload, timeout_s)
+            delay = _retry_delay(response)
+            if not _key_hit_limit(response):
+                # Here a 429 is provider-scoped, so a key switch would not help.
+                if (
+                    response.status_code in {429, 503}
+                    and delay is not None
+                    and not retried
+                ):
+                    retried = True
+                    await _pause(delay)
+                    continue
+                return response
+            pool.cool(index, model, _cooldown_seconds(response))
+            logger.info(
+                "model provider status %s; key %s cooling",
+                response.status_code,
+                index,
+            )
+            following = pool.pick(model, exclude=tried) if len(tried) < budget else None
+            if following is not None:
+                index, key = following
+                tried.add(index)
+                continue
+            if (
+                response.status_code == 429
+                and delay is not None
+                and not retried
+                and not pool.any_healthy(model, exclude=tried)
+            ):
+                retried = True
+                await _pause(delay)
+                continue
+            if not pool.any_healthy(model):
+                raise _keys_exhausted()
+            return response
 
-def _retry_delay(response: httpx.Response) -> float | None:
+    async def _send(
+        self, key: str, payload: dict[str, Any], timeout_s: float
+    ) -> httpx.Response:
+        try:
+            async with httpx.AsyncClient(
+                transport=self._transport, timeout=timeout_s
+            ) as client:
+                return await client.post(
+                    f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
+                    headers={"Authorization": f"Bearer {key}"},
+                    json=payload,
+                )
+        except httpx.HTTPError:
+            logger.info("model provider status unavailable")
+            raise ModelCallError(None) from None
+
+
+async def _pause(delay: float) -> None:
+    if delay:
+        await asyncio.sleep(delay)
+
+
+def _keys_exhausted() -> ModelKeysExhausted:
+    logger.info("model provider status unavailable; every server key cooling")
+    return ModelKeysExhausted()
+
+
+def _provider_limited(response: httpx.Response) -> bool:
+    """True when OpenRouter blames an upstream provider. Another key would not help."""
+    try:
+        metadata = response.json()["error"]["metadata"]
+        return bool(metadata.get("provider_name"))
+    except (KeyError, TypeError, AttributeError, ValueError):
+        return False
+
+
+def _key_hit_limit(response: httpx.Response) -> bool:
+    if response.status_code == 402:
+        return True
+    return response.status_code == 429 and not _provider_limited(response)
+
+
+def _retry_after(response: httpx.Response) -> float | None:
     raw = response.headers.get("Retry-After")
     if raw is None:
         return None
     try:
-        delay = float(raw)
+        seconds = float(raw)
     except ValueError:
         return None
-    if not math.isfinite(delay) or delay < 0 or delay > _MAX_RETRY_SECONDS:
+    if not math.isfinite(seconds) or seconds < 0:
         return None
-    return delay
+    return seconds
+
+
+def _retry_delay(response: httpx.Response) -> float | None:
+    seconds = _retry_after(response)
+    if seconds is None or seconds > _MAX_RETRY_SECONDS:
+        return None
+    return seconds
+
+
+def _cooldown_seconds(response: httpx.Response) -> float:
+    seconds = _retry_after(response)
+    if seconds is None:
+        return settings.OPENAI_KEY_COOLDOWN_SECONDS
+    return seconds
 
 
 def _parse_completion(response: httpx.Response) -> dict:

@@ -25,10 +25,23 @@ if not (Path(__file__).resolve().parents[1] / ".env").is_file():
         "TEACHER_API_KEY_SECRET": "test-only-teacher-api-key-secret-32",
         "JWT_ALGORITHM": "HS256",
         "ACCESS_TOKEN_EXPIRE_MINUTES": "15",
-        "OPENAI_API_KEY": "",
-        "ANTHROPIC_API_KEY": "",
+        "OPENAI_API_KEYS": "",
     }.items():
         os.environ.setdefault(key, value)
+
+
+@pytest.fixture(autouse=True)
+def isolated_server_key_pool(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Keep keys from a local .env out of tests and drop key cooldowns between tests."""
+    from pydantic import SecretStr
+
+    from app.core.config import settings
+    from app.services.key_pool import reset_server_key_pool
+
+    monkeypatch.setattr(settings, "OPENAI_API_KEYS", SecretStr(""))
+    reset_server_key_pool()
+    yield
+    reset_server_key_pool()
 
 
 @pytest.fixture

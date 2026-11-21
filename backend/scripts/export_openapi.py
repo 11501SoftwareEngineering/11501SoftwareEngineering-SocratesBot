@@ -35,8 +35,7 @@ DUMMY_ENV: dict[str, str] = {
     "TEACHER_API_KEY_SECRET": "test-only-teacher-api-key-secret-32",
     "JWT_ALGORITHM": "HS256",
     "ACCESS_TOKEN_EXPIRE_MINUTES": "15",
-    "OPENAI_API_KEY": "unused-for-openapi-export",
-    "ANTHROPIC_API_KEY": "unused-for-openapi-export",
+    "OPENAI_API_KEYS": "unused-for-openapi-export",
 }
 
 
