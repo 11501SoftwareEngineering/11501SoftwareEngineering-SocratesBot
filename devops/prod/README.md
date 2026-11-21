@@ -11,7 +11,11 @@ make -C devops db-prod
 ```
 
 Backend:
-1. At `/devops/prob`, add `.env.backend` followed by `/backend/.env.example`
+1. At `/backend/.env`, followed by `/backend/.env.example`
+2. Sync DB alembic version
+```
+make -C backend db-upgrade
+```
 2.
 To update backend to newer version
 ```
@@ -29,12 +33,17 @@ Frontend:
 make -C devops frontend-prod-build
 ```
 
-2. check if there is new build in `/frontend/dist`.
+1. check if there is new build in `/frontend/dist`.
 
 Nginx:
 1.
 ```
 make -C devops nginx-prod
+```
+
+To check containers
+```
+docker ps
 ```
 
 open your local browser and type: `https://squicrates.ssr.ntnu.cc`
