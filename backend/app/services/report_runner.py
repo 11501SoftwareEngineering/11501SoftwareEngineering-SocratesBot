@@ -101,7 +101,10 @@ async def run_report(attempt_id: UUID) -> None:
             {
                 "native_summary": native,
                 "report_schema_version": "native-summary-v2",
-                "model_id": model_id,
+                "model_id": model_id if source["exchanges"] else None,
+                "generation_method": "model"
+                if source["exchanges"]
+                else "deterministic",
                 "source_digest": source_digest(source),
             },
         )

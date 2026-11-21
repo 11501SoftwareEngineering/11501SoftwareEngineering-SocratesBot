@@ -301,3 +301,26 @@ def test_empty_cohort_uses_bounded_inquiry_material_without_model(monkeypatch):
     assert rows == [] and material["reports"] == []
     assert set(material["inquiry"]) == {"theme", "question", "focus"}
     tokenizer.assert_not_called()
+
+
+async def test_closing_during_direct_synthesis_permanently_closes_stage2(monkeypatch):
+    topic, _, db, queue, insert, rs, ss = setup(
+        monkeypatch, stage="conversation", outcomes=("ended",)
+    )
+    monkeypatch.setattr(
+        closure.summary_crud,
+        "latest_attempt",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                status="processing",
+                lease_expires_at=datetime.now(UTC) + timedelta(minutes=1),
+            )
+        ),
+    )
+    await closure.close(db, teacher=object(), topic_id=topic.id, confirm=False)
+    assert topic.stage == "summary"
+    db.commit.assert_awaited_once()
+    queue.assert_not_awaited()
+    insert.assert_not_awaited()
+    rs.assert_not_called()
+    ss.assert_not_called()

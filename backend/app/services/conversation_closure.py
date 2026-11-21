@@ -73,6 +73,9 @@ async def close(
         and latest is not None
         and (latest.status == "ready" or summaries._attempt_running(latest))
     ):
+        if topic.stage != "summary":
+            topic.stage = "summary"
+            await db.commit()
         return await status_body(db, topic)
     now = datetime.now(UTC)
     for session in open_sessions:
