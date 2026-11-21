@@ -429,6 +429,8 @@ export default {
       'Ce navigateur ne prend pas en charge la reconnaissance vocale dans cette langue. Tapez votre réponse.',
   },
   report: {
+    evidenceTagPartial: 'Preuves partielles',
+    evidenceTagInsufficient: 'Preuves insuffisantes',
     title: 'Rapport d’enquête',
     tabs: 'Onglets du rapport',
     personal: 'Rapport personnel',
@@ -508,12 +510,28 @@ export default {
     stay: 'Rester',
   },
   perspective: {
+    endAndGenerate: 'Terminer et synthétiser',
+    closeTitle: 'Terminer les dialogues et synthétiser la classe ?',
+    closeDescription:
+      "Les élèves ne pourront plus accéder à cette activité. Les rapports personnels sont préparés d'abord, puis la synthèse de la classe est créée automatiquement. Action irréversible.",
+    closeDescriptionOpen:
+      "{count} élèves n'ont pas terminé leur dialogue. Ils ne pourront plus répondre (leurs réponses donneront quand même un rapport personnel). Les rapports personnels sont préparés d'abord, puis la synthèse de la classe est créée automatiquement. Action irréversible.",
+    closeConfirm: 'Terminer les dialogues',
+    closeFailed: 'Impossible de terminer les dialogues. Réessayez plus tard.',
+    prepareFailed:
+      "La synthèse de la classe n'a pas pu être préparée. Réessayez avec le bouton en haut à droite.",
+    retryPrepare: 'Synthétiser à nouveau',
+    preparingTitle: 'Synthèse de la classe en cours',
+    noSummaryClosed:
+      'Les dialogues sont terminés. Utilisez le bouton en haut à droite pour synthétiser la classe.',
+    generatingHint:
+      "Préparation des rapports personnels et synthèse des points de vue. Le résultat s'affichera automatiquement ; vous pouvez quitter cette page.",
+    noSummaryDescription:
+      "Quand les élèves ont terminé, choisissez « Terminer et synthétiser » : l'IA regroupera les points de vue de la classe à partir des rapports.",
     title: 'Points de vue de la classe',
     editSetup: 'Modifier la configuration',
     summarizing: 'Synthèse en cours…',
     refresh: 'Actualiser la synthèse',
-    generate: 'Créer la synthèse de la classe',
-    generatingHint: 'L’IA synthétise les points de vue de la classe. Veuillez patienter…',
     generateFailed: 'Impossible de créer la synthèse. Réessayez plus tard.',
     completed: 'Terminé',
     readyReports: 'Rapports disponibles',
@@ -524,12 +542,6 @@ export default {
     summaryError: 'Impossible de charger la synthèse de la classe',
     reportsError: 'Impossible de charger les rapports des élèves',
     noSummaryTitle: 'Pas encore de synthèse de la classe',
-    noSummaryDescription:
-      'Quand les élèves ont terminé, cliquez sur « Créer la synthèse de la classe » : l’IA regroupera les points de vue à partir de leurs rapports.',
-    generateTitle: 'Créer la synthèse de la classe ?',
-    generateDescription:
-      'Après la première synthèse, les élèves ne pourront plus répondre (les dialogues inachevés ne sont pas inclus). Cette action est irréversible.',
-    generateConfirm: 'Créer',
     searchReports: 'Rechercher un élève ou un point de vue',
     clearTag: 'Effacer l’étiquette',
     tags: 'Étiquettes de point de vue',

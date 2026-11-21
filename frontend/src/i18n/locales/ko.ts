@@ -427,6 +427,8 @@ export default {
       '이 브라우저는 이 언어의 음성 인식을 지원하지 않습니다. 직접 입력해 주세요.',
   },
   report: {
+    evidenceTagPartial: '일부 근거',
+    evidenceTagInsufficient: '근거 부족',
     title: '탐구 보고서',
     tabs: '보고서 탭',
     personal: '개인 보고서',
@@ -502,12 +504,26 @@ export default {
     stay: '머무르기',
   },
   perspective: {
+    endAndGenerate: '대화 종료 후 요약',
+    closeTitle: '대화를 종료하고 반 전체 요약을 만들까요?',
+    closeDescription:
+      '종료하면 학생은 이 활동에 들어올 수 없습니다. 먼저 학생별 개인 보고서를 만든 뒤 반 전체 요약을 자동으로 만듭니다. 되돌릴 수 없습니다.',
+    closeDescriptionOpen:
+      '아직 {count}명의 학생이 대화를 마치지 않았습니다. 종료하면 더 이상 답할 수 없습니다(이미 답한 내용은 개인 보고서가 됩니다). 먼저 개인 보고서를 만든 뒤 반 전체 요약을 자동으로 만듭니다. 되돌릴 수 없습니다.',
+    closeConfirm: '대화 종료',
+    closeFailed: '대화를 종료하지 못했습니다. 잠시 후 다시 시도해 주세요',
+    prepareFailed: '반 전체 요약을 만들지 못했습니다. 오른쪽 위 버튼으로 다시 시도할 수 있습니다.',
+    retryPrepare: '다시 요약하기',
+    preparingTitle: '반 전체 요약을 만드는 중',
+    noSummaryClosed: '대화가 종료되었습니다. 오른쪽 위 버튼으로 반 전체 요약을 만드세요.',
+    generatingHint:
+      '개인 보고서를 만들고 반 전체의 관점을 정리하는 중입니다. 완료되면 자동으로 표시되며, 이 페이지를 떠나도 됩니다.',
+    noSummaryDescription:
+      '학생들의 탐구가 일단락되면 「대화 종료 후 요약」을 누르세요. AI가 보고서를 바탕으로 반 전체의 관점을 묶어 정리합니다.',
     title: '학급의 관점',
     editSetup: '설정 편집',
     summarizing: '정리 중…',
     refresh: '정리 새로 고침',
-    generate: '학급 정리 만들기',
-    generatingHint: 'AI가 학급의 관점을 정리하고 있습니다. 잠시 기다려 주세요…',
     generateFailed: '정리를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.',
     completed: '완료 인원',
     readyReports: '사용 가능한 보고서',
@@ -518,12 +534,6 @@ export default {
     summaryError: '학급 정리를 불러오지 못했습니다',
     reportsError: '학생 보고서를 불러오지 못했습니다',
     noSummaryTitle: '아직 학급 정리가 없습니다',
-    noSummaryDescription:
-      '학생들이 탐구를 마치면 「학급 정리 만들기」를 누르세요. AI가 보고서를 바탕으로 관점을 묶어 줍니다.',
-    generateTitle: '학급 정리를 만들까요?',
-    generateDescription:
-      '첫 정리를 만들면 학생은 더 이상 답할 수 없습니다(끝나지 않은 대화는 포함되지 않음). 이 작업은 되돌릴 수 없습니다.',
-    generateConfirm: '만들기',
     searchReports: '학생 또는 관점 검색',
     clearTag: '태그 지우기',
     tags: '관점 태그',

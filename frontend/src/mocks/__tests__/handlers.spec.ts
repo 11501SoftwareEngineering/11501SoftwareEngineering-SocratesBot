@@ -221,6 +221,60 @@ describe('假後端（v0.2）', () => {
     expect(report.limitations).toBeTruthy()
   })
 
+  it('老師結束對話（#272）：要確認進行中的對話；沒回答的學生也有報告但不算進分母', async () => {
+    const student = await login('s004')
+    const { data: session } = await call('/topics/t-ai/sessions', {
+      method: 'POST',
+      token: student.token,
+    })
+    const { token } = await login('wang')
+    const status = await call('/topics/t-ai/conversation-status', { token })
+    expect(status.data).toMatchObject({ topic_status: 'conversation', confirmation_required: true })
+    expect(status.data.open_dialogue_count).toBeGreaterThan(0)
+    expect((await call('/topics/t-ai/summary', { method: 'POST', token })).res.status).toBe(409)
+
+    const unconfirmed = await call('/topics/t-ai/end-conversation', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({}),
+    })
+    expect(unconfirmed.res.status).toBe(409)
+    expect(unconfirmed.data.detail.code).toBe('open_dialogues_confirmation_required')
+
+    const ended = await call('/topics/t-ai/end-conversation', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ confirm_open_dialogues: true }),
+    })
+    expect(ended.data).toMatchObject({
+      topic_status: 'summary',
+      stage2_closed: true,
+      open_dialogue_count: 0,
+      preparation_status: 'processing',
+    })
+    expect((await call('/topics/t-ai/summary', { token })).data).toMatchObject({
+      summary: null,
+      preparation_status: 'processing',
+    })
+
+    // 時間快轉：報告和摘要都整理好
+    for (const r of db.reports) r.ready_at = 0
+    db.topics.find((t) => t.id === 't-ai')!.preparation!.ready_at = 0
+    const summary = await call('/topics/t-ai/summary', { token })
+    expect(summary.data.preparation_status).toBe('ready')
+    const report = await call(`/sessions/${session.session_id}/report`, { token: student.token })
+    expect(report.data.report).toMatchObject({
+      completed_turns: 0,
+      evidence_status: 'insufficient',
+      completion_reason: 'teacher_ended_stage2',
+      timeline: [],
+    })
+    const reportIds = summary.data.summary.groups.flatMap(
+      (g: { report_ids: string[] }) => g.report_ids,
+    )
+    expect(reportIds).not.toContain(report.data.report.report_id)
+  })
+
   it('摘要：審閱帶文字、只發布最新的已審閱版本；學生看得到發布版', async () => {
     const { token } = await login('wang')
     const { data: latest } = await call('/topics/t-lie/summary', { token })

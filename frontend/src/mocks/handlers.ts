@@ -9,7 +9,7 @@
  */
 import { delay, http, HttpResponse } from 'msw'
 import type { CourseRole, TaPermission } from '@/api/courses'
-import type { EndAction, PersonalReport } from '@/api/sessions'
+import type { EndAction, GenerationStatus, PersonalReport } from '@/api/sessions'
 import type { TopicSetup } from '@/api/topics'
 import { USAGE_STAGES, type UsageStage } from '@/api/ai'
 import { mockOpening, mockRefine, mockReply, mockReport, mockSetup } from './ai'
@@ -168,7 +168,9 @@ const sessionsOf = (topicId: string) => db.sessions.filter((s) => s.topic_id ===
 const dialogueStatus = (session: DbSession) =>
   session.status !== 'COMPLETED'
     ? 'open'
-    : session.ending_reason === 'turn_limit' || session.ending_reason === 'student_requested_stop'
+    : session.ending_reason === 'turn_limit' ||
+        session.ending_reason === 'student_requested_stop' ||
+        session.ending_reason === 'teacher_ended_stage2'
       ? 'ended'
       : 'completed'
 
@@ -332,7 +334,34 @@ function teacherSummaryJson(topic: DbTopic, summary: DbSummary | undefined) {
     topic_status: topic.status,
     published_version: publishedSummary(topic.id)?.version ?? null,
     summary: summary ? summaryJson(summary) : null,
+    preparation_status: preparationStatus(topic),
   }
+}
+
+/**
+ * 背景整理全班摘要的進度（後端 #272）：時間到了就在第一次讀取時產生草稿。
+ * 沒有可以整理的報告（例如沒有人回答過）就當作失敗，老師可以重試。
+ */
+function preparationStatus(topic: DbTopic): GenerationStatus | null {
+  const prep = topic.preparation
+  if (!prep) return null
+  if (prep.failed) return 'failed'
+  if (prep.done) return 'ready'
+  const reports = sessionsOf(topic.id).map((s) => reportOf(s.id))
+  if (prep.ready_at > Date.now() || reports.some((r) => r && !r.failed && r.ready_at > Date.now()))
+    return 'processing'
+  const draft = draftSummary(topic, latestSummary(topic.id))
+  db.summaries.push(draft)
+  prep.done = true
+  const course = db.courses.find((c) => c.id === topic.course_id)
+  const teacher = course && userById(course.teacher_id)
+  if (teacher) useAi(teacher, 'summary', 2600, 700)
+  return 'ready'
+}
+
+/** 開始在背景整理全班摘要 */
+function startPreparation(topic: DbTopic) {
+  topic.preparation = { ready_at: Date.now() + 3000, failed: false, done: false }
 }
 
 /** 依報告的最終觀點分群，產生新的摘要草稿 */
@@ -341,6 +370,8 @@ function draftSummary(topic: DbTopic, previous: DbSummary | undefined): DbSummar
     .map((s) => reportOf(s.id))
     .filter((r) => r && !r.failed && r.ready_at <= Date.now())
     .map((r) => r!.report)
+    // 沒有回答的學生不算參與者（後端 #272）
+    .filter((r) => r.completed_turns > 0)
   const byView = new Map<string, string[]>()
   for (const report of ready) {
     const key = report.final_viewpoint ?? '未分類'
@@ -360,7 +391,9 @@ function draftSummary(topic: DbTopic, previous: DbSummary | undefined): DbSummar
     topic_id: topic.id,
     version: (previous?.version ?? 0) + 1,
     status: 'draft',
-    overview: `全班 ${total} 位同學完成探究，分成 ${groups.length} 種觀點。`,
+    overview: total
+      ? `全班 ${total} 位同學完成探究，分成 ${groups.length} 種觀點。`
+      : '沒有學生提交回答。',
     viewpoint_summary:
       groups.map((g) => `${g.name}（${g.count} 人）`).join('、') || '目前還沒有可以整理的報告。',
     denominator: total,
@@ -430,6 +463,21 @@ function withEnding(session: DbSession, report: PersonalReport): PersonalReport 
   const reason = session.ending_reason ?? 'goal_reached'
   // 種子資料沒有 goal_reached：當作達成目標後結束
   const goal = session.goal_reached ?? reason === 'goal_reached'
+  // 一次都沒回答（老師結束對話時才會發生）：照樣產生報告，但只說明沒有證據（後端 #272）
+  if (turnsOf(session) === 0)
+    return {
+      ...report,
+      completed_turns: 0,
+      completion_reason: reason,
+      goal_reached: false,
+      ended_at: session.completed_at,
+      evidence_status: 'insufficient',
+      viewpoint_status: null,
+      final_viewpoint: null,
+      viewpoint_summary: '學生尚未提交任何回答，沒有可供評估的對話證據。',
+      limitations: '未提交學生回答；不計入全班摘要的參與者分母。',
+      timeline: [],
+    }
   return {
     ...report,
     completion_reason: reason,
@@ -440,9 +488,11 @@ function withEnding(session: DbSession, report: PersonalReport): PersonalReport 
       : {
           evidence_status: report.completed_turns <= 2 ? 'insufficient' : 'partial',
           limitations:
-            reason === 'turn_limit'
-              ? '回合用完時還沒有足夠的回應檢驗反方的挑戰，「修正或辯護」的判斷有限。'
-              : '提早結束，還沒有足夠的回應檢驗反方的挑戰，「修正或辯護」的判斷有限。',
+            reason === 'teacher_ended_stage2'
+              ? '老師結束了對話，還沒有足夠的回應檢驗反方的挑戰，「修正或辯護」的判斷有限。'
+              : reason === 'turn_limit'
+                ? '回合用完時還沒有足夠的回應檢驗反方的挑戰，「修正或辯護」的判斷有限。'
+                : '提早結束，還沒有足夠的回應檢驗反方的挑戰，「修正或辯護」的判斷有限。',
         }),
   }
 }
@@ -454,6 +504,23 @@ function reportJson(sessionId: string) {
   if (report.failed) return { report_status: 'failed', report: null }
   if (report.ready_at > Date.now()) return { report_status: 'processing', report: null }
   return { report_status: 'ready', report: report.report }
+}
+
+function conversationStatusJson(topic: DbTopic) {
+  const sessions = sessionsOf(topic.id)
+  const open = sessions.filter((s) => s.status !== 'COMPLETED').length
+  const stage2Closed = topic.status === 'summary'
+  return {
+    topic_id: topic.id,
+    topic_status: topic.status,
+    open_dialogue_count: open,
+    stage2_closed: stage2Closed,
+    confirmation_required: !stage2Closed && open > 0,
+    ended_dialogue_count: sessions.filter(
+      (s) => s.status === 'COMPLETED' && s.ending_reason === 'teacher_ended_stage2',
+    ).length,
+    preparation_status: preparationStatus(topic),
+  }
 }
 
 // ---------- 路由 ----------
@@ -1273,6 +1340,8 @@ export const handlers = [
     if (!canDo(access, 'edit_summary') && !canDo(access, 'view_reports'))
       return fail(403, 'Not allowed')
     const raw = new URL(request.url).searchParams.get('version')
+    // 先結算背景整理，剛整理好的草稿才會出現在這次的回應裡
+    preparationStatus(topic)
     if (raw === null) return HttpResponse.json(teacherSummaryJson(topic, latestSummary(topic.id)))
     const version = Number(raw)
     if (!Number.isInteger(version) || version < 1)
@@ -1282,23 +1351,59 @@ export const handlers = [
     return HttpResponse.json(teacherSummaryJson(topic, summary))
   }),
 
-  route('summary', 'post', '/topics/:topicId/summary', async ({ request, params }) => {
+  route('summary', 'post', '/topics/:topicId/summary', ({ request, params }) => {
     const user = authorize(request)
     if (user instanceof Response) return user
     const found = topicFor(user, params.topicId)
     if (found instanceof Response) return found
-    const [topic, course, access] = found
+    const [topic, , access] = found
     if (topic.status === 'setup') return fail(400, 'Topic is still in setup')
-    const allowed =
-      topic.status === 'conversation' ? access.role === 'teacher' : canDo(access, 'edit_summary')
-    if (!allowed) return fail(403, 'Not allowed')
-    await sleep(2500)
-    const draft = draftSummary(topic, latestSummary(topic.id))
-    if (!draft.denominator) return fail(400, 'No ready reports')
+    if (topic.status === 'conversation')
+      return fail(409, 'End the conversation before generating a summary')
+    if (!canDo(access, 'edit_summary')) return fail(403, 'Not allowed')
+    // 跟後端 #272 一樣改成背景整理：先回 pending，前端再輪詢 GET /summary
+    startPreparation(topic)
+    return HttpResponse.json({ ...teacherSummaryJson(topic, latestSummary(topic.id)) })
+  }),
+
+  // ===== 結束對話（老師，後端 #272）=====
+  route('summary', 'get', '/topics/:topicId/conversation-status', ({ request, params }) => {
+    const user = authorize(request)
+    if (user instanceof Response) return user
+    const found = topicFor(user, params.topicId)
+    if (found instanceof Response) return found
+    const [topic, , access] = found
+    if (access.role !== 'teacher') return fail(403, 'Not allowed')
+    return HttpResponse.json(conversationStatusJson(topic))
+  }),
+
+  route('summary', 'post', '/topics/:topicId/end-conversation', async ({ request, params }) => {
+    const user = authorize(request)
+    if (user instanceof Response) return user
+    const found = topicFor(user, params.topicId)
+    if (found instanceof Response) return found
+    const [topic, , access] = found
+    if (access.role !== 'teacher') return fail(403, 'Not allowed')
+    if (topic.status === 'setup') return fail(400, 'Topic is still in setup')
+    const data = await body<{ confirm_open_dialogues?: boolean }>(request)
+    const open = sessionsOf(topic.id).filter((s) => s.status !== 'COMPLETED')
+    if (open.length && !data.confirm_open_dialogues)
+      return HttpResponse.json(
+        {
+          detail: {
+            code: 'open_dialogues_confirmation_required',
+            open_dialogue_count: open.length,
+            message: 'Open dialogues must be confirmed before ending the conversation',
+          },
+        },
+        { status: 409 },
+      )
+    // 已經結束過：重新呼叫只重試失敗的整理
+    const wasClosed = topic.status === 'summary'
+    for (const session of open) completeSession(session, 'teacher_ended_stage2')
     topic.status = 'summary'
-    db.summaries.push(draft)
-    useAi(userById(course.teacher_id) ?? user, 'summary', 2600, 700)
-    return HttpResponse.json(teacherSummaryJson(topic, draft))
+    if (!topic.preparation || topic.preparation.failed || !wasClosed) startPreparation(topic)
+    return HttpResponse.json(conversationStatusJson(topic))
   }),
 
   route('summary', 'patch', '/topics/:topicId/summary', async ({ request, params }) => {

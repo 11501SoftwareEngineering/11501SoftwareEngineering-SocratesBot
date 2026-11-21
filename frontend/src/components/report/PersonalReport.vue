@@ -74,7 +74,18 @@ const EVIDENCE_TEXT = {
   partial: 'report.evidencePartial',
   insufficient: 'report.evidenceInsufficient',
 } as const
+/** 學生一次都沒回答（後端 #272：老師結束對話時沒回答過的學生）：報告只顯示「未完成或證據不足」 */
+const noResponses = computed(() => props.report.completed_turns === 0)
+/** 證據狀態的 tag：部分不足、不足時才顯示 */
+const evidenceTag = computed(() =>
+  props.report.evidence_status === 'partial'
+    ? t('report.evidenceTagPartial')
+    : props.report.evidence_status === 'insufficient'
+      ? t('report.evidenceTagInsufficient')
+      : '',
+)
 const gaps = computed(() => {
+  if (noResponses.value) return props.report.viewpoint_summary || props.report.limitations || ''
   const status = props.report.evidence_status
   const key = status ? EVIDENCE_TEXT[status] : ''
   const lead = key ? t(key) : ''
@@ -84,7 +95,7 @@ const gaps = computed(() => {
 
 <template>
   <article class="flex flex-col gap-6">
-    <header class="flex flex-col gap-4">
+    <header v-if="!noResponses" class="flex flex-col gap-4">
       <div class="flex flex-wrap items-center gap-4">
         <h2 class="text-h1-title text-foreground">{{ name }}</h2>
         <span
@@ -102,13 +113,17 @@ const gaps = computed(() => {
             report.final_viewpoint
           }}
         </span>
-        <StatusTag v-if="report.viewpoint_status" size="sm">{{
-          report.viewpoint_status
-        }}</StatusTag>
+        <span class="flex flex-wrap items-center gap-2">
+          <StatusTag v-if="evidenceTag" size="sm" tone="accent">{{ evidenceTag }}</StatusTag>
+          <StatusTag v-if="report.viewpoint_status" size="sm">{{
+            report.viewpoint_status
+          }}</StatusTag>
+        </span>
       </div>
     </header>
 
     <section
+      v-if="!noResponses"
       class="rounded-lg bg-border px-3 py-3 shadow-elevated"
       aria-labelledby="report-summary"
     >
@@ -118,7 +133,7 @@ const gaps = computed(() => {
       <p class="text-body-lg text-foreground">{{ report.viewpoint_summary || '—' }}</p>
     </section>
 
-    <section v-if="report.timeline?.length" aria-labelledby="report-timeline">
+    <section v-if="!noResponses && report.timeline?.length" aria-labelledby="report-timeline">
       <h3 id="report-timeline" class="mb-4 font-heading text-[28px] font-medium text-foreground">
         {{ t('report.timeline') }}
       </h3>
@@ -161,7 +176,7 @@ const gaps = computed(() => {
       </ol>
     </section>
 
-    <dl class="grid gap-x-4 sm:grid-cols-2">
+    <dl v-if="!noResponses" class="grid gap-x-4 sm:grid-cols-2">
       <div
         v-for="section in sections"
         :key="section.title"

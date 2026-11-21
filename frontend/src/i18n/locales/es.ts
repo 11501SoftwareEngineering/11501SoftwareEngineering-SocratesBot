@@ -429,6 +429,8 @@ export default {
       'Este navegador no admite reconocimiento de voz en este idioma. Escribe tu respuesta.',
   },
   report: {
+    evidenceTagPartial: 'Evidencia parcial',
+    evidenceTagInsufficient: 'Evidencia insuficiente',
     title: 'Informe de indagación',
     tabs: 'Pestañas del informe',
     personal: 'Mi informe',
@@ -506,12 +508,28 @@ export default {
     stay: 'Quedarme',
   },
   perspective: {
+    endAndGenerate: 'Terminar y resumir',
+    closeTitle: '¿Terminar los diálogos y resumir la clase?',
+    closeDescription:
+      'Los estudiantes ya no podrán entrar a esta actividad. Primero se preparan los informes personales y luego el resumen de la clase se crea automáticamente. No se puede deshacer.',
+    closeDescriptionOpen:
+      '{count} estudiantes no han terminado su diálogo. Ya no podrán responder (lo que respondieron igual genera un informe personal). Primero se preparan los informes personales y luego el resumen de la clase se crea automáticamente. No se puede deshacer.',
+    closeConfirm: 'Terminar diálogos',
+    closeFailed: 'No se pudieron terminar los diálogos. Inténtalo más tarde.',
+    prepareFailed:
+      'No se pudo preparar el resumen de la clase. Usa el botón de arriba a la derecha para reintentar.',
+    retryPrepare: 'Resumir de nuevo',
+    preparingTitle: 'Preparando el resumen de la clase',
+    noSummaryClosed:
+      'Los diálogos terminaron. Usa el botón de arriba a la derecha para resumir la clase.',
+    generatingHint:
+      'Preparando informes personales y resumiendo los puntos de vista. Aparecerá automáticamente; puedes salir de esta página.',
+    noSummaryDescription:
+      'Cuando los estudiantes terminen, elige «Terminar y resumir» y la IA agrupará los puntos de vista de la clase a partir de los informes.',
     title: 'Perspectivas de la clase',
     editSetup: 'Editar configuración',
     summarizing: 'Resumiendo…',
     refresh: 'Actualizar resumen',
-    generate: 'Generar resumen de la clase',
-    generatingHint: 'La IA está resumiendo las perspectivas de la clase, espera un momento…',
     generateFailed: 'No se pudo crear el resumen. Inténtalo más tarde.',
     completed: 'Completadas',
     readyReports: 'Informes listos',
@@ -522,12 +540,6 @@ export default {
     summaryError: 'No se pudo cargar el resumen de la clase',
     reportsError: 'No se pudieron cargar los informes',
     noSummaryTitle: 'Todavía no hay resumen de la clase',
-    noSummaryDescription:
-      'Cuando los estudiantes terminen, pulsa «Generar resumen de la clase» y la IA agrupará sus perspectivas a partir de los informes.',
-    generateTitle: '¿Generar el resumen de la clase?',
-    generateDescription:
-      'Tras el primer resumen, los estudiantes ya no podrán responder (las conversaciones sin terminar no se incluyen). No se puede deshacer.',
-    generateConfirm: 'Generar',
     searchReports: 'Buscar estudiantes o perspectivas',
     clearTag: 'Quitar etiqueta',
     tags: 'Etiquetas de perspectiva',

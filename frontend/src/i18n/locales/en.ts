@@ -427,6 +427,8 @@ export default {
       'This browser does not support speech recognition for this language. Please type instead.',
   },
   report: {
+    evidenceTagPartial: 'Partial evidence',
+    evidenceTagInsufficient: 'Insufficient evidence',
     title: 'Inquiry report',
     tabs: 'Report tabs',
     personal: 'My report',
@@ -504,12 +506,28 @@ export default {
     stay: 'Stay',
   },
   perspective: {
+    endAndGenerate: 'End dialogues and summarize',
+    closeTitle: 'End dialogues and summarize the class?',
+    closeDescription:
+      "Students won't be able to enter this activity anymore. Personal reports are prepared first, then the class summary is created automatically. This can't be undone.",
+    closeDescriptionOpen:
+      "{count} students haven't finished their dialogue. They won't be able to answer anymore (what they've answered still gets a personal report). Personal reports are prepared first, then the class summary is created automatically. This can't be undone.",
+    closeConfirm: 'End dialogues',
+    closeFailed: "Couldn't end the dialogues. Please try again later.",
+    prepareFailed:
+      "The class summary couldn't be prepared. Use the button at the top right to try again.",
+    retryPrepare: 'Summarize again',
+    preparingTitle: 'Preparing the class summary',
+    noSummaryClosed:
+      'Dialogues have ended. Use the button at the top right to summarize the class.',
+    generatingHint:
+      'Preparing personal reports and summarizing the class. It will appear automatically — you can leave this page.',
+    noSummaryDescription:
+      'When students are done, choose "End dialogues and summarize" and AI will group the class viewpoints from their reports.',
     title: 'Class perspectives',
     editSetup: 'Edit settings',
     summarizing: 'Summarizing…',
     refresh: 'Refresh summary',
-    generate: 'Generate class summary',
-    generatingHint: 'AI is summarizing the class’s perspectives, please wait…',
     generateFailed: 'Could not create the summary. Please try again later.',
     completed: 'Completed',
     readyReports: 'Reports ready',
@@ -520,12 +538,6 @@ export default {
     summaryError: 'Could not load the class summary',
     reportsError: 'Could not load student reports',
     noSummaryTitle: 'No class summary yet',
-    noSummaryDescription:
-      'After students finish, press “Generate class summary” and the AI will group the class’s perspectives from their reports.',
-    generateTitle: 'Generate class summary?',
-    generateDescription:
-      'After the first summary, students can no longer answer (unfinished conversations are not included). This cannot be undone.',
-    generateConfirm: 'Generate',
     searchReports: 'Search students or perspectives',
     clearTag: 'Clear tag',
     tags: 'Perspective tags',

@@ -419,6 +419,8 @@ export default {
     languageNotSupported: '这个浏览器不支持这个语言的语音识别，请改用文本输入。',
   },
   report: {
+    evidenceTagPartial: '部分证据',
+    evidenceTagInsufficient: '证据不足',
     title: '探索结果报告',
     tabs: '报告分页',
     personal: '个人报告',
@@ -493,12 +495,25 @@ export default {
     stay: '留下',
   },
   perspective: {
+    endAndGenerate: '结束对话并整理摘要',
+    closeTitle: '结束对话并整理全班摘要？',
+    closeDescription:
+      '结束后学生就不能再进入这个活动，系统会先生成每位学生的个人报告，再自动整理全班摘要。这个操作无法撤销。',
+    closeDescriptionOpen:
+      '还有 {count} 位学生的对话没有结束。结束后他们就不能再回答（已经回答的内容会生成个人报告），系统会先生成每位学生的个人报告，再自动整理全班摘要。这个操作无法撤销。',
+    closeConfirm: '结束对话',
+    closeFailed: '结束对话失败，请稍后再试',
+    prepareFailed: '全班摘要整理失败，可以按右上的按钮重试。',
+    retryPrepare: '重新整理摘要',
+    preparingTitle: '正在整理全班摘要',
+    noSummaryClosed: '对话已经结束，按右上的按钮整理全班摘要。',
+    generatingHint: '系统正在生成个人报告并整理全班的观点，完成后会自动显示，可以先离开这一页。',
+    noSummaryDescription:
+      '学生探究告一段落后，按「结束对话并整理摘要」，AI 会依报告把全班的观点分组整理。',
     title: '全班观点',
     editSetup: '编辑设置',
     summarizing: '整理中…',
     refresh: '刷新摘要',
-    generate: '产生全班摘要',
-    generatingHint: 'AI 正在整理全班的观点，请稍候…',
     generateFailed: '整理摘要失败，请稍后再试',
     completed: '完成人数',
     readyReports: '可用报告',
@@ -509,11 +524,6 @@ export default {
     summaryError: '无法取得全班摘要',
     reportsError: '无法取得学生报告',
     noSummaryTitle: '还没有全班摘要',
-    noSummaryDescription: '学生完成探究之后，按「产生全班摘要」，AI 会依报告把全班的观点分组整理。',
-    generateTitle: '产生全班摘要？',
-    generateDescription:
-      '第一次产生摘要后，学生就不能再作答了（还没完成的对话不会算进去），这个动作无法复原。',
-    generateConfirm: '产生',
     searchReports: '搜索学生或观点',
     clearTag: '清除 tag',
     tags: '观点 tag',

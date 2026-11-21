@@ -424,6 +424,8 @@ export default {
     languageNotSupported: '這個瀏覽器不支援這個語言的語音辨識，請改用文字輸入。',
   },
   report: {
+    evidenceTagPartial: '部分證據',
+    evidenceTagInsufficient: '證據不足',
     title: '探索結果報告',
     tabs: '報告分頁',
     personal: '個人報告',
@@ -498,12 +500,25 @@ export default {
     stay: '留下',
   },
   perspective: {
+    endAndGenerate: '結束對話並整理摘要',
+    closeTitle: '結束對話並整理全班摘要？',
+    closeDescription:
+      '結束後學生就不能再進入這個活動，系統會先產生每位學生的個人報告，再自動整理全班摘要。這個動作無法復原。',
+    closeDescriptionOpen:
+      '還有 {count} 位學生的對話沒有結束。結束後他們就不能再回答（已經回答的內容會產生個人報告），系統會先產生每位學生的個人報告，再自動整理全班摘要。這個動作無法復原。',
+    closeConfirm: '結束對話',
+    closeFailed: '結束對話失敗，請稍後再試',
+    prepareFailed: '全班摘要整理失敗，可以按右上的按鈕重試。',
+    retryPrepare: '重新整理摘要',
+    preparingTitle: '正在整理全班摘要',
+    noSummaryClosed: '對話已經結束，按右上的按鈕整理全班摘要。',
+    generatingHint: '系統正在產生個人報告並整理全班的觀點，完成後會自動顯示，可以先離開這一頁。',
+    noSummaryDescription:
+      '學生探究告一段落後，按「結束對話並整理摘要」，AI 會依報告把全班的觀點分組整理。',
     title: '全班觀點',
     editSetup: '編輯設定',
     summarizing: '整理中…',
     refresh: '重新整理摘要',
-    generate: '產生全班摘要',
-    generatingHint: 'AI 正在整理全班的觀點，請稍候…',
     generateFailed: '整理摘要失敗，請稍後再試',
     completed: '完成人數',
     readyReports: '可用報告',
@@ -514,11 +529,6 @@ export default {
     summaryError: '無法取得全班摘要',
     reportsError: '無法取得學生報告',
     noSummaryTitle: '還沒有全班摘要',
-    noSummaryDescription: '學生完成探究之後，按「產生全班摘要」，AI 會依報告把全班的觀點分組整理。',
-    generateTitle: '產生全班摘要？',
-    generateDescription:
-      '第一次產生摘要後，學生就不能再作答了（還沒完成的對話不會算進去），這個動作無法復原。',
-    generateConfirm: '產生',
     searchReports: '搜尋學生或觀點',
     clearTag: '清除 tag',
     tags: '觀點 tag',

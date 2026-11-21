@@ -5,14 +5,18 @@ import AppBanner from '@/components/common/AppBanner.vue'
  * 「P13_StudentReport」（學生報告細節）。
  *   上方：題目、「重新整理摘要」、完成人數／可用報告／觀點群組
  *   分頁：摘要審閱｜學生報告（網址 ?tab=reports&group=群組，可以直接分享篩選結果）
- * API：GET /topics/{topicId}/setup（題目）、GET /topics/{topicId}/reports、GET/POST /topics/{topicId}/summary
- * 第一次「產生摘要」會結束學生作答，所以先確認。
+ * API：GET /topics/{topicId}/setup（題目）、GET /topics/{topicId}/reports、GET/POST /topics/{topicId}/summary、
+ *      GET /topics/{topicId}/conversation-status、POST /topics/{topicId}/end-conversation（後端 #272）
+ * 第一次：「結束對話並整理摘要」→ 先查還有幾個對話開著、跟老師確認 → 結束對話。
+ *   還開著的對話會被結束（學生照樣有報告），後端先等個人報告好了再自動整理全班摘要。
+ * 摘要都是背景整理：preparation_status 是 pending／processing 時每 3 秒查一次；failed 時可以重試。
+ * 摘要相關的 API 後端只允許老師，所以整理摘要的按鈕只給老師。
  */
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
 import { courseKeys } from '@/api/courses'
-import { reportGroups, summariesApi, summaryKeys } from '@/api/summaries'
+import { isPreparing, reportGroups, summariesApi, summaryKeys } from '@/api/summaries'
 import { topicKeys, topicsApi } from '@/api/topics'
 import ComingSoon from '@/components/common/ComingSoon.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
@@ -53,16 +57,23 @@ const setup = useQuery({
 })
 const title = computed(() => setup.data.value?.setup.core_question ?? topic.value?.title ?? '…')
 
-const reports = useQuery({
-  queryKey: computed(() => summaryKeys.reports(topicId.value)),
-  queryFn: () => summariesApi.reports(topicId.value),
-  enabled: () => !!course.value && can('view_reports'),
-})
 const summary = useQuery({
   queryKey: computed(() => summaryKeys.summary(topicId.value)),
   queryFn: () => summariesApi.get(topicId.value),
   enabled: () => !!course.value && (can('view_reports') || can('edit_summary')),
+  // 背景整理中：每 3 秒查一次進度
+  refetchInterval: (query) => (isPreparing(query.state.data) ? 3000 : false),
 })
+const reports = useQuery({
+  queryKey: computed(() => summaryKeys.reports(topicId.value)),
+  queryFn: () => summariesApi.reports(topicId.value),
+  enabled: () => !!course.value && can('view_reports'),
+  // 結束對話後報告一份份產生：還有產生中的、或摘要還在整理時，每 3 秒更新
+  refetchInterval: (query) =>
+    (query.state.data?.processing_count ?? 0) > 0 || isPreparing(summary.data.value) ? 3000 : false,
+})
+const preparing = computed(() => isPreparing(summary.data.value))
+const prepareFailed = computed(() => summary.data.value?.preparation_status === 'failed')
 
 const groups = computed(() => reportGroups(summary.data.value?.summary))
 
@@ -94,15 +105,17 @@ const tabs = computed(() => [
 const stats = computed(() => {
   const r = reports.data.value
   const s = summary.data.value?.summary
+  // 結束的人數＝達成目標後結束（completed）＋回合用完／提早結束／老師結束（ended），都有報告
+  const finishedCount = r ? r.completed_count + (r.ended_count ?? 0) : 0
   return [
     {
       label: t('perspective.completed'),
-      value: r ? `${r.completed_count}/${r.class_size}` : '—',
+      value: r ? `${finishedCount}/${r.class_size}` : '—',
       icon: GroupIcon,
     },
     {
       label: t('perspective.readyReports'),
-      value: r ? `${r.ready_count}/${r.completed_count}` : '—',
+      value: r ? `${r.ready_count}/${finishedCount}` : '—',
       icon: FileIcon,
     },
     {
@@ -113,30 +126,82 @@ const stats = computed(() => {
   ]
 })
 
-// 產生（重新整理）摘要
-const generateOpen = ref(false)
+// 整理摘要
 const generateError = ref('')
+/** 還在對話階段：第一次要先結束對話 */
 const isFirstSummary = computed(() => summary.data.value?.topic_status === 'conversation')
-const canGenerate = computed(() => (isFirstSummary.value ? isTeacher.value : can('edit_summary')))
+const canGenerate = computed(() => isTeacher.value)
+
+function refreshAll() {
+  void queryClient.invalidateQueries({ queryKey: ['topics', topicId.value, 'summary'] })
+  void queryClient.invalidateQueries({ queryKey: summaryKeys.reports(topicId.value) })
+  void queryClient.invalidateQueries({ queryKey: summaryKeys.conversation(topicId.value) })
+  void queryClient.invalidateQueries({ queryKey: courseKeys.topics(courseId.value) })
+}
+
+// 第一次：結束對話（先查還有幾個對話開著，跟老師確認）
+const closeOpen = ref(false)
+const closeError = ref('')
+const conversation = useQuery({
+  queryKey: computed(() => summaryKeys.conversation(topicId.value)),
+  queryFn: () => summariesApi.conversationStatus(topicId.value),
+  enabled: () => isTeacher.value && isFirstSummary.value,
+})
+const openCount = computed(() => conversation.data.value?.open_dialogue_count ?? 0)
+async function askClose() {
+  closeError.value = ''
+  closeOpen.value = true
+  await conversation.refetch()
+}
+const closeConversation = useMutation({
+  mutationFn: () => summariesApi.endConversation(topicId.value),
+  onSuccess: () => {
+    closeOpen.value = false
+    generateError.value = ''
+    refreshAll()
+  },
+  onError: (err) => (closeError.value = getApiErrorMessage(err, t('perspective.closeFailed'))),
+})
+
+// 之後：重新整理摘要（背景處理，回來的是 pending）
 const generate = useMutation({
   mutationFn: () => summariesApi.generate(topicId.value),
   onSuccess: (result) => {
-    generateOpen.value = false
     generateError.value = ''
     queryClient.setQueryData(summaryKeys.summary(topicId.value), result)
-    void queryClient.invalidateQueries({ queryKey: ['topics', topicId.value, 'summary'] })
-    void queryClient.invalidateQueries({ queryKey: summaryKeys.reports(topicId.value) })
-    void queryClient.invalidateQueries({ queryKey: courseKeys.topics(courseId.value) })
+    refreshAll()
   },
-  onError: (err) => {
-    generateOpen.value = false
-    generateError.value = getApiErrorMessage(err, t('perspective.generateFailed'))
-  },
+  onError: (err) =>
+    (generateError.value = getApiErrorMessage(err, t('perspective.generateFailed'))),
 })
-function askGenerate() {
-  if (isFirstSummary.value) generateOpen.value = true
-  else generate.mutate()
+
+/**
+ * 按鈕：還在對話階段 → 結束對話並整理；已經有草稿 → 重新整理；
+ * 對話已經結束但第一版整理失敗 → 再呼叫一次 end-conversation（後端會重試）
+ */
+function onGenerate() {
+  generateError.value = ''
+  if (isFirstSummary.value) void askClose()
+  else if (summary.data.value?.summary) generate.mutate()
+  else closeConversation.mutate()
 }
+const busy = computed(
+  () => preparing.value || generate.isPending.value || closeConversation.isPending.value,
+)
+const generateLabel = computed(() =>
+  busy.value
+    ? t('perspective.summarizing')
+    : isFirstSummary.value
+      ? t('perspective.endAndGenerate')
+      : summary.data.value?.summary
+        ? t('perspective.refresh')
+        : t('perspective.retryPrepare'),
+)
+const closeDescription = computed(() =>
+  openCount.value > 0
+    ? t('perspective.closeDescriptionOpen', { count: openCount.value })
+    : t('perspective.closeDescription'),
+)
 </script>
 
 <template>
@@ -160,21 +225,18 @@ function askGenerate() {
         class="rounded text-body-lg text-muted-foreground underline outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >{{ t('perspective.editSetup') }}</RouterLink
       >
-      <Button v-if="canGenerate" :disabled="generate.isPending.value" @click="askGenerate">
-        <SpinnerIcon v-if="generate.isPending.value" class="animate-spin" />
+      <Button v-if="canGenerate" :disabled="busy" @click="onGenerate">
+        <SpinnerIcon v-if="busy" class="animate-spin" />
         <RefreshIcon v-else />
-        {{
-          generate.isPending.value
-            ? t('perspective.summarizing')
-            : summary.data.value?.summary
-              ? t('perspective.refresh')
-              : t('perspective.generate')
-        }}
+        {{ generateLabel }}
       </Button>
     </div>
-    <p v-if="generate.isPending.value" role="status" class="mt-2 text-body text-muted-foreground">
+    <p v-if="preparing" role="status" class="mt-2 text-body text-muted-foreground">
       {{ t('perspective.generatingHint') }}
     </p>
+    <AppBanner v-if="prepareFailed && !busy" type="error" class="mt-2">{{
+      t('perspective.prepareFailed')
+    }}</AppBanner>
     <AppBanner v-if="generateError" type="error" class="mt-2">{{ generateError }}</AppBanner>
 
     <dl class="mt-4 grid gap-4 sm:grid-cols-3">
@@ -204,8 +266,17 @@ function askGenerate() {
             :can-edit="can('edit_summary')"
             :is-teacher="isTeacher"
           />
-          <ComingSoon v-else :title="t('perspective.noSummaryTitle')">
-            {{ t('perspective.noSummaryDescription') }}
+          <ComingSoon
+            v-else
+            :title="preparing ? t('perspective.preparingTitle') : t('perspective.noSummaryTitle')"
+          >
+            {{
+              preparing
+                ? t('perspective.generatingHint')
+                : isFirstSummary
+                  ? t('perspective.noSummaryDescription')
+                  : t('perspective.noSummaryClosed')
+            }}
           </ComingSoon>
         </QueryState>
       </template>
@@ -226,12 +297,14 @@ function askGenerate() {
     </section>
 
     <ConfirmDialog
-      v-model:open="generateOpen"
-      :title="t('perspective.generateTitle')"
-      :description="t('perspective.generateDescription')"
-      :confirm-text="t('perspective.generateConfirm')"
-      :loading="generate.isPending.value"
-      @confirm="generate.mutate()"
+      v-model:open="closeOpen"
+      :title="t('perspective.closeTitle')"
+      :description="closeDescription"
+      :confirm-text="t('perspective.closeConfirm')"
+      :loading="closeConversation.isPending.value || conversation.isFetching.value"
+      :error="closeError"
+      destructive
+      @confirm="closeConversation.mutate()"
     />
   </div>
 </template>

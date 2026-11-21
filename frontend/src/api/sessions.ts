@@ -20,7 +20,8 @@ const enc = encodeURIComponent
 export type DialogueStatus = 'open' | 'completed' | 'ended' | 'abandoned' | 'closed_by_summary'
 
 /** 對話怎麼結束的：達成目標後選結束｜學生提早結束｜回合用完（舊資料可能是 completed） */
-export type EndingReason = 'goal_reached' | 'student_requested_stop' | 'turn_limit' | 'completed'
+export type EndingReason =
+  'goal_reached' | 'student_requested_stop' | 'turn_limit' | 'teacher_ended_stage2' | 'completed'
 
 /** 讀訊息、結束對話、串流 done 都會帶的結束相關欄位（後端 #267） */
 export interface LifecycleFields {

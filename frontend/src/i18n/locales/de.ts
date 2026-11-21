@@ -434,6 +434,8 @@ export default {
       'Dieser Browser unterstützt die Spracherkennung für diese Sprache nicht. Bitte Antwort eintippen.',
   },
   report: {
+    evidenceTagPartial: 'Teilweise Belege',
+    evidenceTagInsufficient: 'Unzureichende Belege',
     title: 'Forschungsbericht',
     tabs: 'Berichtsreiter',
     personal: 'Persönlicher Bericht',
@@ -515,12 +517,28 @@ export default {
     stay: 'Bleiben',
   },
   perspective: {
+    endAndGenerate: 'Dialoge beenden und zusammenfassen',
+    closeTitle: 'Dialoge beenden und Klasse zusammenfassen?',
+    closeDescription:
+      'Danach können Lernende diese Aktivität nicht mehr betreten. Zuerst werden persönliche Berichte erstellt, dann automatisch die Klassenzusammenfassung. Dies kann nicht rückgängig gemacht werden.',
+    closeDescriptionOpen:
+      '{count} Lernende haben ihren Dialog noch nicht beendet. Sie können dann nicht mehr antworten (ihre bisherigen Antworten ergeben trotzdem einen persönlichen Bericht). Zuerst werden persönliche Berichte erstellt, dann automatisch die Klassenzusammenfassung. Dies kann nicht rückgängig gemacht werden.',
+    closeConfirm: 'Dialoge beenden',
+    closeFailed: 'Dialoge konnten nicht beendet werden. Bitte später erneut versuchen.',
+    prepareFailed:
+      'Die Klassenzusammenfassung konnte nicht erstellt werden. Mit der Schaltfläche oben rechts erneut versuchen.',
+    retryPrepare: 'Erneut zusammenfassen',
+    preparingTitle: 'Klassenzusammenfassung wird erstellt',
+    noSummaryClosed:
+      'Die Dialoge sind beendet. Mit der Schaltfläche oben rechts die Klasse zusammenfassen.',
+    generatingHint:
+      'Persönliche Berichte und Klassenperspektiven werden erstellt. Das Ergebnis erscheint automatisch – Sie können diese Seite verlassen.',
+    noSummaryDescription:
+      'Wenn die Lernenden fertig sind, „Dialoge beenden und zusammenfassen“ wählen – die KI gruppiert die Perspektiven der Klasse anhand der Berichte.',
     title: 'Sichtweisen der Klasse',
     editSetup: 'Einrichtung bearbeiten',
     summarizing: 'Wird zusammengefasst…',
     refresh: 'Zusammenfassung aktualisieren',
-    generate: 'Klassenzusammenfassung erstellen',
-    generatingHint: 'Die KI fasst die Sichtweisen der Klasse zusammen. Bitte warten…',
     generateFailed: 'Zusammenfassung konnte nicht erstellt werden. Bitte später erneut versuchen.',
     completed: 'Abgeschlossen',
     readyReports: 'Verfügbare Berichte',
@@ -531,12 +549,6 @@ export default {
     summaryError: 'Klassenzusammenfassung konnte nicht geladen werden',
     reportsError: 'Berichte der Schüler/innen konnten nicht geladen werden',
     noSummaryTitle: 'Noch keine Klassenzusammenfassung',
-    noSummaryDescription:
-      'Wenn die Schüler/innen fertig sind, klicken Sie auf „Klassenzusammenfassung erstellen“: Die KI gruppiert die Sichtweisen anhand ihrer Berichte.',
-    generateTitle: 'Klassenzusammenfassung erstellen?',
-    generateDescription:
-      'Nach der ersten Zusammenfassung können Schüler/innen nicht mehr antworten (unvollständige Dialoge werden nicht berücksichtigt). Dies kann nicht rückgängig gemacht werden.',
-    generateConfirm: 'Erstellen',
     searchReports: 'Schüler/innen oder Sichtweisen suchen',
     clearTag: 'Tag entfernen',
     tags: 'Sichtweisen-Tags',

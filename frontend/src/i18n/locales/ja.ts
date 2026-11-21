@@ -426,6 +426,8 @@ export default {
       'このブラウザはこの言語の音声認識に対応していません。文字で入力してください。',
   },
   report: {
+    evidenceTagPartial: '一部の証拠',
+    evidenceTagInsufficient: '証拠不足',
     title: '探究レポート',
     tabs: 'レポートのタブ',
     personal: '個人レポート',
@@ -501,12 +503,26 @@ export default {
     stay: 'とどまる',
   },
   perspective: {
+    endAndGenerate: '対話を終えてまとめる',
+    closeTitle: '対話を終えてクラスのまとめを作成しますか？',
+    closeDescription:
+      '終えると学生はこの活動に入れなくなります。先に各学生の個人レポートを作成し、その後クラスのまとめを自動で作成します。元に戻せません。',
+    closeDescriptionOpen:
+      'まだ {count} 人の学生の対話が終わっていません。終えると回答できなくなります（回答済みの内容は個人レポートになります）。先に個人レポートを作成し、その後クラスのまとめを自動で作成します。元に戻せません。',
+    closeConfirm: '対話を終える',
+    closeFailed: '対話を終えられませんでした。しばらくしてからお試しください',
+    prepareFailed: 'クラスのまとめを作成できませんでした。右上のボタンで再試行できます。',
+    retryPrepare: 'もう一度まとめる',
+    preparingTitle: 'クラスのまとめを作成中',
+    noSummaryClosed: '対話は終わりました。右上のボタンでクラスのまとめを作成してください。',
+    generatingHint:
+      '個人レポートとクラスの観点をまとめています。完了すると自動で表示されます。このページを離れても大丈夫です。',
+    noSummaryDescription:
+      '学生の探究が一段落したら「対話を終えてまとめる」を押すと、AI がレポートをもとにクラスの観点をグループにまとめます。',
     title: 'クラスの考え',
     editSetup: '設定を編集',
     summarizing: 'まとめ中…',
     refresh: 'まとめを更新',
-    generate: 'クラスのまとめを作成',
-    generatingHint: 'AI がクラスの考えをまとめています。お待ちください…',
     generateFailed: 'まとめを作成できませんでした。しばらくしてからお試しください。',
     completed: '完了人数',
     readyReports: '利用できるレポート',
@@ -517,12 +533,6 @@ export default {
     summaryError: 'クラスのまとめを取得できませんでした',
     reportsError: '生徒レポートを取得できませんでした',
     noSummaryTitle: 'クラスのまとめはまだありません',
-    noSummaryDescription:
-      '生徒が探究を終えたら「クラスのまとめを作成」を押すと、AI がレポートをもとに考えをグループ分けします。',
-    generateTitle: 'クラスのまとめを作成しますか？',
-    generateDescription:
-      '最初のまとめを作成すると、生徒は回答できなくなります（未完了の対話は含まれません）。この操作は元に戻せません。',
-    generateConfirm: '作成',
     searchReports: '生徒または考えを検索',
     clearTag: 'タグをクリア',
     tags: '考えのタグ',
