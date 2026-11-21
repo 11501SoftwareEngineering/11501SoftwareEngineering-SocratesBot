@@ -67,6 +67,15 @@ class GenerationStatus(StrEnum):
     FAILED = "failed"
 
 
+class AiUsageStage(StrEnum):
+    """AI usage stages (declaration order = response order)."""
+
+    SETUP = "setup"
+    DIALOGUE = "dialogue"
+    REPORT = "report"
+    SUMMARY = "summary"
+
+
 class AgeBand(StrEnum):
     AGE_13_15 = "13-15"
     AGE_16_18 = "16-18"

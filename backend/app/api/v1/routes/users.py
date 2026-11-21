@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
@@ -5,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ActiveUser, TeacherUser, get_db
 from app.api.openapi_responses import PREFERENCES_UPDATE_RESPONSES
+from app.core.enums import AiUsageStage
+from app.schemas.ai_usage import AiStageUsage, AiUsageResponse
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.preferences import (
     PreferencesUpdateRequest,
@@ -100,4 +103,20 @@ async def update_default_model(
     """Set the default model for new topics. Existing topics stay unchanged."""
     return await teacher_ai_settings_service.set_default_model(
         db, current_user, payload
+    )
+
+
+@router.get("/me/ai/usage", response_model=AiUsageResponse)
+async def read_ai_usage(current_user: TeacherUser) -> AiUsageResponse:
+    """Return the teacher's AI usage for the current UTC month.
+
+    Raises:
+        AuthRequired: 401 if unauthenticated.
+        HTTPException: 403 if the caller is not a global teacher.
+    """
+    # ponytail: no usage writer yet, so every month reads empty; aggregate a
+    # usage table here once one exists.
+    return AiUsageResponse(
+        month=datetime.now(UTC).strftime("%Y-%m"),
+        by_stage=[AiStageUsage(stage=stage) for stage in AiUsageStage],
     )
