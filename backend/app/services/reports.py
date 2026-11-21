@@ -193,6 +193,7 @@ async def _payload(
         session_id=str(session.id),
         topic_id=str(session.topic_id),
         completed_turns=turns,
+        completed_at=session.completed_at.isoformat() if session.completed_at else None,
     )
 
 

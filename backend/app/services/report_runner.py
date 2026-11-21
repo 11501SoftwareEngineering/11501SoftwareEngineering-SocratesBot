@@ -14,87 +14,22 @@ from app.core.prompts import PromptStage, prompt_for
 from app.crud import message as message_crud
 from app.crud import report as report_crud
 from app.services.attempt_lease import refresh
-from app.services.dialogue_context import reply_material
 from app.services.model_client import ModelCallError, OpenAIChatClient
+from app.services.report_adapter import (
+    NATIVE_SCHEMA,
+    project_summary,
+    source_digest,
+    source_snapshot,
+)
 from app.services.report_text import validate_report
+from app.services.token_budget import estimate_total_request_tokens
 
 logger = logging.getLogger("app.model")
 client = OpenAIChatClient()
 _live: set[UUID] = set()
 _tasks: set[asyncio.Task] = set()
 
-_SCHEMA: dict = {
-    "type": "object",
-    "additionalProperties": False,
-    "properties": {
-        "viewpoint_summary": {"type": "string"},
-        "final_viewpoint": {"type": "string"},
-        "viewpoint_status": {"type": "string"},
-        "reasons": {"type": "array", "items": {"type": "string"}},
-        "strongest_reason": {"type": "string"},
-        "challenges": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "challenge": {"type": "string"},
-                    "responded": {"type": "boolean"},
-                },
-                "required": ["challenge", "responded"],
-            },
-        },
-        "revision_or_defense": {"type": "string"},
-        "focus_connection": {"type": "string"},
-        "other_perspectives": {"type": "string"},
-        "open_questions": {"type": "array", "items": {"type": "string"}},
-        "evidence_status": {
-            "type": "string",
-            "enum": ["sufficient", "partial", "insufficient"],
-        },
-        "limitations": {"type": "string"},
-        "timeline": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": {
-                    "turn": {"type": "integer"},
-                    "question": {"type": "string"},
-                    "evidence": {"type": "string"},
-                    "viewpoint_before": {"type": "string"},
-                    "viewpoint_after": {"type": "string"},
-                    "change_type": {"type": "string"},
-                    "attribution": {"type": "string"},
-                },
-                "required": [
-                    "turn",
-                    "question",
-                    "evidence",
-                    "viewpoint_before",
-                    "viewpoint_after",
-                    "change_type",
-                    "attribution",
-                ],
-            },
-        },
-    },
-    "required": [
-        "viewpoint_summary",
-        "final_viewpoint",
-        "viewpoint_status",
-        "reasons",
-        "strongest_reason",
-        "challenges",
-        "revision_or_defense",
-        "focus_connection",
-        "other_perspectives",
-        "open_questions",
-        "evidence_status",
-        "limitations",
-        "timeline",
-    ],
-}
+_SCHEMA = NATIVE_SCHEMA
 
 
 def live_attempts() -> set[UUID]:
@@ -123,7 +58,19 @@ async def run_report(attempt_id: UUID) -> None:
             refresh(report_crud.extend_lease, attempt_id, _live)
         )
         try:
-            material = await _material(session_id, progress)
+            source = await _source(attempt_id, session_id, progress)
+            material = json.dumps(source["material"], ensure_ascii=False)
+            if (
+                estimate_total_request_tokens(
+                    model_id=model_id,
+                    instructions=prompt.instructions,
+                    material=material,
+                    schema=_SCHEMA,
+                    output_tokens=prompt.max_output_tokens,
+                )
+                > settings.REPORT_CONTEXT_TOKEN_BUDGET
+            ):
+                raise ValueError("Report source exceeds configured budget")
             parsed = await client.complete_object(
                 name="personal_report",
                 schema=_SCHEMA,
@@ -132,11 +79,26 @@ async def run_report(attempt_id: UUID) -> None:
                 model=model_id,
                 max_tokens=prompt.max_output_tokens,
             )
-            body = validate_report(parsed)
+            body, native = project_summary(parsed, source)
+            body = validate_report(body, source=source)
         except (ModelCallError, ValueError, TypeError):
             await _fail(attempt_id)
             return
-        await _ready(attempt_id, body, prompt.stage.value, prompt.version)
+        await _ready(
+            attempt_id,
+            body,
+            prompt.stage.value,
+            prompt.version,
+            {
+                "native_summary": native,
+                "report_schema_version": "native-summary-v1",
+                "model_id": model_id,
+                "source_digest": source_digest(source),
+            },
+        )
+    except Exception:
+        logger.info("report attempt ended")
+        await _fail(attempt_id)
     finally:
         if refresher is not None:
             refresher.cancel()
@@ -157,23 +119,32 @@ async def _begin(attempt_id: UUID) -> tuple[UUID, dict | None] | None:
         return session_id, progress
 
 
-async def _material(session_id: UUID, progress: dict | None) -> str:
+async def _source(attempt_id: UUID, session_id: UUID, progress: dict | None) -> dict:
     async with AsyncSessionLocal() as db:
+        attempt = await report_crud.get_attempt(db, attempt_id)
+        if attempt is None or attempt.session_id != session_id:
+            raise ValueError("Missing or mismatched report attempt")
+        metadata = attempt.generation_meta or {}
+        saved = metadata.get("report_source")
+        if saved is not None:
+            if source_digest(saved) != metadata.get("source_digest"):
+                raise ValueError("Report source fingerprint mismatch")
+            return saved
         from app.models.session import Session
-        from app.models.topic import Topic
 
         session = await db.get(Session, session_id)
         if session is None:
-            raise ValueError("invalid report")
-        topic = await db.get(Topic, session.topic_id)
-        if topic is None:
-            raise ValueError("invalid report")
+            raise ValueError("Missing report session")
         loaded = await message_crud.load_owned_dialogue(
             db, session_id=session_id, user_id=session.user_id
         )
-        messages = [] if loaded is None else loaded[2]
-        snapshot = json.dumps(progress, ensure_ascii=False) if progress else "null"
-        return f"{reply_material(topic, messages)}\nprogressSnapshot:\n{snapshot}"
+        if loaded is None:
+            raise ValueError("Missing report dialogue")
+        session, topic, messages = loaded
+        source = source_snapshot(session, topic, messages, progress)
+        await report_crud.save_source(db, attempt_id, source, source_digest(source))
+        await db.commit()
+        return source
 
 
 async def _fail(attempt_id: UUID) -> None:
@@ -184,7 +155,11 @@ async def _fail(attempt_id: UUID) -> None:
 
 
 async def _ready(
-    attempt_id: UUID, body: dict, prompt_stage: str, prompt_version: str
+    attempt_id: UUID,
+    body: dict,
+    prompt_stage: str,
+    prompt_version: str,
+    report_metadata: dict,
 ) -> None:
     async with AsyncSessionLocal() as db:
         await report_crud.mark_ready(
@@ -193,5 +168,6 @@ async def _ready(
             body,
             prompt_stage=prompt_stage,
             prompt_version=prompt_version,
+            report_metadata=report_metadata,
         )
         await db.commit()

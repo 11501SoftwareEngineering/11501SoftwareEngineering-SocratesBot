@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from app.core.enums import DialogueOutcome, GenerationStatus
-
-_EVIDENCE = frozenset({"sufficient", "partial", "insufficient"})
+from app.schemas.report import ReportProjection
 
 
 def report_start(outcome: str, newest_status: str | None) -> str:
@@ -35,38 +34,26 @@ def visible_report(
     return attempts[-1][0], ready[-1] if ready else None
 
 
-def validate_report(payload: dict) -> dict:
-    """Return the stored report body, or raise ValueError."""
-    if not isinstance(payload, dict):
-        raise ValueError("invalid report")
-    summary = payload.get("viewpoint_summary")
-    final = payload.get("final_viewpoint")
-    viewpoint_status = payload.get("viewpoint_status")
-    evidence = payload.get("evidence_status")
-    if not all(
-        isinstance(item, str) and item.strip()
-        for item in (summary, final, viewpoint_status)
-    ):
-        raise ValueError("invalid report")
-    if evidence not in _EVIDENCE:
-        raise ValueError("invalid report")
-    challenges = payload.get("challenges")
-    timeline = payload.get("timeline")
-    return {
-        "viewpoint_summary": summary.strip(),
-        "final_viewpoint": final.strip(),
-        "viewpoint_status": viewpoint_status.strip(),
-        "reasons": _strings(payload.get("reasons")),
-        "strongest_reason": _text(payload.get("strongest_reason")),
-        "challenges": challenges if isinstance(challenges, list) else [],
-        "revision_or_defense": _text(payload.get("revision_or_defense")),
-        "focus_connection": _text(payload.get("focus_connection")),
-        "other_perspectives": _text(payload.get("other_perspectives")),
-        "open_questions": _strings(payload.get("open_questions")),
-        "evidence_status": evidence,
-        "limitations": _text(payload.get("limitations")),
-        "timeline": timeline if isinstance(timeline, list) else [],
-    }
+def validate_report(payload: dict, *, source: dict | None = None) -> dict:
+    """Validate new output; source checks bind citations to owned student messages."""
+    body = ReportProjection.model_validate(payload).model_dump(exclude_none=True)
+    if source is not None:
+        exchanges = {row["turn"]: row for row in source["exchanges"]}
+        seen = set()
+        for item in body["timeline"]:
+            row = exchanges.get(item["turn"])
+            reference = item.get("evidence_reference")
+            if row is None or reference is None or item["turn"] in seen:
+                raise ValueError("Invalid report citation")
+            expected = {key: row[key] for key in ("message_id", "turn", "quote")}
+            if (
+                reference != expected
+                or item["evidence"] != row["quote"]
+                or item["question"] != row["question"]
+            ):
+                raise ValueError("Report citation does not match the source")
+            seen.add(item["turn"])
+    return body
 
 
 def student_report(
@@ -77,6 +64,7 @@ def student_report(
     session_id: str,
     topic_id: str,
     completed_turns: int,
+    completed_at: str | None = None,
 ) -> dict:
     """Shape one report attempt for the student read."""
     report = None
@@ -88,16 +76,7 @@ def student_report(
             "topic_id": topic_id,
             "completed_turns": completed_turns,
             "completion_reason": "completed",
+            **({"completed_at": completed_at} if completed_at else {}),
             **body,
         }
     return {"report_status": status, "report": report}
-
-
-def _text(value: object) -> str:
-    return value.strip() if isinstance(value, str) else ""
-
-
-def _strings(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    return [item.strip() for item in value if isinstance(item, str) and item.strip()]

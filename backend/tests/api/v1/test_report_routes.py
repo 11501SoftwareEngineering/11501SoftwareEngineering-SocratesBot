@@ -46,6 +46,7 @@ class _Memory:
             topic_id=self.topic.id,
             outcome="completed",
             generation_meta=None,
+            completed_at=None,
         )
         self.attempts: list[SimpleNamespace] = []
         self.reports_scheduled: list = []
