@@ -601,7 +601,12 @@ def test_service_rejects_a_ta_even_with_an_earlier_session(has_session: bool) ->
                     store=store,
                 )
 
-            session_count = await db.scalar(select(func.count()).select_from(Session))
+            # Count only this user's sessions: other tests may leave rows behind.
+            session_count = await db.scalar(
+                select(func.count())
+                .select_from(Session)
+                .where(Session.user_id == ta.id)
+            )
             assert session_count == int(has_session)
 
     asyncio.run(run())
@@ -632,7 +637,11 @@ def test_service_rejects_a_student_who_left_without_creating_session() -> None:
                     store=store,
                 )
 
-            session_count = await db.scalar(select(func.count()).select_from(Session))
+            session_count = await db.scalar(
+                select(func.count())
+                .select_from(Session)
+                .where(Session.user_id == student.id)
+            )
             assert session_count == 0
 
     asyncio.run(run())
