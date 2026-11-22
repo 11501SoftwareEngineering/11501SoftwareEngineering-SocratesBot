@@ -168,7 +168,7 @@ async def _model_json(
     model_id: str, prompt: PromptDefinition, material: str, api_key: str
 ) -> dict:
     try:
-        return await OpenAIChatClient().complete_json(
+        return await OpenAIChatClient().complete_opening(
             instructions=prompt.instructions,
             material=material,
             model=model_id,
@@ -621,6 +621,7 @@ async def opening_message(
         model_id,
         prompt,
         (
+            f"content_language: {topic.content_language or settings.DEFAULT_LANGUAGE_CODE}\n"
             f"age_band: {draft.age_band}\n"
             f"max_turns: {draft.max_turns}\n"
             f"topic: {draft.topic}\n"

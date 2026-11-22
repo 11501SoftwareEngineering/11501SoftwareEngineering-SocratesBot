@@ -224,12 +224,12 @@ class OpeningMessageDraft(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    opening_message: str = Field(default="", max_length=_TEXT)
+    opening_message: str = Field(min_length=1, max_length=_TEXT)
 
     @field_validator("opening_message")
     @classmethod
     def keep_model_text(cls, value: str) -> str:
-        return value.strip()
+        return _required_text(value)
 
 
 class _DesignBrief(BaseModel):

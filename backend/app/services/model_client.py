@@ -178,6 +178,8 @@ DESIGN_SCHEMA_NAME = "inquiry_setup"
 
 
 def limits_for(name: str) -> TaskLimits:
+    if name == "inquiry_opening":
+        return TaskLimits(timeout_s=45.0, max_tokens=500, low_reasoning=True)
     return DESIGN_LIMITS if name == DESIGN_SCHEMA_NAME else DEFAULT_LIMITS
 
 
@@ -253,6 +255,26 @@ class OpenAIChatClient:
             max_tokens=max_tokens,
         )
 
+    async def complete_opening(
+        self,
+        *,
+        instructions: str,
+        material: str,
+        model: str | None = None,
+        api_key: str | None = None,
+        max_tokens: int | None = None,
+    ) -> dict:
+        """Generate only the opening, retaining Stage 1 credential/timeout policy."""
+        return await self._post(
+            name="inquiry_opening",
+            schema=_strict({"opening_message": {"type": "string"}}),
+            instructions=instructions,
+            material=material,
+            model=model,
+            api_key=api_key,
+            max_tokens=max_tokens,
+        )
+
     async def complete_design(
         self,
         *,
@@ -262,7 +284,7 @@ class OpenAIChatClient:
         api_key: str | None = None,
         max_tokens: int | None = None,
     ) -> dict:
-        """Stage 1 course setup. The opening message keeps using complete_json."""
+        """Stage 1 course setup using its native design schema."""
         return await self._post(
             name=DESIGN_SCHEMA_NAME,
             schema=_DESIGN_SCHEMA,
