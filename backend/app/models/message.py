@@ -10,7 +10,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -30,6 +30,10 @@ class DialogueMessage(Base):
             "sender IN ('ai', 'student')",
             name="sender",
         ),
+        CheckConstraint(
+            "generation_meta IS NULL OR jsonb_typeof(generation_meta) = 'object'",
+            name="generation_meta_object",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -45,6 +49,7 @@ class DialogueMessage(Base):
     )
     sender: Mapped[str] = mapped_column(String(16), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    generation_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     request_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )

@@ -2,3 +2,5 @@
 蘇格拉底式哲學課程 AI 對話系統
 
 詳細開發指引與架構規範請參閱 [docs/開發須知.md](docs/開發須知.md)。
+
+AI/backend frontend integration: [current API behavior and sequence charts](docs/AI_BACKEND_CONTRACT.md).

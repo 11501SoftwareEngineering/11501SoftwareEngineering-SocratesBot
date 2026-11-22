@@ -19,6 +19,8 @@ from app.models.session import Session
 from app.models.topic import Topic
 from app.services import summary_runner
 from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
+from tests.unit.test_central_synthesis import metadata
+from tests.unit.test_report_adapter import inputs
 
 READY = {
     "viewpoint_summary": "kept the earlier claim",
@@ -41,8 +43,13 @@ def _login(client: TestClient, store: FakeStore, account: str, role: UserRole):
 class _Memory:
     def __init__(self) -> None:
         self.topic = SimpleNamespace(
-            id=uuid4(), course_id=uuid4(), stage="conversation"
+            id=uuid4(),
+            course_id=uuid4(),
+            stage="conversation",
+            model_id="openai/gpt-4o-mini",
+            content_language="en",
         )
+        self.topic.__dict__.update(vars(inputs()[1]))
         self.session = SimpleNamespace(
             id=uuid4(),
             user_id=None,
@@ -93,7 +100,17 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
             for row in memory.attempts
             if row.status == "ready" and row.result_json is not None
         ]
-        return [] if not ready else [(str(ready[-1].id), ready[-1].result_json)]
+        return (
+            []
+            if not ready
+            else [
+                {
+                    "report_id": str(ready[-1].id),
+                    "session_id": str(memory.session.id),
+                    "metadata": metadata(),
+                }
+            ]
+        )
 
     async def latest_attempt(_db, topic_id):
         rows = [row for row in memory.summary_attempts if row.topic_id == topic_id]
@@ -159,7 +176,10 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
     monkeypatch.setattr(course_crud, "is_course_instructor", is_instructor)
     monkeypatch.setattr(session_crud, "is_course_member", is_member)
     monkeypatch.setattr(report_crud, "topic_dialogues", topic_dialogues)
-    monkeypatch.setattr(summary_crud, "ready_report_bodies", ready_bodies)
+    monkeypatch.setattr(summary_crud, "ready_native_reports", ready_bodies)
+    monkeypatch.setattr(
+        summary_crud, "has_open_dialogues", AsyncMock(return_value=False)
+    )
     monkeypatch.setattr(summary_crud, "latest_attempt", latest_attempt)
     monkeypatch.setattr(summary_crud, "insert_attempt", insert_attempt)
     monkeypatch.setattr(summary_crud, "latest_summary", latest_summary)
@@ -198,6 +218,7 @@ def test_summary_publish_stays_stable_until_withdraw(
         version=1,
         body={
             "status": "reviewed",
+            "native_synthesis": {"private_marker": "keep-across-versions"},
             "overview": "The class compared two accounts.",
             "viewpoint_summary": "Most revised the first claim.",
             "denominator": 2,
@@ -267,6 +288,12 @@ def test_summary_publish_stays_stable_until_withdraw(
     assert memory.summaries_scheduled
     assert named.status_code == 400
     assert published.status_code == 200
+    assert "native_synthesis" not in student_read.text
+    assert "keep-across-versions" not in student_read.text
+    assert (
+        memory.versions[1].body["native_synthesis"]["private_marker"]
+        == "keep-across-versions"
+    )
     assert "report_ids" not in student_read.text
     assert "Ada" not in student_read.text
     assert (
@@ -287,6 +314,7 @@ def test_summary_publish_stays_stable_until_withdraw(
     assert latest.body["status"] == "draft"
     assert latest.body["published"] is None
     assert latest.body["published_version"] is None
+    assert latest.body["native_synthesis"]["private_marker"] == "keep-across-versions"
 
 
 def test_summary_keeps_an_older_version_without_sending_one(
@@ -417,3 +445,64 @@ def test_privacy_and_result_routes_are_gone(auth_client: TestClient) -> None:
 
     assert privacy.status_code == 404
     assert result.status_code == 404
+
+
+def test_teacher_closure_count_and_confirmation_api(auth_client, store, monkeypatch):
+    from fastapi import HTTPException
+
+    from app.services import conversation_closure
+
+    teacher_bearer, _ = _login(auth_client, store, "closure-teacher", UserRole.TEACHER)
+    student_bearer, _ = _login(auth_client, store, "closure-student", UserRole.USER)
+    topic_id = uuid4()
+    status = {
+        "topic_id": topic_id,
+        "topic_status": "conversation",
+        "open_dialogue_count": 2,
+        "stage2_closed": False,
+        "confirmation_required": True,
+        "preparation_status": None,
+    }
+    read = AsyncMock(return_value=status)
+    close = AsyncMock(
+        side_effect=HTTPException(
+            409,
+            {"code": "open_dialogues_confirmation_required", "open_dialogue_count": 2},
+        )
+    )
+    monkeypatch.setattr(conversation_closure, "read_status", read)
+    monkeypatch.setattr(conversation_closure, "close", close)
+    headers = {"Authorization": teacher_bearer}
+    url = f"/api/v1/topics/{topic_id}"
+    response = auth_client.get(url + "/conversation-status", headers=headers)
+    assert response.status_code == 200 and response.json()["open_dialogue_count"] == 2
+    close.assert_not_awaited()
+    blocked = auth_client.post(url + "/end-conversation", headers=headers, json={})
+    assert (
+        blocked.status_code == 409
+        and blocked.json()["detail"]["open_dialogue_count"] == 2
+    )
+    close.side_effect = None
+    close.return_value = {
+        **status,
+        "topic_status": "summary",
+        "open_dialogue_count": 0,
+        "stage2_closed": True,
+        "confirmation_required": False,
+        "ended_dialogue_count": 2,
+        "preparation_status": "pending",
+    }
+    ended = auth_client.post(
+        url + "/end-conversation",
+        headers=headers,
+        json={"confirm_open_dialogues": True},
+    )
+    assert ended.status_code == 200 and ended.json()["preparation_status"] == "pending"
+    assert close.await_args.kwargs["confirm"] is True
+    denied = auth_client.post(
+        url + "/end-conversation",
+        headers={"Authorization": student_bearer},
+        json={"confirm_open_dialogues": True},
+    )
+    assert denied.status_code == 403
+    assert close.await_count == 2
