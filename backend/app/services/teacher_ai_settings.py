@@ -84,7 +84,7 @@ async def save_api_key(
 
 
 async def openrouter_api_key(db: AsyncSession, user_id: uuid.UUID) -> str:
-    """Return the teacher's OpenRouter key, or the server key when none is stored."""
+    """Return the teacher key or server-attributed credential (pool resolves at dispatch)."""
     row = await settings_crud.get_settings(db, user_id)
     stored = None if row is None else row.api_key_ciphertext
     if not isinstance(stored, str) or stored == "":

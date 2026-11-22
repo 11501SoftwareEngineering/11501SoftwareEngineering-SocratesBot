@@ -75,6 +75,7 @@ class Settings(BaseSettings):
 
     # LLM API via OpenRouter. The model id stays in server config; clients never send or read it.
     OPENAI_API_KEY: SecretStr
+    OPENAI_API_KEYS: SecretStr = SecretStr("")
     ANTHROPIC_API_KEY: SecretStr
     OPENAI_MODEL: NonEmptyStr = "openai/gpt-6-luna"
     # Legacy configuration compatibility; course validity uses the activity model.

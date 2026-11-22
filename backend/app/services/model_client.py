@@ -15,6 +15,7 @@ import httpx
 from app.core.config import settings
 from app.core.model_catalog import INQUIRY_CATALOG_MODELS
 from app.services import ai_diagnostics, ai_usage
+from app.services.key_pool import cooldown_seconds, server_key_pool
 
 logger = logging.getLogger("app.model")
 # A provider can ask for a long pause. This request does not wait past two seconds.
@@ -421,42 +422,26 @@ class OpenAIChatClient:
         usage_key: str | None = None,
         usage_task: str = "dialogue_reply",
     ) -> httpx.Response:
+        pool = (
+            server_key_pool()
+            if (
+                usage_key is None
+                or (
+                    isinstance(usage_key, ai_usage.AttributedKey)
+                    and usage_key.source == "server"
+                )
+            )
+            else None
+        )
+        if pool is not None:
+            return await self._send_pool(
+                payload, timeout_s, usage_key, usage_task, pool
+            )
         response: httpx.Response | None = None
         for attempt in (1, 2):
-            try:
-                event_id = await ai_usage.begin(usage_key, usage_task, payload["model"])
-            except Exception:
-                logger.error("ai_usage_start_unavailable task=%s", usage_task)
-                raise ModelCallError(503, reason="usage_record_start_failed") from None
-            current_response = None
-            started = time.perf_counter()
-            ai_diagnostics.emit(
-                "provider_dispatch",
-                attempt=attempt,
-                usage_event_id=str(event_id) if event_id else None,
+            response = await self._send_one(
+                payload, headers, timeout_s, usage_key, usage_task, attempt
             )
-            try:
-                async with httpx.AsyncClient(
-                    transport=self._transport, timeout=timeout_s
-                ) as client:
-                    current_response = await client.post(
-                        f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
-                        headers=headers,
-                        json=payload,
-                    )
-                    response = current_response
-                    ai_diagnostics.response_received(
-                        response,
-                        attempt=attempt,
-                        elapsed_ms=round((time.perf_counter() - started) * 1000),
-                        event_id=event_id,
-                        secret=headers["Authorization"].removeprefix("Bearer "),
-                    )
-            except httpx.HTTPError:
-                logger.info("model provider status unavailable")
-                raise ModelCallError(None, reason="transport_error") from None
-            finally:
-                await ai_usage.finish(event_id, current_response)
             delay = _retry_delay(response)
             if (
                 response.status_code in {429, 503}
@@ -472,6 +457,82 @@ class OpenAIChatClient:
             break
         assert response is not None
         return response
+
+    async def _send_one(
+        self, payload, headers, timeout_s, usage_key, usage_task, attempt
+    ):
+        try:
+            event_id = await ai_usage.begin(usage_key, usage_task, payload["model"])
+        except Exception:
+            logger.error("ai_usage_start_unavailable task=%s", usage_task)
+            raise ModelCallError(503, reason="usage_record_start_failed") from None
+        current_response = None
+        started = time.perf_counter()
+        ai_diagnostics.emit(
+            "provider_dispatch",
+            attempt=attempt,
+            usage_event_id=str(event_id) if event_id else None,
+        )
+        try:
+            async with httpx.AsyncClient(
+                transport=self._transport, timeout=timeout_s
+            ) as client:
+                current_response = await client.post(
+                    f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                )
+                response = current_response
+                ai_diagnostics.response_received(
+                    response,
+                    attempt=attempt,
+                    elapsed_ms=round((time.perf_counter() - started) * 1000),
+                    event_id=event_id,
+                    secret=headers["Authorization"].removeprefix("Bearer "),
+                )
+        except httpx.HTTPError:
+            logger.info("model provider status unavailable")
+            raise ModelCallError(None, reason="transport_error") from None
+        finally:
+            await ai_usage.finish(event_id, current_response)
+        assert current_response is not None
+        return current_response
+
+    async def _send_pool(self, payload, timeout_s, usage_key, usage_task, pool):
+        attempted = set()
+        response = None
+        for attempt in range(1, min(len(pool), 3) + 1):
+            selected = pool.pick(attempted)
+            if selected is None:
+                break
+            index, key = selected
+            attempted.add(index)
+            ai_diagnostics.emit("server_key_selected", key_slot=index, attempt=attempt)
+            response = await self._send_one(
+                payload,
+                {"Authorization": f"Bearer {key}"},
+                timeout_s,
+                usage_key,
+                usage_task,
+                attempt,
+            )
+            if response.status_code not in {429, 402}:
+                return response
+            seconds = cooldown_seconds(
+                response.status_code, response.headers.get("Retry-After")
+            )
+            pool.cool(index, seconds)
+            ai_diagnostics.emit(
+                "server_key_cooling",
+                key_slot=index,
+                attempt=attempt,
+                http_status=response.status_code,
+                cooldown_seconds=seconds,
+            )
+        if response is not None:
+            return response
+        ai_diagnostics.emit("server_key_pool_exhausted")
+        raise ModelCallError(503, reason="no_healthy_server_key")
 
 
 def _retry_delay(response: httpx.Response) -> float | None:

@@ -28,7 +28,7 @@ Generation/refinement feedback: `assessments`, `clarification_questions`, `sugge
 
 Generation errors include 400 outside setup, 422 for request/semantic rejection, 502 for invalid provider output, 503 for unavailable service/incomplete substantive output, and 504 for the task timeout. See per-route OpenAPI for examples. Opening generation sends the effective content language and requests only `opening_message` using a dedicated schema (45-second timeout, at most500 output tokens). Missing/blank/malformed opening output returns502 without replacing the saved opening.
 
-All course AI calls use the course owner's stored OpenRouter key when configured, including requests triggered by TAs/students and background report/synthesis jobs. Otherwise they use the single server OPENAI_API_KEY. Missing course/topic records or unreadable personal keys fail closed; teacher-key provider failures never switch to server billing. No rotating key pool is included. For teacher- and TA-created activities, model selection is explicit creation override → course owner (`Course.created_by`) saved default → server default. Explicit and saved selections must exist in the catalog; stale saved defaults return422. Language defaults to server configuration. These defaults affect only new topics. Generate/refine return the effective language/model; to adopt a generated selection, send it explicitly on Save/Publish. Model/language changes are recorded in inquiry revisions. No key belongs in a frontend payload, trace or example beyond the dedicated existing key-settings flow.
+All course AI calls use the course owner's stored OpenRouter key when configured, including requests triggered by TAs/students and background report/synthesis jobs. Otherwise they use the configured OPENAI_API_KEYS server pool, or legacy OPENAI_API_KEY when the pool is unset. Missing course/topic records or unreadable personal keys fail closed; teacher-key provider failures never switch to server billing. The server pool rotates healthy keys and fails over on429/402; see the server rotation contract below. For teacher- and TA-created activities, model selection is explicit creation override → course owner (`Course.created_by`) saved default → server default. Explicit and saved selections must exist in the catalog; stale saved defaults return422. Language defaults to server configuration. These defaults affect only new topics. Generate/refine return the effective language/model; to adopt a generated selection, send it explicitly on Save/Publish. Model/language changes are recorded in inquiry revisions. No key belongs in a frontend payload, trace or example beyond the dedicated existing key-settings flow.
 
 ```mermaid
 sequenceDiagram
@@ -208,9 +208,9 @@ sequenceDiagram
     alt Personal credential exists and can be decrypted
         API->>Model: Selected model + personal credential
     else No personal credential configured
-        API->>Model: Selected model + single server credential
+        API->>Model: Selected model + healthy server pool key (or legacy key)
     end
-    Model-->>API: Result or failure (no billing-account failover)
+    Model-->>API: Result or failure (personal key never falls back to server)
     API->>DB: Validated result and nonsecret provenance
     API-->>Caller: Existing response / job status
 ```
@@ -401,7 +401,7 @@ Published aggregate fields remain `overview`, `viewpoint_summary`, `groups` (`na
 
 Teacher-selected model is used consistently across dialogue tasks, personal reports and class synthesis. Default model is `openai/gpt-6-luna` absent explicit/saved/environment overrides. `OPENAI_VALIDITY_MODEL` remains accepted for configuration compatibility but no longer selects a separate course-dialogue validity model. Report/synthesis attempts capture the selected model; credentials are resolved at execution and never stored in public evidence.
 
-Course owner's personal credential takes priority; otherwise the single server credential is used. No new credential fields are required in these frontend calls, no teacher-to-server failover occurs after provider failure, and no rotating key pool is included (PR266 deferred).
+Course owner's personal credential takes priority; otherwise the server pool (or legacy single key) is used. No new credential fields are required in these frontend calls, no teacher-to-server failover occurs after provider failure, and pool rotation applies only to server-owned credentials (implemented separately from PR266).
 
 Rollout must include the Chunk06 database migration for the new ending lifecycle; native Stage3 uses existing JSON storage and introduces no additional migration. Keep frontend outcome handling compatible with `ended`, poll job status independently from dialogue/goal state, and account for stricter Stage3 readiness and the temporary409 new-entry gate. Verify the deployed backend schema before adopting PR documentation.
 
@@ -806,3 +806,57 @@ Relevance does not grant reasoning credit: status still records only explicit st
 Verification: the deterministic turn regression checks that a scripted YES with no supplied reason reaches status/planning while leaving the reason milestone false and goal unreached; the existing NO regression checks the off-topic branch. These mocks do not establish live classification quality. No live-model evaluation of this new prompt was performed. The earlier live truncation tests used validity1.0.1 and must not be read as evaluation of1.0.2.
 
 Suggested live checks for the same AI-misinformation question: the quoted premise challenge,「我不知道怎麼設界線」and「應該允許」should return YES;「今天晚餐吃什麼」should return NO. Preserve the actual model/prompt version and diagnostics when evaluating. This correction addresses false off-topic rejection separately from the reproduced502 truncation.
+
+## Server key rotation
+
+This PR adds server credential rotation above PR277; it is not evidence of deployed adoption. No public endpoint, DTO, migration, frontend field, prompt or selected-model change is required. All AI tasks share the model-client dispatch path, including Stage1, Stage2, context summaries, personal reports and Stage3 classification.
+
+Configuration (server secrets only): set `OPENAI_API_KEYS=server-key-a,server-key-b` in `backend/.env`, then restart all backend workers. Values are illustrative placeholders. Entries are comma-separated, trimmed and deduplicated, preserving order; blank entries are ignored. A nonempty pool replaces the legacy server key; `OPENAI_API_KEY` is not implicitly appended. If the pool is absent/blank, the existing single-key path remains in use. Keep the legacy variable present (it may be empty when the pool is configured). Never expose the pool through frontend configuration or commit real values.
+
+Credential precedence remains course teacher's stored key first. A personal-key decryption/provider failure does not switch to server billing. Explicit caller-supplied keys also bypass the pool. Server-attributed operations retain their course teacher usage attribution while choosing the actual secret at dispatch; the credential value is never stored in usage rows.
+
+Pool policy:
+
+- Start each model call with the next healthy key in round-robin order. State is shared across client instances in one worker.
+- On HTTP429 or402, cool that key and immediately try a different healthy key with the identical payload/model. At most `min(unique_pool_size, 3)` outbound attempts per model call, counting the initial send; never reuse a key in the same call. A three-call dialogue can therefore dispatch up to nine attempts. There is no nested same-key retry on the pool path.
+- Use finite nonnegative numeric `Retry-After` seconds or a valid future HTTP-date. Otherwise use60 seconds for429 or300 seconds for402. Honor long valid delays without shortening them; repeated failures cannot shorten an existing cooldown. Cooldowns apply across models because credits and some limits are shared. Zero allows eligibility on a later call, but not reuse in the current call.
+- Do not rotate on401/403, other HTTP errors (including503), transport errors/timeouts, or invalid/truncated successful output. Transport errors may be ambiguous about whether generation started. Pool rotation does not replay those calls. The existing overall task deadline covers all attempts; it is not restarted for each key.
+- If all available attempts fail, propagate the last provider failure through existing service error handling. If no healthy key exists before dispatch, raise internal `ModelCallError(503, reason="no_healthy_server_key")` without a provider request/usage row. HTTP endpoint mappings remain the existing ones; the internal503 is not a new universal public503 contract.
+- The legacy/personal-key path keeps its existing single retry on429/503 only when numeric `Retry-After` is at most two seconds. It does not fail over to another account.
+
+```mermaid
+sequenceDiagram
+    participant Service as Authorized AI service
+    participant Client as Model client
+    participant Pool as Worker key pool
+    participant Usage as Usage ledger
+    participant OR as OpenRouter
+    Service->>Client: Selected model, payload, teacher/source attribution
+    alt Personal or explicit key
+        Client->>OR: Existing single-key path (no server fallback)
+    else Server credential with configured pool
+        loop Up to min(pool size, 3) distinct keys
+            Client->>Pool: Pick next healthy untried key
+            alt No healthy key
+                Pool-->>Client: Stop (no outbound request)
+            else Healthy key
+                Client->>Usage: Begin durable attributed attempt
+                Client->>OR: Same model/payload with selected server key
+                OR-->>Client: Response
+                Client->>Usage: Finish attempt with response usage/status
+                alt HTTP429 or402
+                    Client->>Pool: Cool key, then try another
+                else Other response
+                    Client->>Client: Stop retries; parse or propagate error
+                end
+            end
+        end
+    end
+    Client-->>Service: Result or existing error
+```
+
+Diagnostics: `server_key_selected` records a zero-based `key_slot` and attempt; `server_key_cooling` adds HTTP status and cooldown seconds; `server_key_pool_exhausted` identifies no healthy key before dispatch. Slot numbers refer only to the configured order in that worker and contain no key prefix/hash. Existing request/call/job correlation and per-dispatch usage events remain intact. Failed attempts count as provider requests; unknown cost/tokens stay unknown. Metering-start failure prevents dispatch. Normal logs do not include credentials; opt-in response traces redact every configured server secret as well as the current credential.
+
+Operational limits: state is **process-local**, thread-safe, and reset on restart; workers/replicas have independent round-robin cursors and cooldowns. Concurrent calls already in flight when a key is cooled may still finish/fail. This is not a distributed rate limiter or in-flight request scheduler. A402 cooldown does not replenish credits: replenish/repair the relevant account/key budget. OpenRouter documents that extra keys/accounts do not increase global capacity: [limits](https://openrouter.ai/docs/api/reference/limits). The pool helps only where another credential actually has capacity; shared account/provider limits can exhaust the entire pool. Error/cooldown reference: [OpenRouter errors](https://openrouter.ai/docs/api/reference/errors-and-debugging).
+
+Verification uses deterministic HTTP transports and simulated time: round-robin/concurrent selection,429/402 failover, request bounds, cooldown/expiry/date parsing, exhaustion, teacher priority, unchanged payload/model, per-attempt accounting, transport/deadline handling and secret redaction. Real provider throttling cannot be inferred from mocks. No paid calls or multi-account capacity experiment is required or claimed. Run `uv run --locked pytest tests/unit/test_server_key_rotation.py tests/unit/test_model_client.py tests/unit/test_ai_diagnostics.py -q` from `backend/`.
