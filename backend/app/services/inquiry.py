@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -10,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.enums import TaPermission, TopicStage, UserRole
+from app.core.prompts import PromptDefinition, PromptStage, prompt_for
 from app.crud import course as course_crud
 from app.crud import inquiry_model as inquiry_model_crud
 from app.crud import topic as topic_crud
@@ -17,9 +20,12 @@ from app.models.inquiry_model import InquiryModel
 from app.models.topic import Topic
 from app.models.user import User
 from app.schemas.inquiry import (
+    CreatedInquiryResponse,
     CreateInquiryTopicRequest,
+    DesignOutput,
     GeneratedInquiry,
     GenerateInquiryRequest,
+    InquiryFeedback,
     InquiryFields,
     InquirySetupResponse,
     InquirySetupWriteResponse,
@@ -30,24 +36,20 @@ from app.schemas.inquiry import (
     SaveInquiryRequest,
     first_incomplete_field,
 )
+from app.services import ai_diagnostics
 from app.services import courses as courses_service
-from app.services.model_client import ModelCallError, OpenAIChatClient
-from app.services.teacher_ai_settings import openrouter_api_key
+from app.services.model_client import (
+    ModelCallError,
+    ModelTimeoutError,
+    OpenAIChatClient,
+)
+from app.services.teacher_ai_settings import (
+    course_api_key,
+    effective_default_model,
+    openrouter_api_key,
+)
+from app.services.teacher_input import topic_issue, topic_issue_message
 from app.services.topics import get_instructed_topic
-
-_INSTRUCTIONS = (
-    "Turn the teacher's notes into an eight-field inquiry. "
-    "Return only the JSON object. Do not name a student. "
-    "inquiry_focus must not prescribe a conclusion the student must accept. "
-    "background_info must not state unverified claims as facts. "
-    "Use exclusions 'unspecified' when the teacher gave no exclusion. "
-    "opening_message may be empty."
-)
-_OPENING_INSTRUCTIONS = (
-    "Write one opening message for this inquiry. "
-    "Return it in opening_message and keep the other fields unchanged. "
-    "The opening message may be empty. Do not name a student."
-)
 
 
 async def list_inquiry_models(db: AsyncSession, user: User) -> list[InquiryModel]:
@@ -85,19 +87,26 @@ def _response(topic: Topic) -> InquirySetupResponse:
         course_id=topic.course_id,
         topic_status=topic.stage,
         model_id=topic.model_id,
+        content_language=topic.content_language,
         setup=_fields_of(topic),
     )
 
 
 def _suggestion(
-    topic: Topic, generated: GeneratedInquiry, model_id: str | None
+    topic: Topic,
+    generated: GeneratedInquiry,
+    model_id: str | None,
+    feedback: InquiryFeedback,
+    language: str,
 ) -> InquirySetupResponse:
     return InquirySetupResponse(
         topic_id=topic.id,
         course_id=topic.course_id,
         topic_status=topic.stage,
         model_id=model_id,
+        content_language=language,
         setup=InquiryFields.model_validate(generated.model_dump()),
+        **feedback.model_dump(),
     )
 
 
@@ -134,7 +143,24 @@ def _reject_if_stale(topic: Topic, seen_at: object) -> None:
         )
 
 
+_PLACEHOLDER = re.compile(
+    r"^(未指定|尚未指定|待補|待補充|不適用|n/?a|not specified|unspecified|tbd|none|null)[.!\u3002\uff01]?$",
+    re.IGNORECASE,
+)
+_SETUP_WARNING = (
+    "Background or exclusions were not specified. Confirm them before publishing."
+)
+
+
 def _model_failure(exc: ModelCallError) -> HTTPException:
+    if isinstance(exc, ModelTimeoutError):
+        return HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail=(
+                "Course setup took longer than 45 seconds and was stopped. "
+                "Your input was kept; try again or shorten the description."
+            ),
+        )
     code = (
         status.HTTP_503_SERVICE_UNAVAILABLE
         if exc.status_code in {429, 503}
@@ -144,53 +170,136 @@ def _model_failure(exc: ModelCallError) -> HTTPException:
 
 
 async def _model_json(
-    model_id: str, instructions: str, material: str, api_key: str
+    model_id: str, prompt: PromptDefinition, material: str, api_key: str
 ) -> dict:
     try:
-        return await OpenAIChatClient().complete_json(
-            instructions=instructions,
+        return await OpenAIChatClient().complete_opening(
+            instructions=prompt.instructions,
             material=material,
             model=model_id,
             api_key=api_key,
+            max_tokens=prompt.max_output_tokens,
         )
     except ModelCallError as exc:
         raise _model_failure(exc) from None
 
 
-def _validated(raw: dict, schema: type[GeneratedInquiry] | type[OpeningMessageDraft]):
+def _validated[Parsed: (GeneratedInquiry, OpeningMessageDraft, DesignOutput)](
+    raw: dict, schema: type[Parsed]
+) -> Parsed:
     try:
         return schema.model_validate(raw)
-    except ValidationError:
+    except ValidationError as exc:
+        ai_diagnostics.validation_failure(schema.__name__, exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Inquiry generation failed",
         ) from None
 
 
-async def _complete(
-    model_id: str, instructions: str, material: str, api_key: str
-) -> GeneratedInquiry:
-    raw = await _model_json(model_id, instructions, material, api_key)
-    return _validated(raw, GeneratedInquiry)
+async def _design_json(
+    model_id: str, prompt: PromptDefinition, material: str, api_key: str
+) -> dict:
+    try:
+        return await OpenAIChatClient().complete_design(
+            instructions=prompt.instructions,
+            material=material,
+            model=model_id,
+            api_key=api_key,
+            max_tokens=prompt.max_output_tokens,
+        )
+    except ModelCallError as exc:
+        raise _model_failure(exc) from None
 
 
-def _material(
-    fields: InquiryFields, *, content_language: str, feedback: str | None = None
+def _design_material(
+    *,
+    language: str,
+    age_band: str | None,
+    max_turns: int | None,
+    theme_context: str,
+    current: InquiryFields | None = None,
+    feedback: str | None = None,
 ) -> str:
-    lines = [
-        f"content_language: {content_language}",
-        f"age_band: {fields.age_band}",
-        f"max_turns: {fields.max_turns}",
-        f"topic: {fields.topic}",
-        f"core_question: {fields.core_question}",
-        f"inquiry_focus: {fields.inquiry_focus}",
-        f"background_info: {fields.background_info}",
-        f"exclusions: {fields.exclusions}",
-        f"opening_message: {fields.opening_message}",
-    ]
-    if feedback is not None:
-        lines.append(f"feedback:\n{feedback}")
-    return "\n".join(lines)
+    """Stage 1 input in the shape the inquiry_design prompt describes."""
+    material: dict[str, object] = {
+        "interfaceLanguage": language,
+        "teacherInput": {
+            "learnerBand": age_band,
+            "targetExchanges": max_turns,
+            "themeContext": theme_context,
+        },
+        "teacherFeedback": feedback or "",
+    }
+    if current is not None:
+        material["currentSetup"] = current.model_dump()
+    return json.dumps(material, ensure_ascii=False)
+
+
+def _revision_message(message: str, language: str) -> str:
+    reason = message.strip()
+    if language.lower().startswith("en"):
+        hint = reason or "State a recognizable topic and what students should examine."
+        return f"Please revise the course description. {hint}"
+    hint = reason or "請說明可辨識的主題與希望學生思考的問題。"
+    return f"請調整課程描述。{hint}"
+
+
+async def _design(
+    model_id: str,
+    prompt: PromptDefinition,
+    material: str,
+    api_key: str,
+    *,
+    age_band: str | None,
+    max_turns: int | None,
+    language: str,
+) -> tuple[GeneratedInquiry, InquiryFeedback]:
+    """Run Stage 1 and return the eight fields with the model's feedback.
+
+    The teacher's age band and turn cap win over the model's copy of them.
+
+    Raises:
+        HTTPException: 422 when the model asks for a revised description; 502 when
+            the output breaks the Stage 1 contract; 503 when a key field is a
+            placeholder; 502, 503, or 504 when the model call fails.
+    """
+    result = _validated(
+        await _design_json(model_id, prompt, material, api_key), DesignOutput
+    )
+    if result.input_check.status == "needs_revision":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=_revision_message(result.input_check.message, language),
+        )
+    design = result.design
+    if design is None:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Inquiry generation failed",
+        )
+    brief = design.brief
+    generated = _validated(
+        {
+            "age_band": age_band or brief.learner_band,
+            "max_turns": max_turns or brief.target_exchanges,
+            "topic": brief.theme,
+            "core_question": brief.inquiry_question,
+            "inquiry_focus": brief.inquiry_focus,
+            "background_info": brief.necessary_context,
+            "exclusions": brief.exclusions,
+            "opening_message": brief.opening_message,
+        },
+        GeneratedInquiry,
+    )
+    _check_complete(generated)
+    warnings = list(dict.fromkeys([*design.warnings, *_setup_warnings(generated)]))
+    return generated, InquiryFeedback(
+        assessments=design.assessments,
+        clarification_questions=design.clarification_questions,
+        suggestions=design.suggestions,
+        warnings=warnings,
+    )
 
 
 def _apply(topic: Topic, generated: GeneratedInquiry) -> None:
@@ -213,7 +322,7 @@ async def get_inquiry_setup(
     Raises:
         HTTPException: 404 if the topic is missing; 403 if not an instructor.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     return _response(topic)
 
 
@@ -232,19 +341,31 @@ async def create_inquiry_topic(
     course, _role = await courses_service.require_course_teacher_or_ta(
         db, user, course_id, TaPermission.EDIT_TOPICS
     )
-    language = settings.DEFAULT_LANGUAGE_CODE
-    model_id = settings.OPENAI_MODEL
-    api_key = await openrouter_api_key(db, user.id)
-    generated = await _complete(
+    issue = topic_issue(payload.course_description)
+    if issue is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=topic_issue_message(issue, len(payload.course_description.strip())),
+        )
+    language = payload.content_language or settings.DEFAULT_LANGUAGE_CODE
+    model_id = payload.model_id or await effective_default_model(db, course.created_by)
+    if payload.model_id is not None:
+        await _require_catalog_model(db, model_id)
+    api_key = await openrouter_api_key(db, course.created_by)
+    prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
+    generated, feedback = await _design(
         model_id,
-        _INSTRUCTIONS,
-        (
-            f"content_language: {language}\n"
-            f"age_band: {payload.age_band}\n"
-            f"max_turns: {payload.max_turns}\n"
-            f"course_description:\n{payload.course_description}"
+        prompt,
+        _design_material(
+            language=language,
+            age_band=payload.age_band,
+            max_turns=payload.max_turns,
+            theme_context=payload.course_description,
         ),
         api_key,
+        age_band=payload.age_band,
+        max_turns=payload.max_turns,
+        language=language,
     )
     try:
         topic = await topic_crud.create_topic(
@@ -258,12 +379,62 @@ async def create_inquiry_topic(
         topic.model_id = model_id
         topic.stage = TopicStage.SETUP.value
         _apply(topic, generated)
-        await topic_crud.record_inquiry_change(db, topic)
+        await topic_crud.record_inquiry_change(
+            db,
+            topic,
+            prompt_stage=prompt.stage.value,
+            prompt_version=prompt.version,
+            force=True,
+        )
         await db.commit()
     except Exception:
         await db.rollback()
         raise
-    return _response(topic)
+    return CreatedInquiryResponse.model_validate(
+        {**_response(topic).model_dump(), **feedback.model_dump()}
+    )
+
+
+def _check_complete(generated: GeneratedInquiry) -> None:
+    """Refuse output whose substantive fields are placeholders, not content."""
+    for value in (generated.topic, generated.core_question, generated.inquiry_focus):
+        text = value.strip()
+        if not text or _PLACEHOLDER.match(text):
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Inquiry generation was incomplete. "
+                    "Refine the course description and try again."
+                ),
+            )
+
+
+def _setup_warnings(generated: GeneratedInquiry) -> list[str]:
+    unspecified = not generated.background_info.strip() or bool(
+        _PLACEHOLDER.match(generated.background_info.strip())
+    )
+    unspecified = (
+        unspecified
+        or not generated.exclusions.strip()
+        or bool(_PLACEHOLDER.match(generated.exclusions.strip()))
+    )
+    return [_SETUP_WARNING] if unspecified else []
+
+
+async def _require_catalog_model(db: AsyncSession, model_id: str) -> None:
+    if await inquiry_model_crud.get_inquiry_model(db, model_id) is None:
+        raise HTTPException(status_code=422, detail="Invalid model id")
+
+
+async def _apply_selection(
+    db: AsyncSession, topic: Topic, payload: SaveInquiryRequest
+) -> None:
+    # Called after the setup row lock. Omitted selections preserve stored values.
+    if payload.model_id is not None:
+        await _require_catalog_model(db, payload.model_id)
+        topic.model_id = payload.model_id
+    if payload.content_language is not None:
+        topic.content_language = payload.content_language
 
 
 async def _store_setup(db: AsyncSession, topic: Topic, setup: InquiryFields) -> Topic:
@@ -297,11 +468,18 @@ async def save_inquiry_setup(
         HTTPException: 404 if the topic is missing; 403 if not an instructor;
             400 if the topic is not in setup.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     try:
         topic = await _locked_setup(db, topic.id)
+        await _apply_selection(db, topic, payload)
         topic = await _store_setup(db, topic, payload.setup)
-        await topic_crud.record_inquiry_change(db, topic)
+        prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
+        await topic_crud.record_inquiry_change(
+            db,
+            topic,
+            prompt_stage=prompt.stage.value,
+            prompt_version=prompt.version,
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -321,6 +499,7 @@ async def publish_inquiry(
     topic = await get_instructed_topic(db, teacher, topic_id)
     try:
         topic = await _locked_setup(db, topic.id)
+        await _apply_selection(db, topic, payload)
         topic = await _store_setup(db, topic, payload.setup)
         missing = first_incomplete_field(
             age_band=topic.age_band,
@@ -334,7 +513,13 @@ async def publish_inquiry(
                 detail=f"Incomplete setup: {missing}",
             )
         topic = await topic_crud.publish_topic(db, topic)
-        await topic_crud.record_inquiry_change(db, topic)
+        prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
+        await topic_crud.record_inquiry_change(
+            db,
+            topic,
+            prompt_stage=prompt.stage.value,
+            prompt_version=prompt.version,
+        )
         await db.commit()
     except Exception:
         await db.rollback()
@@ -355,7 +540,7 @@ async def generate_inquiry(
             400 if the topic is not in setup; 422 if the model is not in the
             catalog; 502 or 503 if the model call fails.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     await _require_setup(topic)
     catalog = await inquiry_model_crud.get_inquiry_model(db, payload.model_id)
     if catalog is None:
@@ -363,19 +548,26 @@ async def generate_inquiry(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="Invalid model id",
         )
-    api_key = await openrouter_api_key(db, teacher.id)
-    generated = await _complete(
+    api_key = await course_api_key(db, topic.course_id)
+    prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
+    await db.commit()
+    generated, feedback = await _design(
         catalog.model_id,
-        _INSTRUCTIONS,
-        (
-            f"content_language: {payload.content_language}\n"
-            f"age_band: {payload.age_band}\n"
-            f"max_turns: {payload.max_turns}\n"
-            f"course_description:\n{payload.course_description}"
+        prompt,
+        _design_material(
+            language=payload.content_language,
+            age_band=payload.age_band,
+            max_turns=payload.max_turns,
+            theme_context=payload.course_description,
         ),
         api_key,
+        age_band=payload.age_band,
+        max_turns=payload.max_turns,
+        language=payload.content_language,
     )
-    return _suggestion(topic, generated, catalog.model_id)
+    return _suggestion(
+        topic, generated, catalog.model_id, feedback, payload.content_language
+    )
 
 
 async def refine_inquiry(
@@ -387,18 +579,30 @@ async def refine_inquiry(
         HTTPException: 404 if the topic is missing; 403 if not an instructor;
             400 if the topic is not in setup; 502 or 503 if the model call fails.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     await _require_setup(topic)
     model_id = topic.model_id or settings.OPENAI_MODEL
     language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
-    api_key = await openrouter_api_key(db, teacher.id)
-    generated = await _complete(
+    api_key = await course_api_key(db, topic.course_id)
+    prompt = prompt_for(PromptStage.INQUIRY_DESIGN)
+    await db.commit()
+    generated, feedback = await _design(
         model_id,
-        _INSTRUCTIONS,
-        _material(payload.setup, content_language=language, feedback=payload.feedback),
+        prompt,
+        _design_material(
+            language=language,
+            age_band=payload.setup.age_band,
+            max_turns=payload.setup.max_turns,
+            theme_context=payload.setup.topic or "",
+            current=payload.setup,
+            feedback=payload.feedback,
+        ),
         api_key,
+        age_band=payload.setup.age_band,
+        max_turns=payload.setup.max_turns,
+        language=language,
     )
-    return _suggestion(topic, generated, topic.model_id)
+    return _suggestion(topic, generated, topic.model_id, feedback, language)
 
 
 async def opening_message(
@@ -410,18 +614,20 @@ async def opening_message(
         HTTPException: 404 if the topic is missing; 403 if not an instructor;
             400 if the topic is not in setup; 502 or 503 if the model call fails.
     """
-    topic = await get_instructed_topic(db, teacher, topic_id)
+    topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     await _require_setup(topic)
     seen_at = topic.updated_at
     topic_id = topic.id
     model_id = topic.model_id or settings.OPENAI_MODEL
     draft = payload.setup
-    api_key = await openrouter_api_key(db, teacher.id)
+    api_key = await course_api_key(db, topic.course_id)
+    prompt = prompt_for(PromptStage.OPENING)
     await db.commit()
     raw = await _model_json(
         model_id,
-        _OPENING_INSTRUCTIONS,
+        prompt,
         (
+            f"content_language: {topic.content_language or settings.DEFAULT_LANGUAGE_CODE}\n"
             f"age_band: {draft.age_band}\n"
             f"max_turns: {draft.max_turns}\n"
             f"topic: {draft.topic}\n"
@@ -438,7 +644,13 @@ async def opening_message(
         topic = await _locked_setup(db, topic_id)
         _reject_if_stale(topic, seen_at)
         topic.opening_message = generated.opening_message or None
-        await topic_crud.record_inquiry_change(db, topic)
+        await topic_crud.record_inquiry_change(
+            db,
+            topic,
+            prompt_stage=prompt.stage.value,
+            prompt_version=prompt.version,
+            force=True,
+        )
         await db.commit()
     except Exception:
         await db.rollback()
