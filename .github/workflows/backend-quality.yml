@@ -86,7 +86,6 @@ jobs:
           POSTGRES_HOST: 127.0.0.1
           POSTGRES_PORT: "5432"
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
-          SESSION_TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/postgres
           REDIS_HOST: 127.0.0.1
           REDIS_PORT: "6379"
           REDIS_URL: redis://127.0.0.1:6379/0
