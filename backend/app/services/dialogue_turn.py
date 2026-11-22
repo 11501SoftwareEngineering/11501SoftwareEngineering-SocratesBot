@@ -28,6 +28,7 @@ from app.models.message import DialogueMessage
 from app.models.topic import Topic
 from app.services import ai_diagnostics
 from app.services.dialogue_progress import (
+    defer_unordered_response,
     empty_progress,
     reset_milestones,
     validate_progress,
@@ -350,7 +351,10 @@ async def run_turn(
         api_key=api_key,
     )
     status = _parse(StatusOut, status_raw)
-    progress = status.progress.model_dump(by_alias=True)
+    proposed_progress = status.progress.model_dump(by_alias=True)
+    progress = defer_unordered_response(proposed_progress, exchange)
+    if progress is not proposed_progress:
+        ai_diagnostics.emit("response_milestone_deferred", exchange=exchange)
     check = validate_progress(progress, exchange)
     if check.issues:
         ai_diagnostics.emit(
@@ -374,7 +378,9 @@ async def run_turn(
     return TurnResult(
         reply=planning.content,
         move=planning.method,
-        status=status.status,
+        status="continue"
+        if progress is not proposed_progress and status.status == "ready"
+        else status.status,
         safety_level=status.safety_level,
         progress=progress,
         goal_reached=check.structurally_ready and status.status == "ready",
@@ -440,8 +446,13 @@ async def catch_up_progress(
         max_tokens=prompt.max_output_tokens,
         api_key=api_key,
     )
-    progress = _parse(StatusOut, raw).progress.model_dump(by_alias=True)
+    proposed_progress = _parse(StatusOut, raw).progress.model_dump(by_alias=True)
     exchanges = sum(message.sender == MessageSender.STUDENT for message in messages)
+    progress = defer_unordered_response(proposed_progress, exchanges)
+    if progress is not proposed_progress:
+        ai_diagnostics.emit(
+            "response_milestone_deferred", exchange=exchanges, phase="legacy_catch_up"
+        )
     if validate_progress(progress, exchanges).issues:
         ai_diagnostics.emit(
             "evidence_validation_failed", exchange=exchanges, phase="legacy_catch_up"

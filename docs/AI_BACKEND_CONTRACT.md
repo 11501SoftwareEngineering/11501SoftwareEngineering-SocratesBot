@@ -94,6 +94,8 @@ The first event is unnamed (standard event type `message`), containing the whole
 
 Errors before SSE starts are ordinary JSON responses: 400 closed/capped, 404 missing/other owner, 409 busy/stale/ended during generation, 413 context-budget rejection, 422 request validation, 502 model/output failure, or 503 availability/tokenizer configuration failure, plus authentication errors. Check HTTP status/content type before parsing events.
 
+Stage 2 response evidence must occur after examination evidence. If this ordering is the only progress validation issue, the server defers the response milestone (`met=false`, `evidenceExchange=null`, empty summary), preserves other progress, and continues planning without an extra model call. A proposed `ready` becomes `continue`; no goal is awarded. The same rule applies to legacy progress catch-up. The server logs `response_milestone_deferred` without student content. It never moves evidence to a different turn, and unrelated schema/evidence errors still fail validation.
+
 Retry the same logical submission with the same `request_id` **and content**. Once committed, its reply is replayed without another inference or stored turn. A new submission needs a new ID. A failed model turn has no durable pending student receipt; retain the draft until success and reload history after an ambiguous disconnect. The busy guard is process-local: neither cross-worker exactly-once inference nor exactly-once provider billing is guaranteed. Do not automatically retry model failures indefinitely.
 
 ## Ending and starting reports

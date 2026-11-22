@@ -14,6 +14,7 @@ from typing import Any
 MILESTONES = ("position", "reason", "examination", "response")
 MIN_READY_EXCHANGE = 3
 MAX_EXCHANGE = 15
+RESPONSE_ORDER_ISSUE = "The response milestone must follow the examination milestone."
 
 
 def _empty_milestone() -> dict[str, Any]:
@@ -80,10 +81,23 @@ def validate_progress(progress: dict[str, Any], current_exchange: int) -> Progre
         and (response["evidenceExchange"] or 0)
         <= (examination["evidenceExchange"] or 0)
     ):
-        issues.append("The response milestone must follow the examination milestone.")
+        issues.append(RESPONSE_ORDER_ISSUE)
     all_met = all(progress[name]["met"] for name in MILESTONES)
     ready = current_exchange >= MIN_READY_EXCHANGE and all_met and not issues
     return ProgressCheck(structurally_ready=ready, issues=issues)
+
+
+def defer_unordered_response(
+    progress: dict[str, Any], current_exchange: int
+) -> dict[str, Any]:
+    """Keep a valid examination but defer a response that does not follow it.
+
+    This only removes an unsupported completion claim. Never move evidence to
+    another turn, promote a milestone, or conceal other evidence errors.
+    """
+    if validate_progress(progress, current_exchange).issues != [RESPONSE_ORDER_ISSUE]:
+        return progress
+    return {**progress, "response": _empty_milestone()}
 
 
 def reset_milestones(progress: dict[str, Any]) -> dict[str, Any]:
