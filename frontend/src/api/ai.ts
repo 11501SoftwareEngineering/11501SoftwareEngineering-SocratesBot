@@ -20,19 +20,20 @@ export const USAGE_STAGES: { value: UsageStage; label: string }[] = (
 export interface StageUsage {
   stage: UsageStage
   request_count: number
-  total_tokens: number
-  /** 規格沒寫；Figma 的「各階段用量」有輸入／輸出兩欄，後端有給就顯示 */
-  input_tokens?: number
-  output_tokens?: number
+  /** 有任何一次用量不明時是 null（不是 0） */
+  total_tokens: number | null
+  input_tokens: number | null
+  output_tokens: number | null
   cost_usd: number | null
 }
 
 export interface AiUsage {
   /** 例如 "2026-11" */
   month: string
-  total_tokens: number
-  input_tokens: number
-  output_tokens: number
+  /** 有任何一次用量不明時是 null（不是 0），畫面顯示「—」 */
+  total_tokens: number | null
+  input_tokens: number | null
+  output_tokens: number | null
   request_count: number
   by_stage: StageUsage[]
   /** 沒有資料時是 null，不代表 0 */

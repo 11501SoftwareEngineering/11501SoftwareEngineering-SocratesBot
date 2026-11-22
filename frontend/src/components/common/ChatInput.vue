@@ -129,7 +129,7 @@ onMounted(resize)
 
       <div
         v-if="remaining !== undefined && total !== undefined"
-        class="shrink-0 rounded-2xl border border-secondary bg-secondary px-3 py-2 text-h2-title text-foreground/50"
+        class="mb-2 shrink-0 rounded-2xl border border-secondary bg-secondary px-3 py-2 text-h2-title text-foreground"
         aria-live="polite"
       >
         <span class="sr-only sm:not-sr-only">{{ t('chat.remaining') }}</span

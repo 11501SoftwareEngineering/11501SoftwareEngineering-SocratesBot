@@ -28,7 +28,8 @@ const modelOptions = computed(() =>
   (models.data.value ?? []).map((m) => ({ value: m.model_id, label: m.name })),
 )
 
-const number = (n: number | undefined) => (n === undefined ? '—' : n.toLocaleString('en-US'))
+// 後端在用量不明時回 null（不是 0），也要顯示「—」；直接呼叫 toLocaleString 會讓整張卡片渲染失敗而消失
+const number = (n: number | null | undefined) => (n == null ? '—' : n.toLocaleString('en-US'))
 const tiles = computed(() => {
   const u = usage.data.value
   return [
