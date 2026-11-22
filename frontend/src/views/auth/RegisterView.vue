@@ -16,6 +16,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { getApiErrorMessage } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -32,22 +35,26 @@ const mutation = useMutation({
   },
   onSuccess: () => router.replace({ name: authStore.homeRoute }),
   onError: (error) => {
-    formError.value = getApiErrorMessage(error, '註冊失敗，請稍後再試')
+    formError.value = getApiErrorMessage(error, t('auth.registerFailed'))
   },
 })
 
 function handleSubmit() {
   const account = form.account.trim()
-  errors.account = !account ? '請輸入帳號名稱' : account.length > 64 ? '帳號名稱最多 64 個字' : ''
+  errors.account = !account
+    ? t('auth.accountNameRequired')
+    : account.length > 64
+      ? t('auth.accountNameTooLong')
+      : ''
   const name = form.name.trim()
-  errors.name = !name ? '請輸入姓名' : name.length > 128 ? '姓名最多 128 個字' : ''
+  errors.name = !name ? t('auth.nameRequired') : name.length > 128 ? t('auth.nameTooLong') : ''
   errors.password =
     form.password.length < 8
-      ? '密碼至少要 8 個字元'
+      ? t('auth.password.tooShort')
       : form.password.length > 128
-        ? '密碼最多 128 個字元'
+        ? t('auth.password.tooLong')
         : ''
-  errors.confirm = form.confirm === form.password ? '' : '兩次輸入的密碼不一樣'
+  errors.confirm = form.confirm === form.password ? '' : t('auth.password.mismatch')
   formError.value = ''
   if (errors.account || errors.name || errors.password || errors.confirm) return
   mutation.mutate()
@@ -62,16 +69,26 @@ function handleSubmit() {
     <form class="mt-5 flex flex-col gap-3" novalidate @submit.prevent="handleSubmit">
       <FormField
         v-slot="field"
-        label="帳號名稱"
-        hint="登入時使用，最多 64 個字"
+        :label="t('auth.accountName')"
+        :hint="t('auth.accountNameHint')"
         :error="errors.account"
       >
         <Input v-model="form.account" v-bind="field" :id="field.id" autocomplete="username" />
       </FormField>
-      <FormField v-slot="field" label="真實姓名" hint="老師會在學生名單看到" :error="errors.name">
+      <FormField
+        v-slot="field"
+        :label="t('auth.realName')"
+        :hint="t('auth.realNameHint')"
+        :error="errors.name"
+      >
         <Input v-model="form.name" v-bind="field" :id="field.id" autocomplete="name" />
       </FormField>
-      <FormField v-slot="field" label="建立密碼" hint="至少 8 個字元" :error="errors.password">
+      <FormField
+        v-slot="field"
+        :label="t('auth.password.create')"
+        :hint="t('auth.password.hint')"
+        :error="errors.password"
+      >
         <Input
           v-model="form.password"
           v-bind="field"
@@ -80,7 +97,11 @@ function handleSubmit() {
           autocomplete="new-password"
         />
       </FormField>
-      <FormField v-slot="field" label="確認密碼" :error="errors.confirm || formError">
+      <FormField
+        v-slot="field"
+        :label="t('auth.password.confirm')"
+        :error="errors.confirm || formError"
+      >
         <Input
           v-model="form.confirm"
           v-bind="field"
@@ -92,15 +113,15 @@ function handleSubmit() {
 
       <div class="flex flex-wrap items-center justify-between gap-4">
         <p class="text-body-lg text-foreground">
-          已經有帳號了嗎？
+          {{ t('auth.hasAccount') }}
           <RouterLink
             :to="{ name: 'Login' }"
             class="rounded underline-offset-4 outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >點此登入</RouterLink
+            >{{ t('auth.goLogin') }}</RouterLink
           >
         </p>
         <Button type="submit" size="lg" class="ml-auto" :disabled="mutation.isPending.value">
-          {{ mutation.isPending.value ? '註冊中…' : '註冊' }}
+          {{ mutation.isPending.value ? t('auth.registering') : t('auth.register') }}
         </Button>
       </div>
     </form>

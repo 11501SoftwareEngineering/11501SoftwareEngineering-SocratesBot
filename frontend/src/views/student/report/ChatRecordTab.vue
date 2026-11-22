@@ -9,6 +9,9 @@
 import ChatBubble from '@/components/common/ChatBubble.vue'
 import SpeakButton from '@/components/common/SpeakButton.vue'
 import type { SessionMessage } from '@/api/sessions'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{
   messages: SessionMessage[]
@@ -20,7 +23,7 @@ defineProps<{
 <template>
   <ol
     class="flex flex-col gap-[22px] rounded-2xl bg-card px-4 py-2 shadow-elevated sm:px-5"
-    aria-label="對話紀錄"
+    :aria-label="t('report.chat')"
   >
     <li v-for="message in messages" :key="message.message_id" class="flex flex-col">
       <ChatBubble

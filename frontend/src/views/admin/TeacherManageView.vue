@@ -19,10 +19,12 @@ import PasswordNoticeDialog from '@/components/common/PasswordNoticeDialog.vue'
 import QueryState from '@/components/common/QueryState.vue'
 import { AddRingIcon, RefreshIcon, TrashIcon } from '@/components/icons'
 import { Button } from '@/components/ui/button'
-import { features } from '@/config/features'
 import { Input } from '@/components/ui/input'
 import { useSearch } from '@/composables/useSearch'
 import { formatDate, getApiErrorMessage } from '@/lib/utils'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const queryClient = useQueryClient()
 const { data, isPending, error, refetch } = useQuery({
@@ -60,14 +62,14 @@ const createMutation = useMutation({
   onSuccess: (result) => {
     createOpen.value = false
     void refresh()
-    showPassword(result, '已建立教師帳號')
+    showPassword(result, t('password.created'))
   },
-  onError: (err) => (errors.form = getApiErrorMessage(err, '建立失敗，請稍後再試')),
+  onError: (err) => (errors.form = getApiErrorMessage(err, t('admin.createFailed'))),
 })
 
 function handleCreate() {
-  errors.account = form.account.trim() ? '' : '請輸入帳號名稱'
-  errors.name = form.name.trim() ? '' : '請輸入老師姓名'
+  errors.account = form.account.trim() ? '' : t('auth.accountNameRequired')
+  errors.name = form.name.trim() ? '' : t('admin.nameRequired')
   errors.form = ''
   if (errors.account || errors.name) return
   createMutation.mutate()
@@ -93,9 +95,9 @@ const resetMutation = useMutation({
   },
   onSuccess: (result) => {
     resetOpen.value = false
-    showPassword(result, '已重設密碼')
+    showPassword(result, t('password.reset'))
   },
-  onError: (err) => (actionError.value = getApiErrorMessage(err, '重設失敗，請稍後再試')),
+  onError: (err) => (actionError.value = getApiErrorMessage(err, t('admin.resetFailed'))),
 })
 
 const deleteMutation = useMutation({
@@ -104,46 +106,52 @@ const deleteMutation = useMutation({
     deleteOpen.value = false
     void refresh()
   },
-  onError: (err) => (actionError.value = getApiErrorMessage(err, '刪除失敗，請稍後再試')),
+  onError: (err) => (actionError.value = getApiErrorMessage(err, t('errors.deleteFailed'))),
 })
 </script>
 
 <template>
   <div class="mx-auto w-full max-w-[992px] px-4 py-10 sm:py-12">
-    <ListSection v-model:search="keyword" title="老師管理" search-label="搜尋老師">
+    <ListSection
+      v-model:search="keyword"
+      :title="t('admin.title')"
+      :search-label="t('admin.search')"
+    >
       <template #actions>
-        <Button @click="openCreate"><AddRingIcon /> 新增老師</Button>
+        <Button @click="openCreate"><AddRingIcon /> {{ t('admin.addTeacher') }}</Button>
       </template>
 
       <QueryState
         :loading="isPending"
         :error="error"
         :empty="results.length === 0"
-        :empty-text="keyword ? '找不到老師' : '還沒有老師帳號'"
-        error-text="無法取得老師列表"
+        :empty-text="keyword ? t('admin.notFound') : t('admin.empty')"
+        :error-text="t('admin.loadError')"
         @retry="refetch()"
       >
         <ListCard
           v-for="teacher in results"
           :key="teacher.id"
-          :title="`帳號：${teacher.account_id}`"
-          :meta="[`姓名：${teacher.name}`, `建立於 ${formatDate(teacher.created_at)}`]"
+          :title="t('admin.account', { account: teacher.account_id })"
+          :meta="[
+            t('admin.name', { name: teacher.name }),
+            t('admin.createdAt', { date: formatDate(teacher.created_at) }),
+          ]"
         >
           <template #actions>
             <Button
-              v-if="features.teacherPasswordReset"
               variant="secondary"
-              :aria-label="`重設 ${teacher.name} 的密碼`"
+              :aria-label="t('admin.resetAria', { name: teacher.name })"
               @click="ask(teacher, 'reset')"
             >
-              <RefreshIcon /> <span class="hidden sm:inline">重設密碼</span>
+              <RefreshIcon /> <span class="hidden sm:inline">{{ t('admin.password.reset') }}</span>
             </Button>
             <Button
               variant="destructive"
-              :aria-label="`刪除 ${teacher.name}`"
+              :aria-label="t('admin.deleteAria', { name: teacher.name })"
               @click="ask(teacher, 'delete')"
             >
-              <TrashIcon /> <span class="hidden sm:inline">刪除</span>
+              <TrashIcon /> <span class="hidden sm:inline">{{ t('common.delete') }}</span>
             </Button>
           </template>
         </ListCard>
@@ -152,15 +160,25 @@ const deleteMutation = useMutation({
 
     <FormDialog
       v-model:open="createOpen"
-      title="建立教師帳號"
+      :title="t('admin.createTitle')"
       :loading="createMutation.isPending.value"
       :error="errors.form"
       @submit="handleCreate"
     >
-      <FormField v-slot="field" label="帳號名稱" hint="老師登入時使用" :error="errors.account">
+      <FormField
+        v-slot="field"
+        :label="t('auth.accountName')"
+        :hint="t('admin.accountHint')"
+        :error="errors.account"
+      >
         <Input v-model="form.account" v-bind="field" :id="field.id" autocomplete="off" />
       </FormField>
-      <FormField v-slot="field" label="教師姓名" hint="會顯示在學生的課程列表" :error="errors.name">
+      <FormField
+        v-slot="field"
+        :label="t('password.teacherName')"
+        :hint="t('admin.nameHint')"
+        :error="errors.name"
+      >
         <Input v-model="form.name" v-bind="field" :id="field.id" autocomplete="off" />
       </FormField>
     </FormDialog>
@@ -168,9 +186,9 @@ const deleteMutation = useMutation({
     <ConfirmDialog
       centered
       v-model:open="resetOpen"
-      title="確認重設密碼?"
-      :description="`會產生一組新的初始密碼，「${target?.name}」原本的密碼將無法使用。`"
-      confirm-text="重設"
+      :title="t('admin.resetConfirmTitle')"
+      :description="t('admin.resetConfirmDescription', { name: target?.name ?? '' })"
+      :confirm-text="t('admin.reset')"
       :loading="resetMutation.isPending.value"
       :error="actionError"
       @confirm="target && resetMutation.mutate(target)"
@@ -179,9 +197,9 @@ const deleteMutation = useMutation({
     <ConfirmDialog
       centered
       v-model:open="deleteOpen"
-      title="確認刪除?"
-      :description="`刪除後「${target?.name}」將無法登入，這個動作無法復原。`"
-      confirm-text="確認"
+      :title="t('admin.deleteConfirmTitle')"
+      :description="t('admin.deleteConfirmDescription', { name: target?.name ?? '' })"
+      :confirm-text="t('common.ok')"
       destructive
       :loading="deleteMutation.isPending.value"
       :error="actionError"

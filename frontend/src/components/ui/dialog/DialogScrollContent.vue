@@ -12,6 +12,9 @@ import {
   DialogPortal,
   useForwardPropsEmits,
 } from 'reka-ui'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineOptions({
   inheritAttrs: false,
@@ -28,12 +31,12 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
 <template>
   <DialogPortal>
     <DialogOverlay
-      class="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
+      class="fixed inset-0 z-50 grid grid-cols-1 place-items-center overflow-y-auto bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
     >
       <DialogContent
         :class="
           cn(
-            'relative z-50 grid w-full max-w-lg my-8 gap-4 border border-border bg-background p-6 shadow-lg duration-200 sm:rounded-lg md:w-full',
+            'relative z-50 grid w-full min-w-0 max-w-lg grid-cols-1 my-8 gap-4 border border-border bg-background p-6 shadow-lg duration-200 sm:rounded-lg md:w-full',
             props.class,
           )
         "
@@ -58,7 +61,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
           class="absolute top-8 right-8 rounded-full text-foreground outline-none transition-colors hover:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <CloseRingIcon class="size-8" />
-          <span class="sr-only">關閉</span>
+          <span class="sr-only">{{ t('common.close') }}</span>
         </DialogClose>
       </DialogContent>
     </DialogOverlay>

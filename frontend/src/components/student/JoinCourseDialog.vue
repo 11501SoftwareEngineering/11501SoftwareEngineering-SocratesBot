@@ -10,6 +10,9 @@ import FormDialog from '@/components/common/FormDialog.vue'
 import FormField from '@/components/common/FormField.vue'
 import { Input } from '@/components/ui/input'
 import { getApiErrorMessage } from '@/lib/utils'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 /** 後端的課程代碼：8 個字元 */
 const INVITE_CODE_LENGTH = 8
@@ -34,15 +37,15 @@ const mutation = useMutation({
     void queryClient.invalidateQueries({ queryKey: courseKeys.all })
     emit('joined', course.name)
   },
-  onError: (err) => (error.value = getApiErrorMessage(err, '加入失敗，請稍後再試')),
+  onError: (err) => (error.value = getApiErrorMessage(err, t('courses.joinFailed'))),
 })
 
 function handleSubmit() {
   const value = code.value.trim()
   error.value = !value
-    ? '請輸入課程代碼'
+    ? t('courses.inviteRequired')
     : value.length !== INVITE_CODE_LENGTH
-      ? `課程代碼是 ${INVITE_CODE_LENGTH} 個字元，請再確認一次`
+      ? t('courses.inviteLength', { n: INVITE_CODE_LENGTH })
       : ''
   if (!error.value) mutation.mutate()
 }
@@ -51,12 +54,12 @@ function handleSubmit() {
 <template>
   <FormDialog
     v-model:open="open"
-    title="加入課程"
-    submit-text="加入"
+    :title="t('courses.join')"
+    :submit-text="t('courses.joinSubmit')"
     :loading="mutation.isPending.value"
     @submit="handleSubmit"
   >
-    <FormField v-slot="field" label="課程代碼" :error="error">
+    <FormField v-slot="field" :label="t('courses.inviteCode')" :error="error">
       <Input
         v-model="code"
         v-bind="field"

@@ -1,5 +1,6 @@
 import { readCookie } from '@/lib/cookies'
 import { apiClient } from './client'
+import { translate } from '@/i18n'
 
 /**
  * 登入、註冊、帳號相關 API。
@@ -36,10 +37,9 @@ export function primaryRole(roles: UserRole[]): UserRole {
   return ROLE_PRIORITY.find((r) => roles.includes(r)) ?? 'STUDENT'
 }
 
-export const ROLE_LABELS: Record<UserRole, string> = {
-  STUDENT: '學生',
-  TEACHER: '老師',
-  SUPER_ADMIN: '管理員',
+/** 身分的顯示名稱（跟著介面語言） */
+export function roleLabel(role: UserRole) {
+  return translate(`roles.${role}`)
 }
 
 export interface User {
@@ -96,13 +96,8 @@ export function toUser(data: UserResponse): User {
 }
 
 /** 介面語言（PATCH /users/me/preferences 只接受這三種） */
+/** 後端偏好設定接受的語言（其他介面語言只存在瀏覽器，見 i18n/index.ts） */
 export type UiLanguage = 'zh-TW' | 'en' | 'es'
-
-export const UI_LANGUAGES: { value: UiLanguage; label: string }[] = [
-  { value: 'zh-TW', label: '正體中文' },
-  { value: 'en', label: 'English' },
-  { value: 'es', label: 'Español' },
-]
 
 export const authApi = {
   /** 登入。後端把 access token 放在回應的 Authorization header，不在 JSON 裡 */

@@ -10,6 +10,9 @@ import ComingSoon from '@/components/common/ComingSoon.vue'
 import QueryState from '@/components/common/QueryState.vue'
 import GroupCard from '@/components/report/GroupCard.vue'
 import SummaryOverview from '@/components/report/SummaryOverview.vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{ topicId: string }>()
 
@@ -23,14 +26,25 @@ const meta = computed(() => {
   const s = data.value
   if (!s) return ''
   const grouped = s.denominator - s.ungrouped_count
-  return `可用報告：${grouped}/${s.denominator} ｜ 觀點群組：${s.groups.length}（未分類：${s.ungrouped_count}）`
+  return t('report.summaryStats', {
+    grouped,
+    total: s.denominator,
+    groups: s.groups.length,
+    ungrouped: s.ungrouped_count,
+  })
 })
 </script>
 
 <template>
-  <QueryState :loading="isPending" :error="error" error-text="無法取得全班摘要" @retry="refetch()">
-    <ComingSoon v-if="!data" title="老師還沒有發布全班摘要">
-      全班都完成之後，老師整理好就會在這裡看到大家的想法。
+  <QueryState
+    class="min-w-0 [overflow-wrap:anywhere]"
+    :loading="isPending"
+    :error="error"
+    :error-text="t('report.summaryError')"
+    @retry="refetch()"
+  >
+    <ComingSoon v-if="!data" :title="t('report.noSummaryTitle')">
+      {{ t('report.noSummaryDescription') }}
     </ComingSoon>
     <div v-else class="flex flex-col gap-4">
       <SummaryOverview
@@ -39,7 +53,7 @@ const meta = computed(() => {
         :text="[data.overview, data.viewpoint_summary].filter(Boolean).join('\n')"
         :meta="meta"
       />
-      <div class="grid gap-4 md:grid-cols-2">
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <GroupCard
           v-for="(group, i) in data.groups"
           :key="group.name"

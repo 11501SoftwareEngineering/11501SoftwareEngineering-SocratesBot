@@ -6,6 +6,7 @@ import {
   type RouteRecordSingleView,
 } from 'vue-router'
 import type { UserRole } from '@/api/auth'
+import { translate } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 
 declare module 'vue-router' {
@@ -17,13 +18,14 @@ declare module 'vue-router' {
     /** 教學端頁面：老師，或在某門課當助教的學生才能進 */
     teaching?: boolean
     /** 瀏覽器分頁標題 */
+    /** 分頁標題的 i18n key（routes.*） */
     title?: string
   }
 }
 
 type PageComponent = RouteRecordSingleView['component']
 
-/** 一個頁面：網址、路由名稱、瀏覽器分頁標題、頁面元件（延遲載入） */
+/** 一個頁面：網址、路由名稱、瀏覽器分頁標題（i18n 的 routes.* key）、頁面元件（延遲載入） */
 function page(
   path: string,
   name: string,
@@ -52,11 +54,11 @@ function section(
 const routes: RouteRecordRaw[] = [
   // 公開頁面
   {
-    ...page('/', 'Home', '公告', () => import('@/views/common/AnnouncementsView.vue')),
+    ...page('/', 'Home', 'home', () => import('@/views/common/AnnouncementsView.vue')),
     alias: '/announcements',
   },
-  page('/login', 'Login', '登入', () => import('@/views/auth/LoginView.vue'), { guestOnly: true }),
-  page('/register', 'Register', '註冊', () => import('@/views/auth/RegisterView.vue'), {
+  page('/login', 'Login', 'login', () => import('@/views/auth/LoginView.vue'), { guestOnly: true }),
+  page('/register', 'Register', 'register', () => import('@/views/auth/RegisterView.vue'), {
     guestOnly: true,
   }),
 
@@ -67,12 +69,13 @@ const routes: RouteRecordRaw[] = [
       page(
         'teachers',
         'AdminTeachers',
-        '老師管理',
+        'adminTeachers',
         () => import('@/views/admin/TeacherManageView.vue'),
       ),
     ],
   ),
 
+  // 教學端（路徑照 Prototype）：老師與助教共用，助教依課程權限顯示功能
   section(
     '/teacher',
     ['TEACHER', 'STUDENT'],
@@ -80,25 +83,43 @@ const routes: RouteRecordRaw[] = [
       page(
         'courses',
         'TeacherCourses',
-        '我的課程',
+        'teacherCourses',
         () => import('@/views/teacher/CourseListView.vue'),
+      ),
+      page(
+        'ai-settings',
+        'TeacherAiSettings',
+        'aiSettings',
+        () => import('@/views/teacher/AiSettingsView.vue'),
+        { roles: ['TEACHER'] },
       ),
       page(
         'courses/:courseId',
         'TeacherCourse',
-        '問題列表',
+        'course',
         () => import('@/views/teacher/CourseView.vue'),
       ),
       page(
+        'courses/:courseId/topics/new',
+        'TeacherNewActivity',
+        'newActivity',
+        () => import('@/views/teacher/NewActivityView.vue'),
+      ),
+      page(
+        'courses/:courseId/topics/:topicId/setup',
+        'TeacherActivitySetup',
+        'activitySetup',
+        () => import('@/views/teacher/ActivitySetupView.vue'),
+      ),
+      page(
         'courses/:courseId/topics/:topicId',
-        'TeacherTopic',
-        '問題結果',
-        () => import('@/views/teacher/TopicView.vue'),
+        'TeacherPerspective',
+        'perspective',
+        () => import('@/views/teacher/PerspectiveView.vue'),
       ),
     ],
     { teaching: true },
   ),
-
   section(
     '/student',
     ['STUDENT'],
@@ -106,43 +127,42 @@ const routes: RouteRecordRaw[] = [
       page(
         'courses',
         'StudentCourses',
-        '我的課程',
+        'studentCourses',
         () => import('@/views/student/CourseListView.vue'),
       ),
       page(
         'courses/:courseId',
         'StudentCourse',
-        '探究活動',
+        'studentCourse',
         () => import('@/views/student/CourseView.vue'),
       ),
       page(
         'courses/:courseId/topics/:topicId',
         'StudentChat',
-        '對話',
+        'chat',
         () => import('@/views/student/ChatView.vue'),
       ),
       page(
         'courses/:courseId/sessions/:sessionId/result/:tab(personal|chat|summary)?',
         'StudentReport',
-        '探索結果報告',
+        'report',
         () => import('@/views/student/ReportView.vue'),
       ),
     ],
   ),
 
-  page('/forbidden', 'Forbidden', '沒有權限', () => import('@/views/common/ForbiddenView.vue')),
-  page(
-    '/:pathMatch(.*)*',
-    'NotFound',
-    '找不到頁面',
-    () => import('@/views/common/NotFoundView.vue'),
-  ),
+  page('/forbidden', 'Forbidden', 'forbidden', () => import('@/views/common/ForbiddenView.vue')),
+  page('/:pathMatch(.*)*', 'NotFound', 'notFound', () => import('@/views/common/NotFoundView.vue')),
 ]
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes,
-  scrollBehavior: () => ({ top: 0 }),
+  // 有 #錨點（例如 P14 的 #model-prices）時，等頁面資料載入後再捲過去
+  scrollBehavior: (to) =>
+    to.hash
+      ? new Promise((resolve) => setTimeout(() => resolve({ el: to.hash, top: 24 }), 400))
+      : { top: 0 },
 })
 
 router.beforeEach((to) => {
@@ -171,8 +191,15 @@ router.beforeEach((to) => {
   return true
 })
 
-router.afterEach((to) => {
-  document.title = to.meta.title ? `${to.meta.title}｜問導魷` : '問導魷'
-})
+/** 瀏覽器分頁標題（切換語言時 App.vue 也會呼叫） */
+export function updateDocumentTitle(route = router.currentRoute.value) {
+  const app = translate('common.appName')
+  const title = route.meta.title
+  document.title = title
+    ? translate('common.pageTitle', { page: translate(`routes.${title}`), app })
+    : app
+}
+
+router.afterEach((to) => updateDocumentTitle(to))
 
 export default router

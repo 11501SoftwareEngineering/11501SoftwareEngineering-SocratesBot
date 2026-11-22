@@ -1,3 +1,4 @@
+import { AxiosError, AxiosHeaders } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
@@ -121,7 +122,7 @@ describe('student ReportView（P08）', () => {
     })
     vi.mocked(sessionsApi.messages).mockResolvedValue({
       messages,
-      session_status: 'COMPLETED',
+      session_status: 'completed',
       max_turns: 5,
       completed_turns: 1,
       goal_reached: true,
@@ -218,6 +219,45 @@ describe('student ReportView（P08）', () => {
     await flushPromises()
     expect(sessionsApi.startReport).toHaveBeenCalledTimes(2)
     expect(view.text()).toContain('導魷正在整理你的報告')
+  })
+
+  it('拿不到報告（對話還沒完成）：顯示原因和「回到課程」，不給重新載入', async () => {
+    vi.mocked(sessionsApi.startReport).mockRejectedValue(
+      new AxiosError('fail', 'ERR', undefined, undefined, {
+        status: 409,
+        statusText: '',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: { detail: 'Dialogue is not completed' },
+      }),
+    )
+    const view = await open('/student/courses/course-1/sessions/s1/result/personal')
+    expect(view.text()).toContain('對話還沒結束')
+    const back = view.findAll('a').find((a) => a.text() === '回到課程')
+    expect(back?.attributes('href')).toBe('/student/courses/course-1')
+    expect(view.findAll('button').some((b) => b.text().includes('重新載入'))).toBe(false)
+  })
+
+  it('網路錯誤：顯示網路問題，可以重新載入', async () => {
+    vi.mocked(sessionsApi.startReport).mockRejectedValue(
+      new AxiosError('Network Error', 'ERR_NETWORK'),
+    )
+    const view = await open('/student/courses/course-1/sessions/s1/result/personal')
+    expect(view.text()).not.toContain('無法取得個人報告')
+    expect(view.findAll('button').some((b) => b.text().includes('重新載入'))).toBe(true)
+  })
+
+  it('重新產生也失敗時顯示錯誤', async () => {
+    vi.mocked(sessionsApi.startReport)
+      .mockResolvedValueOnce({ report_status: 'failed', report: null })
+      .mockRejectedValueOnce(new AxiosError('Network Error', 'ERR_NETWORK'))
+    const view = await open('/student/courses/course-1/sessions/s1/result/personal')
+    await view
+      .findAll('button')
+      .find((b) => b.text().includes('重新產生'))!
+      .trigger('click')
+    await flushPromises()
+    expect(view.find('[role="alert"]').exists()).toBe(true)
   })
 
   it('老師還沒發布全班摘要時告訴學生', async () => {

@@ -8,9 +8,15 @@
  *   兩欄：目前立場、最強理由、已檢驗的挑戰、修正或辯護、與探究重點的連結、尚待追問
  *   未完成或證據不足（紅框，證據不足或有限制說明時才出現）
  */
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
+import { Download } from '@lucide/vue'
 import type { EvidenceQuote, PersonalReport, TimelineEntry } from '@/api/sessions'
 import StatusTag from '@/components/common/StatusTag.vue'
+import { Button } from '@/components/ui/button'
+import { printElement } from '@/lib/printElement'
+import { useI18n } from 'vue-i18n'
+
+const { t, locale } = useI18n()
 
 const props = defineProps<{
   report: PersonalReport
@@ -18,13 +24,15 @@ const props = defineProps<{
   name: string
   /** 學生原話（message_id → 內容），時間軸展開「學生回覆」時用；沒有就用報告裡的引用 */
   messageText?: Record<string, string>
+  /** 放在對話框裡：「匯出 PDF」按鈕往左讓出右上角的關閉按鈕 */
+  inDialog?: boolean
 }>()
 
 const meta = computed(() =>
   [
     props.report.anonymous_id,
-    `${props.report.completed_turns} 回合`,
-    `版本 ${props.report.version}`,
+    t('report.turns', { n: props.report.completed_turns }),
+    t('report.version', { n: props.report.version }),
   ]
     .filter(Boolean)
     .join(' · '),
@@ -36,6 +44,9 @@ function toneOf(index: number) {
 }
 
 function quotesOf(entry: TimelineEntry): string[] {
+  // 新版報告：evidence_reference 是學生原話的引用，evidence 是描述文字
+  const ref = entry.evidence_reference
+  if (ref) return [props.messageText?.[ref.message_id] ?? ref.quote]
   const evidence = entry.evidence
   const list: (EvidenceQuote | string)[] = Array.isArray(evidence)
     ? evidence
@@ -49,35 +60,84 @@ function quotesOf(entry: TimelineEntry): string[] {
 
 const open = ref<Record<number, boolean>>({})
 
+// ===== 匯出 PDF（學生、老師都可以）=====
+// 用瀏覽器的列印視窗「另存為 PDF」；PDF 裡的「學生回覆」全部展開，最上面加上報告名稱和匯出日期
+const article = ref<HTMLElement>()
+const exporting = ref(false)
+/** 報告最上面顯示的匯出日期（依介面語言）；檔名用 2026-11-22 這種格式 */
+const exportDate = computed(() => new Intl.DateTimeFormat(locale.value).format(new Date()))
+function fileDate() {
+  const d = new Date()
+  return [d.getFullYear(), d.getMonth() + 1, d.getDate()]
+    .map((n) => String(n).padStart(2, '0'))
+    .join('-')
+}
+async function exportPdf() {
+  if (!article.value || exporting.value) return
+  exporting.value = true
+  const before = open.value
+  open.value = Object.fromEntries((props.report.timeline ?? []).map((e) => [e.turn, true]))
+  await nextTick()
+  try {
+    await printElement(
+      article.value,
+      t('report.pdfFileName', { name: props.name, date: fileDate() }),
+    )
+  } finally {
+    open.value = before
+    exporting.value = false
+  }
+}
+
 const sections = computed(() => [
-  { title: '目前立場', body: props.report.final_viewpoint },
-  { title: '最強理由', body: props.report.strongest_reason },
+  { title: t('report.currentStance'), body: props.report.final_viewpoint },
+  { title: t('report.strongestReason'), body: props.report.strongest_reason },
   {
-    title: '已檢驗的挑戰',
+    title: t('report.challenges'),
     list: (props.report.challenges ?? []).map(
-      (c) => `${c.challenge}${c.responded ? '' : '（還沒回應）'}`,
+      (c) => `${c.challenge}${c.responded ? '' : t('report.notResponded')}`,
     ),
   },
-  { title: '修正或辯護', body: props.report.revision_or_defense },
-  { title: '與探究重點的連結', body: props.report.focus_connection },
-  { title: '尚待追問', list: props.report.open_questions ?? [] },
+  { title: t('report.revision'), body: props.report.revision_or_defense },
+  { title: t('report.focusConnection'), body: props.report.focus_connection },
+  { title: t('report.openQuestions'), list: props.report.open_questions ?? [] },
 ])
 
 const EVIDENCE_TEXT = {
   sufficient: '',
-  partial: '證據部分不足。',
-  insufficient: '證據不足。',
+  partial: 'report.evidencePartial',
+  insufficient: 'report.evidenceInsufficient',
 } as const
+/** 學生一次都沒回答（後端 #272：老師結束對話時沒回答過的學生）：報告只顯示「未完成或證據不足」 */
+const noResponses = computed(() => props.report.completed_turns === 0)
+/** 證據狀態的 tag：部分不足、不足時才顯示 */
+const evidenceTag = computed(() =>
+  props.report.evidence_status === 'partial'
+    ? t('report.evidenceTagPartial')
+    : props.report.evidence_status === 'insufficient'
+      ? t('report.evidenceTagInsufficient')
+      : '',
+)
 const gaps = computed(() => {
+  if (noResponses.value) return props.report.viewpoint_summary || props.report.limitations || ''
   const status = props.report.evidence_status
-  const lead = status ? EVIDENCE_TEXT[status] : ''
+  const key = status ? EVIDENCE_TEXT[status] : ''
+  const lead = key ? t(key) : ''
   return [lead, props.report.limitations].filter(Boolean).join('')
 })
 </script>
 
 <template>
-  <article class="flex flex-col gap-6">
-    <header class="flex flex-col gap-4">
+  <article ref="article" class="flex min-w-0 flex-col gap-6 [overflow-wrap:anywhere]">
+    <div class="flex justify-end print:hidden" :class="inDialog && 'pr-10'">
+      <Button variant="secondary" size="sm" :disabled="exporting" @click="exportPdf">
+        <Download class="size-4" aria-hidden="true" />{{ t('report.exportPdf') }}
+      </Button>
+    </div>
+    <p class="hidden border-b border-border pb-2 text-body text-muted-foreground print:block">
+      {{ t('report.pdfHeading', { name, date: exportDate }) }}
+    </p>
+    <header v-if="!noResponses" class="flex flex-col gap-4">
       <div class="flex flex-wrap items-center gap-4">
         <h2 class="text-h1-title text-foreground">{{ name }}</h2>
         <span
@@ -89,29 +149,36 @@ const gaps = computed(() => {
       <div class="flex flex-wrap items-center justify-between gap-3">
         <span
           v-if="report.final_viewpoint"
-          class="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-0.5 text-body text-foreground shadow-elevated"
+          class="inline-flex max-w-full items-start gap-2 rounded-2xl border border-border bg-card px-3 py-0.5 text-body text-foreground shadow-elevated"
         >
-          <span class="size-2.5 rounded-full bg-primary" aria-hidden="true" />{{
-            report.final_viewpoint
-          }}
+          <span
+            class="mt-[0.55em] size-2.5 shrink-0 rounded-full bg-primary"
+            aria-hidden="true"
+          />{{ report.final_viewpoint }}
         </span>
-        <StatusTag v-if="report.viewpoint_status" size="sm">{{
-          report.viewpoint_status
-        }}</StatusTag>
+        <span class="flex flex-wrap items-center gap-2">
+          <StatusTag v-if="evidenceTag" size="sm" tone="accent">{{ evidenceTag }}</StatusTag>
+          <StatusTag v-if="report.viewpoint_status" size="sm">{{
+            report.viewpoint_status
+          }}</StatusTag>
+        </span>
       </div>
     </header>
 
     <section
+      v-if="!noResponses"
       class="rounded-lg bg-border px-3 py-3 shadow-elevated"
       aria-labelledby="report-summary"
     >
-      <h3 id="report-summary" class="text-h1-title text-foreground">觀點總結</h3>
+      <h3 id="report-summary" class="text-h1-title text-foreground">
+        {{ t('report.viewpointSummary') }}
+      </h3>
       <p class="text-body-lg text-foreground">{{ report.viewpoint_summary || '—' }}</p>
     </section>
 
-    <section v-if="report.timeline?.length" aria-labelledby="report-timeline">
+    <section v-if="!noResponses && report.timeline?.length" aria-labelledby="report-timeline">
       <h3 id="report-timeline" class="mb-4 font-heading text-[28px] font-medium text-foreground">
-        觀點變化時間軸
+        {{ t('report.timeline') }}
       </h3>
       <ol class="flex flex-col gap-4 border-l-2 border-muted-foreground/60 pl-6">
         <li
@@ -143,7 +210,7 @@ const gaps = computed(() => {
             :aria-expanded="!!open[entry.turn]"
             @click="open[entry.turn] = !open[entry.turn]"
           >
-            {{ open[entry.turn] ? '▼' : '▶' }} 學生回覆
+            {{ open[entry.turn] ? '▼' : '▶' }} {{ t('report.studentReply') }}
           </button>
           <p v-if="open[entry.turn]" class="text-body text-muted-foreground">
             {{ quotesOf(entry).join('　') }}
@@ -152,7 +219,7 @@ const gaps = computed(() => {
       </ol>
     </section>
 
-    <dl class="grid gap-x-4 sm:grid-cols-2">
+    <dl v-if="!noResponses" class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
       <div
         v-for="section in sections"
         :key="section.title"
@@ -174,7 +241,7 @@ const gaps = computed(() => {
       class="rounded-lg border border-destructive bg-card px-3 py-2"
       aria-labelledby="report-gaps"
     >
-      <h3 id="report-gaps" class="text-header text-foreground">未完成或證據不足</h3>
+      <h3 id="report-gaps" class="text-header text-foreground">{{ t('report.gaps') }}</h3>
       <p class="mt-1 text-body text-muted-foreground">{{ gaps }}</p>
     </section>
   </article>

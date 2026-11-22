@@ -50,6 +50,11 @@ export interface DbTopic {
   model_id: string
   setup: TopicSetup
   created_at: string
+  /**
+   * 老師結束對話或重新整理摘要後，背景整理全班摘要（後端 #272 的 preparation_status）。
+   * ready_at 之前是 processing；之後第一次讀取時產生摘要草稿，done 變成 true（ready）
+   */
+  preparation?: { ready_at: number; failed: boolean; done: boolean } | null
 }
 
 export interface DbMessage {
@@ -63,8 +68,17 @@ export interface DbSession {
   id: string
   topic_id: string
   student_id: string
+  /**
+   * 假後端簡化：只要結束了（達成目標後結束、回合用完、提早結束）都記成 COMPLETED，
+   * 用 ending_reason 分辨；對話 API 回傳時再換成 completed／ended（見 handlers 的 dialogueStatus）
+   */
   status: 'IN_PROGRESS' | 'COMPLETED'
   awaiting_end_consent: boolean
+  /** AI 判斷達成過目標（一旦達成就一直是 true，跟真後端一樣） */
+  goal_reached?: boolean
+  /** goal_reached（達成目標後選結束）｜turn_limit（回合用完）｜student_requested_stop（提早結束） */
+  ending_reason?:
+    'goal_reached' | 'turn_limit' | 'student_requested_stop' | 'teacher_ended_stage2' | null
   messages: DbMessage[]
   completed_at: string | null
 }

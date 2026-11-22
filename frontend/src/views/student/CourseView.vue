@@ -20,6 +20,9 @@ import ActivityCard from '@/components/course/ActivityCard.vue'
 import { useCourse, useCourseTopics } from '@/composables/useCourse'
 import { useSearch } from '@/composables/useSearch'
 import { pageClass } from '@/lib/ui'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const courseId = computed(() => String(route.params.courseId ?? ''))
@@ -38,9 +41,9 @@ function cardFor(topic: TopicListItem) {
   }
   if (topic.session_status === 'COMPLETED' && topic.session_id) {
     return {
-      status: { label: '已完成', tone: 'primary' as const },
+      status: { label: t('activity.status.completed'), tone: 'primary' as const },
       link: {
-        label: '檢視個人報告',
+        label: t('activity.viewReport'),
         arrow: '→' as const,
         to: {
           name: 'StudentReport',
@@ -50,17 +53,20 @@ function cardFor(topic: TopicListItem) {
     }
   }
   if (topic.topic_status === 'summary') {
-    return { status: { label: '已結束', tone: 'secondary' as const }, link: undefined }
+    return {
+      status: { label: t('activity.status.closed'), tone: 'secondary' as const },
+      link: undefined,
+    }
   }
   if (topic.session_status === 'IN_PROGRESS') {
     return {
-      status: { label: '進行中', tone: 'secondary' as const },
-      link: { label: '繼續探究', arrow: '→' as const, to: chat },
+      status: { label: t('activity.status.inProgress'), tone: 'secondary' as const },
+      link: { label: t('activity.continue'), arrow: '→' as const, to: chat },
     }
   }
   return {
-    status: { label: '尚未開始', tone: 'secondary' as const },
-    link: { label: '開始探究', arrow: '→' as const, to: chat },
+    status: { label: t('activity.status.notStarted'), tone: 'secondary' as const },
+    link: { label: t('activity.start'), arrow: '→' as const, to: chat },
   }
 }
 </script>
@@ -68,23 +74,23 @@ function cardFor(topic: TopicListItem) {
 <template>
   <div :class="pageClass">
     <PageTitle
-      :title="course?.name ?? data?.name ?? '課程'"
-      :breadcrumbs="[{ label: '我的課程', to: { name: 'StudentCourses' } }]"
+      :title="course?.name ?? data?.name ?? t('common.course')"
+      :breadcrumbs="[{ label: t('common.myCourses'), to: { name: 'StudentCourses' } }]"
       :description="course?.description"
     />
 
     <section class="mt-4 flex flex-col gap-2">
-      <SectionHeading title="探究活動" :count="data?.topics.length ?? 0" />
-      <SearchInput v-model="keyword" label="搜尋探究活動" />
+      <SectionHeading :title="t('activity.title')" :count="data?.topics.length ?? 0" />
+      <SearchInput v-model="keyword" :label="t('activity.search')" />
       <QueryState
         :loading="isPending"
         :error="error"
         :empty="results.length === 0"
-        :empty-text="keyword ? '找不到探究活動' : '還沒有探究活動'"
-        error-text="無法取得探究活動"
+        :empty-text="keyword ? t('activity.notFound') : t('activity.empty')"
+        :error-text="t('activity.loadError')"
         @retry="refetch()"
       >
-        <div class="grid gap-4 md:grid-cols-2">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <ActivityCard
             v-for="topic in results"
             :key="topic.topic_id"
