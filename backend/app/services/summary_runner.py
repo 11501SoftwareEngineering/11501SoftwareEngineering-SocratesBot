@@ -68,10 +68,10 @@ async def run_summary(attempt_id: UUID) -> None:
     refresher: asyncio.Task[None] | None = None
     prompt = prompt_for(PromptStage.CLASS_SUMMARY)
     try:
-        request = await _begin(attempt_id)
-        if request is None:
+        job_payload = await _begin(attempt_id)
+        if job_payload is None:
             return
-        model_id = request["model_id"]
+        model_id = job_payload["model_id"]
         refresher = asyncio.create_task(
             refresh(summary_crud.extend_lease, attempt_id, _live)
         )
@@ -80,18 +80,18 @@ async def run_summary(attempt_id: UUID) -> None:
                 name="class_summary",
                 schema=_SCHEMA,
                 instructions=prompt.instructions,
-                material=json.dumps(request["material"], ensure_ascii=False),
+                material=json.dumps(job_payload["material"], ensure_ascii=False),
                 model=model_id,
                 max_tokens=prompt.max_output_tokens,
-                api_key=await _api_key(request["topic_id"]),
+                api_key=await _api_key(job_payload["topic_id"]),
             )
-            draft = validate_summary(parsed, request["labels"])
+            draft = validate_summary(parsed, job_payload["labels"])
         except (ModelCallError, ValueError, TypeError, KeyError):
             await _fail(attempt_id)
             return
         await _ready(
             attempt_id,
-            request["topic_id"],
+            job_payload["topic_id"],
             draft,
             prompt.stage.value,
             prompt.version,
@@ -112,20 +112,20 @@ async def _begin(attempt_id: UUID) -> dict | None:
         attempt = await summary_crud.get_attempt(db, attempt_id)
         if attempt is None or attempt.status != "pending":
             return None
-        request = dict(attempt.request_json or {})
-        if "model_id" not in request:
+        job_payload = dict(attempt.request_json or {})
+        if "model_id" not in job_payload:
             topic = await topic_crud.get_topic_by_id(db, attempt.topic_id)
             if topic is None:
                 raise ValueError("Missing summary topic")
-            request["model_id"] = topic.model_id or settings.OPENAI_MODEL
-            request["content_language"] = (
+            job_payload["model_id"] = topic.model_id or settings.OPENAI_MODEL
+            job_payload["content_language"] = (
                 topic.content_language or settings.DEFAULT_LANGUAGE_CODE
             )
-            attempt.request_json = dict(request)
-        request["topic_id"] = attempt.topic_id
+            attempt.request_json = dict(job_payload)
+        job_payload["topic_id"] = attempt.topic_id
         await summary_crud.mark_processing(db, attempt_id)
         await db.commit()
-        return request
+        return job_payload
 
 
 async def _api_key(topic_id: UUID) -> str | None:
