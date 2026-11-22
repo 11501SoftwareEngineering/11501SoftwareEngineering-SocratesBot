@@ -218,6 +218,155 @@ async def test_future_milestone_rejected(caplog):
     assert "student-exchange evidence" in caplog.text
 
 
+@pytest.mark.parametrize("response_exchange", [3, 4])
+async def test_unordered_response_continues_without_claiming_ready(
+    response_exchange, caplog
+):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="app.ai")
+    status = _status()
+    status["progress"]["examination"]["evidenceExchange"] = 4
+    status["progress"]["response"]["evidenceExchange"] = response_exchange
+    client = ScriptedClient(VALIDITY_YES, status, PLANNING)
+
+    turn = await _run(client, exchange=4)
+
+    assert client.calls == ["dialogue_validity", "dialogue_status", "dialogue_planning"]
+    assert turn.reply == PLANNING["content"]
+    assert turn.status == "continue"
+    assert turn.goal_reached is False
+    assert turn.progress["examination"] == status["progress"]["examination"]
+    assert turn.progress["response"] == {
+        "met": False,
+        "evidenceExchange": None,
+        "summary": "",
+    }
+    assert status["progress"]["response"]["met"] is True
+    assert "response_milestone_deferred" in caplog.text
+
+    later = _status()
+    later["progress"]["examination"]["evidenceExchange"] = 4
+    later["progress"]["response"]["evidenceExchange"] = 5
+    next_turn = await run_turn(
+        ScriptedClient(VALIDITY_YES, later, PLANNING),
+        prompts=_prompts(),
+        topic=_topic(),
+        question="Why?",
+        latest="A later defence.",
+        transcript_material="transcript",
+        previous_progress=turn.progress,
+        exchange=5,
+        model_id="openai/gpt-6-luna",
+        validity_model="openai/gpt-6-luna",
+    )
+    assert next_turn.goal_reached is True
+    assert next_turn.progress["response"]["evidenceExchange"] == 5
+
+
+@pytest.mark.parametrize(
+    "other_error", ["future_milestone", "future_list", "unmet_cites"]
+)
+async def test_order_recovery_does_not_hide_other_evidence_errors(other_error):
+    status = _status()
+    progress = status["progress"]
+    progress["examination"]["evidenceExchange"] = 4
+    progress["response"]["evidenceExchange"] = 4
+    if other_error == "future_milestone":
+        progress["examination"]["evidenceExchange"] = 5
+    elif other_error == "future_list":
+        progress["reasons"] = [{"text": "Unsupported", "evidenceExchanges": [5]}]
+    else:
+        progress["reason"]["met"] = False
+    client = ScriptedClient(VALIDITY_YES, status, PLANNING)
+    with pytest.raises(ModelCallError) as caught:
+        await _run(client, exchange=4)
+    assert caught.value.reason == "invalid_progress_evidence"
+    assert client.calls == ["dialogue_validity", "dialogue_status"]
+
+
+async def test_legacy_catchup_defers_unordered_response():
+    status = _status()
+    status["progress"]["examination"]["evidenceExchange"] = 3
+    client = ScriptedClient(status)
+    progress = await catch_up_progress(
+        client,
+        prompt=_prompts().status,
+        topic=_topic(),
+        messages=[
+            DialogueMessage(sender=MessageSender.STUDENT, content="Answer")
+            for _ in range(3)
+        ],
+        model_id="openai/gpt-6-luna",
+    )
+    assert client.calls == ["dialogue_status"]
+    assert progress["examination"]["evidenceExchange"] == 3
+    assert progress["response"]["met"] is False
+    assert progress["response"]["evidenceExchange"] is None
+
+
+async def test_recovered_order_saves_one_exchange_without_ending_dialogue(monkeypatch):
+    from unittest.mock import AsyncMock
+    from uuid import uuid4
+
+    from app.crud import message as message_crud
+    from app.services import dialogue
+    from app.services.dialogue_context import BoundedDialogueContext
+
+    topic = _topic()
+    topic.model_id = "openai/gpt-6-luna"
+    session = SimpleNamespace(
+        id=uuid4(),
+        outcome="open",
+        goal_reached=False,
+        generation_meta={"progress": empty_progress()},
+    )
+    messages = [
+        DialogueMessage(sender=MessageSender.STUDENT, content="Answer")
+        for _ in range(3)
+    ]
+    status = _status()
+    status["progress"]["examination"]["evidenceExchange"] = 4
+    status["progress"]["response"]["evidenceExchange"] = 4
+    client = ScriptedClient(VALIDITY_YES, status, PLANNING)
+    monkeypatch.setattr(
+        dialogue,
+        "build_bounded_context",
+        AsyncMock(
+            return_value=BoundedDialogueContext("transcript", None, 0, None, None)
+        ),
+    )
+    monkeypatch.setattr(message_crud, "lock_session", AsyncMock(return_value=session))
+    monkeypatch.setattr(message_crud, "count_messages", AsyncMock(return_value=3))
+    monkeypatch.setattr(message_crud, "count_student_turns", AsyncMock(return_value=3))
+    monkeypatch.setattr(message_crud, "merge_session_meta", AsyncMock())
+    saved = AsyncMock(return_value=uuid4())
+    monkeypatch.setattr(message_crud, "save_exchange", saved)
+    db = AsyncMock()
+
+    done = await dialogue._ask_and_store(
+        db,
+        client,
+        session=session,
+        topic=topic,
+        messages=messages,
+        content="A counterexample and an immediate response.",
+        request_id=uuid4(),
+    )
+
+    saved.assert_awaited_once()
+    values = saved.call_args.kwargs
+    assert values["analysis"]["status"] == "continue"
+    assert values["progress"]["response"]["met"] is False
+    assert values["goal_reached"] is False
+    assert done.completed_turns == 4
+    assert done.session_status == "open"
+    assert done.awaiting_end_consent is False
+    assert done.text == PLANNING["content"]
+    db.rollback.assert_not_awaited()
+    assert client.calls == ["dialogue_validity", "dialogue_status", "dialogue_planning"]
+
+
 async def test_planner_receives_named_brief_language_and_record():
     import json
 
