@@ -1,7 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, literal, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import DialogueOutcome, MessageSender, SessionStatus
@@ -56,6 +57,15 @@ async def count_student_turns(db: AsyncSession, session_id: UUID) -> int:
     return int(await db.scalar(statement) or 0)
 
 
+async def count_messages(db: AsyncSession, session_id: UUID) -> int:
+    statement = (
+        select(func.count())
+        .select_from(DialogueMessage)
+        .where(DialogueMessage.session_id == session_id)
+    )
+    return int(await db.scalar(statement) or 0)
+
+
 async def save_exchange(
     db: AsyncSession,
     *,
@@ -64,7 +74,18 @@ async def save_exchange(
     request_id: UUID,
     reply: str,
     goal_reached: bool,
+    prompt_stage: str,
+    prompt_version: str,
+    analysis: dict | None = None,
+    progress: dict | None = None,
 ) -> UUID:
+    """Store one student message and its AI reply in the current transaction.
+
+    The session row is locked first, so the progress and readiness updates below
+    are serialized with any other writer in this transaction.
+    """
+    if await lock_session(db, session_id) is None:
+        raise LookupError("session not found")
     now = datetime.now(UTC)
     db.add(
         DialogueMessage(
@@ -79,6 +100,11 @@ async def save_exchange(
         session_id=session_id,
         sender=MessageSender.AI,
         content=reply,
+        generation_meta={
+            "prompt_stage": prompt_stage,
+            "prompt_version": prompt_version,
+            **({"analysis": analysis} if analysis is not None else {}),
+        },
         created_at=now + timedelta(microseconds=1),
     )
     db.add(ai_message)
@@ -89,7 +115,24 @@ async def save_exchange(
             .where(Session.id == session_id)
             .values(goal_reached=True, awaiting_end_consent=True)
         )
+    if progress is not None:
+        await merge_session_meta(db, session_id, progress=progress)
     return ai_message.id
+
+
+async def merge_session_meta(
+    db: AsyncSession, session_id: UUID, **entries: object
+) -> None:
+    """Merge top-level keys into sessions.generation_meta, keeping the other keys."""
+    await db.execute(
+        update(Session)
+        .where(Session.id == session_id)
+        .values(
+            generation_meta=func.coalesce(
+                Session.generation_meta, literal({}, JSONB)
+            ).op("||")(literal(entries, JSONB))
+        )
+    )
 
 
 async def save_end(
@@ -100,6 +143,7 @@ async def save_end(
     status: str,
     goal_reached: bool,
     awaiting_end_consent: bool,
+    ending_reason: str | None = None,
 ) -> None:
     values: dict[str, object] = {
         "outcome": outcome,
@@ -107,6 +151,9 @@ async def save_end(
         "goal_reached": goal_reached,
         "awaiting_end_consent": awaiting_end_consent,
     }
+    if outcome in {DialogueOutcome.COMPLETED.value, DialogueOutcome.ENDED.value}:
+        values["ended_at"] = datetime.now(UTC)
+        values["ending_reason"] = ending_reason
     if status == SessionStatus.COMPLETED.value:
         values["completed_at"] = datetime.now(UTC)
     if outcome == DialogueOutcome.ABANDONED.value:

@@ -11,8 +11,8 @@ from app.services.dialogue import (
     _history,
     apply_end,
     guard_reply,
-    reply_material,
 )
+from app.services.dialogue_context import reply_material
 
 
 def test_complete_before_the_goal_stays_open() -> None:
