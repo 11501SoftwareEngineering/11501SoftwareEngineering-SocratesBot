@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ActiveUser, TeacherUser, get_db
 from app.api.openapi_responses import PREFERENCES_UPDATE_RESPONSES
+from app.schemas.ai_usage import AiUsageResponse
 from app.schemas.auth import CurrentUserResponse
 from app.schemas.preferences import (
     PreferencesUpdateRequest,
@@ -17,6 +18,7 @@ from app.schemas.teacher_ai_settings import (
     DefaultModelRequest,
     DefaultModelUpdateResponse,
 )
+from app.services import ai_usage as ai_usage_service
 from app.services import auth as auth_service
 from app.services import preferences as preferences_service
 from app.services import teacher_ai_settings as teacher_ai_settings_service
@@ -101,3 +103,15 @@ async def update_default_model(
     return await teacher_ai_settings_service.set_default_model(
         db, current_user, payload
     )
+
+
+@router.get("/me/ai/usage", response_model=AiUsageResponse)
+async def read_ai_usage(
+    current_user: TeacherUser, db: Annotated[AsyncSession, Depends(get_db)]
+) -> AiUsageResponse:
+    """Aggregate the course owner's actual outbound requests for the current UTC month.
+
+    Includes retries and failed/invalid completions. Unknown usage/cost is null.
+    No historical provider-account imports or unrelated-account usage is included.
+    """
+    return await ai_usage_service.read_month(db, current_user.id)

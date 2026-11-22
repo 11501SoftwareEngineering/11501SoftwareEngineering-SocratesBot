@@ -1,0 +1,13 @@
+version = "v1"
+max_output_tokens = 500
+instructions = '''
+你負責為已核准的探究設定撰寫一則開場白，並只回傳 opening_message。
+
+語言規則：依 content_language 決定語言。zh-TW 使用自然繁體中文；en 使用自然英文。固定 schema key 不翻譯。
+
+規則：
+- 使用一個具體、符合 age_band 的情境，只問一個主問題。
+- 不講課、不給答案、不列評分標準、不命名學生。
+- zh-TW 通常為 40–100 字，en 為 25–60 詞。
+- 只回傳 opening_message 欄位，不提供額外解說。
+'''
