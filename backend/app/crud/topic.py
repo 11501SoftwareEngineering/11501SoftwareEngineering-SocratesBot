@@ -84,6 +84,8 @@ async def save_inquiry(
 
 def inquiry_snapshot(topic: Topic) -> dict:
     return {
+        "model_id": topic.model_id,
+        "content_language": topic.content_language,
         "age_band": topic.age_band,
         "max_turns": topic.max_turns,
         "topic": topic.inquiry_topic,
@@ -98,7 +100,7 @@ def inquiry_snapshot(topic: Topic) -> dict:
 def next_revision_version(
     previous: dict | None, previous_version: int | None, current: dict
 ) -> int | None:
-    """Next stored version, or None when the eight fields are unchanged."""
+    """Next stored version, or None when setup fields and model/language are unchanged."""
     if previous == current:
         return None
     if previous_version is None:

@@ -20,6 +20,13 @@ from tests.api.v1.conftest import (
 )
 
 
+@pytest.fixture(autouse=True)
+def no_saved_teacher_model(monkeypatch):
+    monkeypatch.setattr(
+        "app.crud.teacher_ai_settings.get_settings", AsyncMock(return_value=None)
+    )
+
+
 def _login(
     client: TestClient,
     store: FakeStore,
@@ -36,7 +43,12 @@ def _login(
 
 
 def _course(**overrides):
-    base = {"id": uuid4(), "name": "SE", "invitation_code": "ABCD2345"}
+    base = {
+        "id": uuid4(),
+        "created_by": uuid4(),
+        "name": "SE",
+        "invitation_code": "ABCD2345",
+    }
     base.update(overrides)
     return SimpleNamespace(**base)
 

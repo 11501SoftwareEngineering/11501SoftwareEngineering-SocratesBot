@@ -291,7 +291,7 @@ version: 0.2
 - 呼叫方式: GET /topics/{topicId}/setup
 - 授權: 設定權限（目前程式仍要求全域老師及課程老師；助教支援待 BE-01 修正）
 - 輸入資料: 無
-- 成功回應: `topic_id`, `course_id`, `topic_status`, `model_id`, `setup`{八欄設定物件，欄位見上表}
+- 成功回應: `topic_id`, `course_id`, `topic_status`, `model_id`, `content_language`, `setup`{八欄設定物件，欄位見上表}
 - 錯誤:
     - 無權限 (403)
     - 查無此題目 (404)
@@ -300,8 +300,8 @@ version: 0.2
 - 呼叫方式: POST /topics/{topicId}/setup/generate
 - 授權: 目前仍限老師及課程老師檢查；助教設定權限缺口另追蹤
 - 輸入資料: `age_band`, `max_turns`, `content_language`, `course_description`, `model_id`
-- 成功回應: `topic_id`, `course_id`, `topic_status`, `model_id`, `setup`，以及 `assessments`, `clarification_questions`, `suggestions`, `warnings`
-- 僅回傳建議，不儲存設定、語言或模型；PUT setup 目前也不採用建議的模型／語言
+- 成功回應: `topic_id`, `course_id`, `topic_status`, `model_id`, `content_language`, `setup`，以及 `assessments`, `clarification_questions`, `suggestions`, `warnings`
+- 僅回傳建議，不儲存設定、語言或模型；採用建議時，PUT setup 或 POST publish 須明確傳入 model_id／content_language；省略時保留原值
 - 錯誤: 非 setup (400)、未授權 (401／403)、題目不存在 (404)、輸入或模型目錄不合法／語意需修訂 (422)、模型失敗 (502／503)、模型逾時 (504)
 - `422.detail` 可能是請求驗證陣列，也可能是模型建議修訂的字串
 
@@ -350,7 +350,7 @@ version: 0.2
 - 功能說明: 先把畫面上的八欄存下來，設定完整才在同一筆交易把題目從 `setup` 轉為 `conversation`，固定八欄、內容語言與模型，開放學生對話；發布前前端須顯示確認。不完整的內容不會留下
 - 呼叫方式: POST /topics/{topicId}/publish
 - 授權: 老師
-- 輸入資料: `setup`（八欄，與儲存題目設定的 `setup` 相同）
+- 輸入資料: `setup`（八欄），選填 `model_id`、`content_language`；省略保留原值，null／空白不合法，模型須存在於目錄。
 - 成功回應:「取得題目設定」的回應, `message`
 - 錯誤:
     - 欄位不符規則，或設定未完整 (422)
@@ -669,3 +669,7 @@ version: 0.2
     - 非管理員 (403)
     - 查無此老師帳號 (404)
     - 目標帳號為設定檔超級管理員，不可重設 (403)
+
+## 模型與語言設定補充（Chunk02）
+
+建立題目可明確傳入 `model_id`、`content_language`。老師或助教建立時，未指定模型則使用課程建立老師的預設模型，再回退到伺服器設定；失效的已儲存模型回應422。此規則不改變金鑰擁有者。PUT setup 與 POST publish 可傳入上述兩個選填欄位；省略保留原值，null／空白無效。設定讀取、儲存、AI產生、修訂、開場白允許該課程老師或有 edit_topics 的助教；發布僅允許該課程老師。
