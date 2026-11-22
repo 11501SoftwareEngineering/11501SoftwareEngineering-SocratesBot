@@ -1,0 +1,11 @@
+name: "Native Stage3"
+description: "Personal report independence, native class synthesis and reviewed publication on disposable fixtures."
+cases:
+  - name: "Individual report"
+    description: "A student reads their ready report without waiting for class synthesis."
+    path: "01-native-stage3.http"
+    test: "individualReport"
+  - name: "Publish reviewed synthesis"
+    description: "Read an already-ready native draft, review and publish its exact text. See README for prerequisite generation and bounded polling."
+    path: "01-native-stage3.http"
+    test: "publishReviewed"

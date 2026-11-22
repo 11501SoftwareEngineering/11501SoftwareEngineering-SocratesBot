@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -45,6 +46,11 @@ class _Memory:
             user_id=None,
             topic_id=self.topic.id,
             outcome="completed",
+            generation_meta=None,
+            completed_at=None,
+            goal_reached=True,
+            ended_at=None,
+            ending_reason=None,
         )
         self.attempts: list[SimpleNamespace] = []
         self.reports_scheduled: list = []
@@ -56,6 +62,7 @@ class _Memory:
             session_id=self.session.id,
             status=status,
             result_json=body,
+            lease_expires_at=datetime.now(UTC) + timedelta(minutes=5),
         )
         self.attempts.append(row)
         return row
@@ -82,7 +89,7 @@ def _install(monkeypatch: pytest.MonkeyPatch, db: AsyncMock, memory: _Memory) ->
     async def list_for_sessions(_db, session_ids):
         return [row for row in memory.attempts if row.session_id in session_ids]
 
-    async def insert_pending(_db, session_id):
+    async def insert_pending(_db, session_id, progress=None):
         return memory.add_attempt("pending", None)
 
     async def is_instructor(_db, *, course_id, teacher_id):
@@ -165,7 +172,7 @@ def test_uncompleted_dialogue_and_classmate_have_no_report(
     )
 
     assert rejected.status_code == 409
-    assert rejected.json()["detail"] == "Dialogue is not completed"
+    assert rejected.json()["detail"] == "Dialogue is not report-eligible"
     assert missing.status_code == 404
     assert memory.reports_scheduled == []
 

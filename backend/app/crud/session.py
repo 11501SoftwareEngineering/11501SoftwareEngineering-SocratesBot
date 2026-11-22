@@ -1,11 +1,13 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
+from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import MessageSender, SessionStatus
+from app.models.class_summary import SummaryAttempt
 from app.models.course import CourseMembership
 from app.models.message import DialogueMessage
 from app.models.session import Session
@@ -75,6 +77,28 @@ async def insert_session_id(
     topic_id: UUID,
 ) -> UUID | None:
     """Insert one dialogue. A unique-pair conflict inserts nothing."""
+    # Serialize new entry with the summary-ready topic transition.
+    topic = (
+        await db.execute(select(Topic).where(Topic.id == topic_id).with_for_update())
+    ).scalar_one_or_none()
+    if topic is None or topic.stage != "conversation":
+        raise HTTPException(
+            status_code=400, detail="Topic is not accepting new dialogues"
+        )
+    active = await db.scalar(
+        select(SummaryAttempt.id)
+        .where(
+            SummaryAttempt.topic_id == topic_id,
+            SummaryAttempt.status.in_(("pending", "processing")),
+            SummaryAttempt.lease_expires_at >= datetime.now(UTC),
+        )
+        .limit(1)
+    )
+    if active is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Class synthesis is in progress; new dialogues are temporarily closed",
+        )
     statement = (
         insert(Session)
         .values(
