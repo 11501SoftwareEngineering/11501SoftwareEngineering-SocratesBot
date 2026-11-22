@@ -1,6 +1,6 @@
 """Response shapes for a personal report and the teaching list."""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,7 +15,9 @@ _REPORT = {
     "session_id": "33333333-3333-3333-3333-333333333333",
     "topic_id": "22222222-2222-2222-2222-222222222222",
     "completed_turns": 4,
-    "completion_reason": "completed",
+    "completion_reason": "goal_reached",
+    "goal_reached": True,
+    "ended_at": "2026-11-21T10:00:00Z",
     "viewpoint_summary": "The student narrowed the claim to classroom use.",
     "final_viewpoint": "AI should assist, not replace, teachers.",
     "viewpoint_status": "revised",
@@ -44,6 +46,50 @@ _REPORT = {
 }
 
 
+class ReportEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    message_id: str
+    turn: int = Field(ge=1)
+    quote: str
+
+
+class ReportTimelineItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    turn: int = Field(ge=1)
+    question: str
+    evidence: str
+    viewpoint_before: str
+    viewpoint_after: str
+    change_type: str
+    attribution: Literal["explicit", "sequence_only", "none"]
+    evidence_reference: ReportEvidence | None = None
+
+
+class ReportChallenge(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    challenge: str
+    responded: bool
+
+
+class ReportProjection(BaseModel):
+    """Newly generated body. Legacy stored bodies retain their read compatibility."""
+
+    model_config = ConfigDict(extra="ignore", strict=True)
+    viewpoint_summary: str
+    final_viewpoint: str
+    viewpoint_status: str
+    evidence_status: Literal["sufficient", "partial", "insufficient"]
+    reasons: list[str] = Field(default_factory=list)
+    strongest_reason: str = ""
+    challenges: list[ReportChallenge] = Field(default_factory=list)
+    revision_or_defense: str = ""
+    focus_connection: str = ""
+    other_perspectives: str = ""
+    open_questions: list[str] = Field(default_factory=list)
+    limitations: str = ""
+    timeline: list[ReportTimelineItem] = Field(default_factory=list)
+
+
 class ReportBody(BaseModel):
     """A ready report. Fields stay unset until that attempt is stored."""
 
@@ -55,6 +101,9 @@ class ReportBody(BaseModel):
     topic_id: str | None = None
     completed_turns: int | None = None
     completion_reason: str | None = None
+    completed_at: str | None = None
+    ended_at: str | None = None
+    goal_reached: bool | None = None
     viewpoint_summary: str | None = None
     final_viewpoint: str | None = None
     viewpoint_status: str | None = None
@@ -67,7 +116,10 @@ class ReportBody(BaseModel):
     open_questions: list[str] | None = None
     evidence_status: str | None = Field(default=None, description=_EVIDENCE)
     limitations: str | None = None
-    timeline: list[Any] | None = None
+    timeline: list[ReportTimelineItem | Any] | None = Field(
+        default=None,
+        description="New reports contain validated student-message evidence references. Unvalidated legacy stored items remain readable.",
+    )
 
 
 class StudentReportResponse(BaseModel):
@@ -89,6 +141,7 @@ class TeachingReportsResponse(BaseModel):
             "example": {
                 "class_size": 28,
                 "completed_count": 20,
+                "ended_count": 0,
                 "ready_count": 18,
                 "processing_count": 1,
                 "failed_count": 1,
@@ -105,6 +158,7 @@ class TeachingReportsResponse(BaseModel):
 
     class_size: int
     completed_count: int
+    ended_count: int = 0
     ready_count: int
     processing_count: int
     failed_count: int

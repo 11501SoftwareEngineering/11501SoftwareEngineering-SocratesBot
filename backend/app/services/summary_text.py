@@ -5,14 +5,6 @@ from __future__ import annotations
 import re
 
 
-def ready_effects(stage: str, outcomes: list[str]) -> tuple[str, list[int]]:
-    """Stage moves only when a summary is stored ready. Only open dialogues close."""
-    closed = [index for index, outcome in enumerate(outcomes) if outcome == "open"]
-    if stage == "conversation":
-        return "summary", closed
-    return stage, closed
-
-
 def _invalid() -> ValueError:
     return ValueError("invalid summary")
 
