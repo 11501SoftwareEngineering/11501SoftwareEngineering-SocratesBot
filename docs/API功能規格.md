@@ -9,6 +9,9 @@ version: 0.2
 
 - Base URL: `/api/v1`
 - 認證機制: Bearer Token (JWT), Request Header: `Authorization: Bearer <access_token>`；登入時 access token 由回應的 `Authorization` 標頭提供
+- Cookie: 登入同時設定 `refresh_token`（HttpOnly）與 `csrf_token` 兩個 cookie
+- 自動續期: `GET` 與 `HEAD` 請求在 Bearer 缺少或失效時，若帶有效的 `refresh_token` cookie，系統自動續期：請求照常處理，回應附新的 `Authorization` 標頭並輪替兩個 cookie。其他方法不續期，Bearer 缺少或失效直接回 401
+- CSRF: 登出需帶與 `csrf_token` cookie 相同值的 `X-CSRF-Token` 標頭，否則回 403
 
 ---
 
@@ -39,9 +42,11 @@ version: 0.2
 ### 使用者登出
 - 功能說明: 登出並清除登入狀態
 - 呼叫方式: POST /auth/logout
-- 授權: 已登入
-- 輸入資料: 無
+- 授權: 已登入（以 refresh cookie 辨識，不需 Bearer）
+- 輸入資料: 無；需帶 `X-CSRF-Token` 標頭（見全域規範）
 - 成功回應: `ok`（true）
+- 錯誤:
+    - 缺少或不符的 CSRF token (403)
 
 ### 取得當前使用者資訊
 - 功能說明: 重新確認目前帳號（頁面重整、Header 顯示及首頁導向）

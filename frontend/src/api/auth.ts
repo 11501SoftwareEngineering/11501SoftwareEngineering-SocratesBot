@@ -1,4 +1,6 @@
+import { readCookie } from '@/lib/cookies'
 import { apiClient } from './client'
+import { translate } from '@/i18n'
 
 /**
  * 登入、註冊、帳號相關 API。
@@ -35,10 +37,9 @@ export function primaryRole(roles: UserRole[]): UserRole {
   return ROLE_PRIORITY.find((r) => roles.includes(r)) ?? 'STUDENT'
 }
 
-export const ROLE_LABELS: Record<UserRole, string> = {
-  STUDENT: '學生',
-  TEACHER: '老師',
-  SUPER_ADMIN: '管理員',
+/** 身分的顯示名稱（跟著介面語言） */
+export function roleLabel(role: UserRole) {
+  return translate(`roles.${role}`)
 }
 
 export interface User {
@@ -95,13 +96,8 @@ export function toUser(data: UserResponse): User {
 }
 
 /** 介面語言（PATCH /users/me/preferences 只接受這三種） */
+/** 後端偏好設定接受的語言（其他介面語言只存在瀏覽器，見 i18n/index.ts） */
 export type UiLanguage = 'zh-TW' | 'en' | 'es'
-
-export const UI_LANGUAGES: { value: UiLanguage; label: string }[] = [
-  { value: 'zh-TW', label: '正體中文' },
-  { value: 'en', label: 'English' },
-  { value: 'es', label: 'Español' },
-]
 
 export const authApi = {
   /** 登入。後端把 access token 放在回應的 Authorization header，不在 JSON 裡 */
@@ -114,9 +110,17 @@ export const authApi = {
   register(payload: RegisterPayload) {
     return apiClient.post('/auth/register', payload)
   },
-  /** 登出（清掉後端的 refresh cookie）。失敗也沒關係，前端照樣清除登入狀態 */
+  /**
+   * 登出：後端撤銷 refresh session 並清掉 cookie。失敗也沒關係，前端照樣清除登入狀態。
+   * 後端規定登出要帶 X-CSRF-Token header，值等於 csrf_token cookie（double-submit CSRF，
+   * 見 backend/app/middleware/csrf.py）；沒帶或不一樣會回 403，refresh session 就不會被撤銷。
+   */
   logout() {
-    return apiClient.post('/auth/logout', null)
+    // csrf_token：後端登入時設定的 cookie（不是 HttpOnly，前端讀得到；backend/app/core/cookies.py）
+    const csrf = readCookie('csrf_token')
+    return apiClient.post('/auth/logout', null, {
+      headers: csrf ? { 'X-CSRF-Token': csrf } : undefined,
+    })
   },
   async getMe() {
     const res = await apiClient.get<UserResponse>('/users/me')

@@ -1,92 +1,95 @@
 <script setup lang="ts">
 /**
- * 學生：探索結果報告。有三個分頁：
- *   個人報告  Figma「Student_Result_01」（node 787:3003）⚠️ 還沒做
- *   對話紀錄  Figma「Student_Result_02」（node 785:4795）
- *   全班摘要  Figma「Student_Result_03」（node 787:2744）⚠️ 還沒做
+ * 學生：探索結果報告。三個分頁：
+ *   個人報告  Figma「P08_Student_Result_01」（node 787:3003）  GET /sessions/{sessionId}/report
+ *   對話紀錄  Figma「P08_Student_Result_02」（node 785:4795）  GET /sessions/{sessionId}/messages
+ *   全班摘要  Figma「P08_Student_Result_03」（node 787:2744）  GET /topics/{topicId}/summary/published
  *
- * 網址：/student/courses/:courseId/sessions/:sessionId/result/:tab
- *   tab = personal | chat | summary，沒寫就是 personal
- *
- * ⚠️ 還沒接 API，資料來自 src/data/sampleReport.ts。之後要接的 API（docs/API功能規格.md v0.2）：
- *   對話紀錄 GET /sessions/{sessionId}/messages
- *   個人報告 GET /sessions/{sessionId}/report
- *   全班摘要 GET /topics/{topicId}/summary/published
+ * 網址：/student/courses/:courseId/sessions/:sessionId/result/:tab（personal | chat | summary，沒寫就是 personal）
+ * 題目名稱從課程的活動列表找（session_id 對得上的那一題）。
  */
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import PageBreadcrumbs from '@/components/common/PageBreadcrumbs.vue'
-import ComingSoon from '@/components/common/ComingSoon.vue'
-import { sampleReport } from '@/data/sampleReport'
+import { useQuery } from '@tanstack/vue-query'
+import { sessionKeys, sessionsApi } from '@/api/sessions'
+import PageTitle from '@/components/common/PageTitle.vue'
+import QueryState from '@/components/common/QueryState.vue'
+import TabNav from '@/components/common/TabNav.vue'
+import { useCourseTopics } from '@/composables/useCourse'
+import { pageClass } from '@/lib/ui'
 import { useAuthStore } from '@/stores/auth'
 import ChatRecordTab from './report/ChatRecordTab.vue'
+import PersonalTab from './report/PersonalTab.vue'
+import SummaryTab from './report/SummaryTab.vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 type ReportTab = 'personal' | 'chat' | 'summary'
 
 const route = useRoute()
 const authStore = useAuthStore()
-
-const report = sampleReport
-const tabs: { key: ReportTab; label: string }[] = [
-  { key: 'personal', label: '個人報告' },
-  { key: 'chat', label: '對話紀錄' },
-  { key: 'summary', label: '全班摘要' },
-]
+const courseId = computed(() => String(route.params.courseId ?? ''))
+const sessionId = computed(() => String(route.params.sessionId ?? ''))
 const currentTab = computed<ReportTab>(() => {
   const tab = route.params.tab
   return tab === 'chat' || tab === 'summary' ? tab : 'personal'
 })
-const comingSoon: Record<Exclude<ReportTab, 'chat'>, string> = {
-  personal: '個人報告',
-  summary: '全班摘要',
-}
 
-const courseId = computed(() => String(route.params.courseId ?? report.course_id))
-const breadcrumbs = computed(() => [
-  { label: '我的課程', to: { name: 'StudentCourses' } },
-  {
-    label: report.course_name,
-    to: { name: 'StudentCourse', params: { courseId: courseId.value } },
-  },
-])
+const { data: course } = useCourseTopics(courseId)
+const topic = computed(() => course.value?.topics.find((t) => t.session_id === sessionId.value))
+
+const tabs = computed(() =>
+  (
+    [
+      { key: 'personal', label: t('report.personal') },
+      { key: 'chat', label: t('report.chat') },
+      { key: 'summary', label: t('report.summary') },
+    ] as const
+  ).map((tab) => ({
+    ...tab,
+    to: { name: 'StudentReport', params: { ...route.params, tab: tab.key } },
+  })),
+)
+
+const messages = useQuery({
+  queryKey: computed(() => sessionKeys.messages(sessionId.value)),
+  queryFn: () => sessionsApi.messages(sessionId.value),
+  enabled: () => currentTab.value === 'chat' && !!sessionId.value,
+})
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[1200px] px-4 pt-[30px] pb-12">
-    <header class="flex flex-col gap-2">
-      <PageBreadcrumbs :items="breadcrumbs" />
-      <h1 class="text-page-title text-foreground">探索結果報告</h1>
-    </header>
+  <div :class="pageClass">
+    <PageTitle
+      :title="t('report.title')"
+      :breadcrumbs="[
+        { label: t('common.myCourses'), to: { name: 'StudentCourses' } },
+        {
+          label: course?.name ?? t('common.course'),
+          to: { name: 'StudentCourse', params: { courseId } },
+        },
+      ]"
+    />
 
-    <h2 class="mt-[23px] text-h1-title text-foreground">{{ report.topic_title }}</h2>
-
-    <nav class="mt-4" aria-label="報告分頁">
-      <ul class="flex border-b-2 border-foreground px-1">
-        <li v-for="tab in tabs" :key="tab.key">
-          <RouterLink
-            :to="{ name: 'StudentReport', params: { ...route.params, tab: tab.key } }"
-            class="relative block rounded-t px-3 pb-4 text-header outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            :class="
-              tab.key === currentTab
-                ? 'text-foreground after:absolute after:inset-x-0 after:-bottom-1 after:h-1.5 after:bg-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            "
-            :aria-current="tab.key === currentTab ? 'page' : undefined"
-            >{{ tab.label }}</RouterLink
-          >
-        </li>
-      </ul>
-    </nav>
+    <h2 class="mt-[23px] text-h1-title text-foreground">{{ topic?.title ?? '…' }}</h2>
+    <TabNav class="mt-4" :items="tabs" :model-value="currentTab" :label="t('report.tabs')" />
 
     <section class="mt-4" :aria-label="tabs.find((t) => t.key === currentTab)?.label">
-      <ChatRecordTab
-        v-if="currentTab === 'chat'"
-        :messages="report.messages"
-        :student-name="authStore.user?.name"
-      />
-      <ComingSoon v-else :title="`${comingSoon[currentTab]}製作中`">
-        這個分頁還在開發，先看看「對話紀錄」。
-      </ComingSoon>
+      <PersonalTab v-if="currentTab === 'personal'" :session-id="sessionId" />
+      <QueryState
+        v-else-if="currentTab === 'chat'"
+        :loading="messages.isPending.value"
+        :error="messages.error.value"
+        :error-text="t('report.chatError')"
+        @retry="messages.refetch()"
+      >
+        <ChatRecordTab
+          :messages="messages.data.value?.messages ?? []"
+          :student-name="authStore.user?.name"
+        />
+      </QueryState>
+      <SummaryTab v-else :topic-id="topic?.topic_id ?? ''" />
     </section>
   </div>
 </template>

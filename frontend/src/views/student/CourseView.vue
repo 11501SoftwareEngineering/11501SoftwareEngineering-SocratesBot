@@ -1,84 +1,106 @@
 <script setup lang="ts">
 /**
- * 學生：課程裡的問題列表。對應 Figma「Student_Course」（node 171:257）。
- * API：GET /student/courses/{courseId}/topics
- * 點問題：還沒完成 → 對話頁；已完成 → 結果頁
+ * 學生：課程頁（探究活動列表）。對應 Figma「P06_Student_Course」（node 171:257）。
+ * API：GET /courses/{courseId}（課程描述）、GET /courses/{courseId}/topics
+ *
+ * 活動卡片的狀態和連結：
+ *   還沒開始 → 尚未開始、「開始探究 →」
+ *   進行中   → 進行中、「繼續探究 →」
+ *   已完成   → 已完成、「檢視個人報告 →」
+ *   老師已經在整理摘要（topic_status = summary）、自己沒做完 → 已結束，不能再作答
  */
 import { computed } from 'vue'
-import { useRoute, type RouteLocationRaw } from 'vue-router'
-import type { SessionStatus, Topic } from '@/api/student'
-import ListCard from '@/components/common/ListCard.vue'
-import ListSection from '@/components/common/ListSection.vue'
+import { useRoute } from 'vue-router'
+import type { TopicListItem } from '@/api/courses'
+import PageTitle from '@/components/common/PageTitle.vue'
 import QueryState from '@/components/common/QueryState.vue'
-import { features } from '@/config/features'
-import { useStudentCourse } from '@/composables/useCourseDetail'
+import SearchInput from '@/components/common/SearchInput.vue'
+import SectionHeading from '@/components/common/SectionHeading.vue'
+import ActivityCard from '@/components/course/ActivityCard.vue'
+import { useCourse, useCourseTopics } from '@/composables/useCourse'
 import { useSearch } from '@/composables/useSearch'
+import { pageClass } from '@/lib/ui'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const courseId = computed(() => String(route.params.courseId ?? ''))
-const { data: course, isPending, error, refetch } = useStudentCourse(courseId)
+const { data: course } = useCourse(courseId)
+const { data, isPending, error, refetch } = useCourseTopics(courseId)
+
 const { keyword, results } = useSearch(
-  () => course.value?.topics ?? [],
-  (t) => [t.title, t.description],
+  () => data.value?.topics ?? [],
+  (t) => [t.title, t.description ?? ''],
 )
 
-// 後端回傳 null 代表還沒開始，不顯示標籤
-const STATUS_LABEL: Record<SessionStatus, string> = {
-  IN_PROGRESS: '進行中',
-  COMPLETED: '已完成',
-}
-
-function topicLink(topic: Topic): RouteLocationRaw {
-  if (topic.status === 'COMPLETED' && topic.session_id) {
+function cardFor(topic: TopicListItem) {
+  const chat = {
+    name: 'StudentChat',
+    params: { courseId: courseId.value, topicId: topic.topic_id },
+  }
+  if (topic.session_status === 'COMPLETED' && topic.session_id) {
     return {
-      name: 'StudentResult',
-      params: { courseId: courseId.value, sessionId: topic.session_id },
+      status: { label: t('activity.status.completed'), tone: 'primary' as const },
+      link: {
+        label: t('activity.viewReport'),
+        arrow: '→' as const,
+        to: {
+          name: 'StudentReport',
+          params: { courseId: courseId.value, sessionId: topic.session_id, tab: 'personal' },
+        },
+      },
     }
   }
-  return { name: 'StudentChat', params: { courseId: courseId.value, topicId: topic.topic_id } }
+  if (topic.topic_status === 'summary') {
+    return {
+      status: { label: t('activity.status.closed'), tone: 'secondary' as const },
+      link: undefined,
+    }
+  }
+  if (topic.session_status === 'IN_PROGRESS') {
+    return {
+      status: { label: t('activity.status.inProgress'), tone: 'secondary' as const },
+      link: { label: t('activity.continue'), arrow: '→' as const, to: chat },
+    }
+  }
+  return {
+    status: { label: t('activity.status.notStarted'), tone: 'secondary' as const },
+    link: { label: t('activity.start'), arrow: '→' as const, to: chat },
+  }
 }
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[960px] px-4 py-10 sm:py-12">
-    <ListSection v-model:search="keyword" title="問題列表" search-label="搜尋問題">
+  <div :class="pageClass">
+    <PageTitle
+      :title="course?.name ?? data?.name ?? t('common.course')"
+      :breadcrumbs="[{ label: t('common.myCourses'), to: { name: 'StudentCourses' } }]"
+      :description="course?.description"
+    />
+
+    <section class="mt-4 flex flex-col gap-2">
+      <SectionHeading :title="t('activity.title')" :count="data?.topics.length ?? 0" />
+      <SearchInput v-model="keyword" :label="t('activity.search')" />
       <QueryState
         :loading="isPending"
         :error="error"
         :empty="results.length === 0"
-        :empty-text="keyword ? '找不到符合的問題' : '老師還沒有出題目，晚點再來看看'"
-        error-text="無法取得問題列表"
+        :empty-text="keyword ? t('activity.notFound') : t('activity.empty')"
+        :error-text="t('activity.loadError')"
         @retry="refetch()"
       >
-        <ListCard
-          v-for="topic in results"
-          :key="topic.topic_id"
-          :title="topic.title"
-          :meta="
-            features.topicSettings
-              ? [
-                  `年齡層：${topic.age_range ?? '未提供'}`,
-                  `回合數：${topic.max_rounds ?? '未提供'}`,
-                ]
-              : undefined
-          "
-          :description="features.topicSettings ? undefined : (topic.description ?? undefined)"
-          :to="topicLink(topic)"
-        >
-          <template v-if="topic.status" #actions>
-            <span
-              class="rounded-lg px-3 py-1 text-body"
-              :class="
-                topic.status === 'COMPLETED'
-                  ? 'bg-primary/40 text-foreground'
-                  : 'bg-secondary/70 text-foreground'
-              "
-            >
-              {{ STATUS_LABEL[topic.status] }}
-            </span>
-          </template>
-        </ListCard>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <ActivityCard
+            v-for="topic in results"
+            :key="topic.topic_id"
+            :title="topic.title"
+            :description="topic.description"
+            :max-turns="topic.max_turns"
+            v-bind="cardFor(topic)"
+          />
+        </div>
       </QueryState>
-    </ListSection>
+    </section>
   </div>
 </template>

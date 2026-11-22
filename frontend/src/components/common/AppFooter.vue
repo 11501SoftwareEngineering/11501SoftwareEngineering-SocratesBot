@@ -1,7 +1,13 @@
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+import { computed } from 'vue'
+
+const { t } = useI18n()
 // 頁尾。電腦版一排（Figma Footer），手機版直排加分隔線（Figma Footer_phone）。
 // 五個項目目前都還沒有對應的頁面，先用純文字呈現，做好頁面再換成 <RouterLink>。
-const links = ['隱私權', '版權', '開發者', '聯絡我們', 'Bug']
+const links = computed(() =>
+  (['privacy', 'copyright', 'developers', 'contact', 'bug'] as const).map((k) => t(`footer.${k}`)),
+)
 </script>
 
 <template>

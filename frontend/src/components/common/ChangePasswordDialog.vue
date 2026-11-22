@@ -14,6 +14,9 @@ import FormField from '@/components/common/FormField.vue'
 import { Input } from '@/components/ui/input'
 import { getApiErrorMessage } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 const props = defineProps<{ forced?: boolean }>()
 const open = defineModel<boolean>('open', { default: false })
@@ -24,16 +27,24 @@ const errors = reactive({ oldPassword: '', newPassword: '', confirm: '' })
 const formError = ref('')
 
 // 三個欄位都是密碼框，只差標籤、提示和瀏覽器自動填入的種類
-const allFields = [
-  { key: 'oldPassword', label: '原密碼', autocomplete: 'current-password' },
-  { key: 'newPassword', label: '新密碼', hint: '至少 8 個字元', autocomplete: 'new-password' },
-  { key: 'confirm', label: '確認密碼', autocomplete: 'new-password' },
-] as const
+const allFields = computed(
+  () =>
+    [
+      { key: 'oldPassword', label: t('password.old'), autocomplete: 'current-password' },
+      {
+        key: 'newPassword',
+        label: t('password.new'),
+        hint: t('password.hint'),
+        autocomplete: 'new-password',
+      },
+      { key: 'confirm', label: t('password.confirm'), autocomplete: 'new-password' },
+    ] as const,
+)
 
 /** 第一次登入、而且記得初始密碼：不用再問原密碼 */
 const firstLogin = computed(() => props.forced && !!authStore.initialPassword)
 const fields = computed(() =>
-  allFields.filter((f) => !(firstLogin.value && f.key === 'oldPassword')),
+  allFields.value.filter((f) => !(firstLogin.value && f.key === 'oldPassword')),
 )
 const done = ref(false)
 
@@ -56,14 +67,14 @@ const mutation = useMutation({
     open.value = false
   },
   onError: (error) => {
-    formError.value = getApiErrorMessage(error, '修改失敗，請稍後再試')
+    formError.value = getApiErrorMessage(error, t('password.failed'))
   },
 })
 
 function handleSubmit() {
-  errors.oldPassword = firstLogin.value || form.oldPassword ? '' : '請輸入原密碼'
-  errors.newPassword = form.newPassword.length >= 8 ? '' : '新密碼至少要 8 個字元'
-  errors.confirm = form.confirm === form.newPassword ? '' : '兩次輸入的新密碼不一樣'
+  errors.oldPassword = firstLogin.value || form.oldPassword ? '' : t('password.oldRequired')
+  errors.newPassword = form.newPassword.length >= 8 ? '' : t('password.tooShort')
+  errors.confirm = form.confirm === form.newPassword ? '' : t('password.mismatch')
   formError.value = ''
   if (errors.oldPassword || errors.newPassword || errors.confirm) return
   mutation.mutate()
@@ -73,9 +84,9 @@ function handleSubmit() {
 <template>
   <FormDialog
     v-model:open="open"
-    :title="forced ? '設定首次登入密碼' : '修改密碼'"
-    submit-text="確認"
-    :cancel-text="forced ? '登出' : '取消'"
+    :title="forced ? t('password.firstLoginTitle') : t('password.changeTitle')"
+    :submit-text="t('common.ok')"
+    :cancel-text="forced ? t('header.logout') : t('common.cancel')"
     :dismissible="!forced"
     :loading="mutation.isPending.value"
     :error="formError"

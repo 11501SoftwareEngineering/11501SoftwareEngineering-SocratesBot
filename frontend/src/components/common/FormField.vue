@@ -18,6 +18,9 @@ export const FORM_FIELD_LAYOUT: InjectionKey<'page' | 'dialog'> = Symbol('form-f
  *   </FormField>
  */
 import { computed, inject, useId } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const { t, locale } = useI18n()
 
 const props = defineProps<{
   label: string
@@ -30,6 +33,11 @@ const props = defineProps<{
 }>()
 
 const layout = inject(FORM_FIELD_LAYOUT, 'page')
+/**
+ * Figma 的標籤寬度是照中文標籤設計的；其他語言的標籤比較長（例如 Benutzername、アカウント名），
+ * 擠在固定寬度裡會被截斷，所以改成標籤在輸入框上面
+ */
+const stacked = computed(() => !locale.value.startsWith('zh'))
 const id = useId()
 const messageId = `${id}-message`
 const message = computed(() => props.error || props.hint)
@@ -44,34 +52,41 @@ const fieldAttrs = computed(() => ({
   <div
     class="grid gap-x-3 gap-y-1"
     :class="
-      layout === 'dialog'
-        ? 'gap-x-0 [&_input]:h-[63px] sm:grid-cols-[var(--form-label-width,165px)_1fr]'
-        : inline
-          ? 'grid-cols-[auto_1fr] sm:grid-cols-[9rem_1fr]'
-          : 'sm:grid-cols-[9rem_1fr]'
+      stacked
+        ? layout === 'dialog' && '[&_input]:h-[63px]'
+        : layout === 'dialog'
+          ? 'gap-x-0 [&_input]:h-[63px] sm:grid-cols-[var(--form-label-width,165px)_1fr]'
+          : inline
+            ? 'grid-cols-[auto_1fr] sm:grid-cols-[9rem_1fr]'
+            : 'sm:grid-cols-[9rem_1fr]'
     "
   >
     <label
       :for="id"
       class="font-bold text-foreground"
       :class="[
-        layout === 'dialog' ? 'text-h1-title' : 'text-header sm:text-right',
-        alignTop ? 'sm:pt-3' : 'sm:self-center',
-        inline && !alignTop && 'self-center',
+        stacked
+          ? 'text-header'
+          : [
+              layout === 'dialog' ? 'text-h1-title' : 'text-header sm:text-right',
+              alignTop ? 'sm:pt-3' : 'sm:self-center',
+              inline && !alignTop && 'self-center',
+            ],
       ]"
     >
-      {{ label }}：
+      {{ stacked ? label : t('common.labelColon', { label }) }}
     </label>
     <slot v-bind="fieldAttrs" />
     <p
       v-if="message"
       :id="messageId"
       :role="error ? 'alert' : undefined"
-      class="text-right sm:col-start-2"
+      class="text-right"
       :class="[
+        !stacked && 'sm:col-start-2',
         layout === 'dialog' ? 'text-header' : 'text-body',
         error ? 'text-destructive' : 'text-muted-foreground',
-        inline && 'col-start-2',
+        inline && !stacked && 'col-start-2',
       ]"
     >
       {{ message }}

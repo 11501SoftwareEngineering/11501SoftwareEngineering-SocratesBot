@@ -115,6 +115,8 @@ export default {
         destructive: {
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
+          // Figma「點綴色_深」（點綴色＋20% 黑）：欄位下方的錯誤文字
+          dark: '#A87E79',
         },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
