@@ -112,6 +112,40 @@ async def test_on_topic_answer_runs_all_three_stages() -> None:
     assert set(turn.prompt_versions) == {"validity", "status", "dialogue"}
 
 
+async def test_relevant_answer_without_reason_can_continue_without_reaching_goal() -> (
+    None
+):
+    # The model's relevance decision is scripted: this verifies orchestration,
+    # not whether a live model interprets the revised prompt correctly.
+    progress = empty_progress()
+    progress["position"] = {"met": True, "evidenceExchange": 3, "summary": "Allow it."}
+    reply = {
+        "method": "change_one_condition",
+        "content": "If the teacher were a substitute, would your answer change? Why?",
+    }
+    client = ScriptedClient(
+        VALIDITY_YES,
+        {"progress": progress, "status": "continue", "safetyLevel": "normal"},
+        reply,
+    )
+    turn = await run_turn(
+        client,
+        prompts=_prompts(),
+        topic=_topic(),
+        question="Should the teacher decide?",
+        latest="No.",
+        transcript_material="Student disagrees but has not given a reason.",
+        previous_progress=None,
+        exchange=3,
+        model_id="openai/gpt-6-luna",
+        validity_model="openai/gpt-6-luna",
+    )
+    assert client.calls == ["dialogue_validity", "dialogue_status", "dialogue_planning"]
+    assert turn.reply == reply["content"]
+    assert turn.progress["reason"]["met"] is False
+    assert turn.goal_reached is False
+
+
 @pytest.mark.parametrize(
     ("exchange", "status", "expected"),
     [
