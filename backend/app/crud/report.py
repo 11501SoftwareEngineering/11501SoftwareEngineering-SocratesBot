@@ -96,6 +96,7 @@ async def mark_ready(
     *,
     prompt_stage: str,
     prompt_version: str,
+    report_metadata: dict | None = None,
 ) -> None:
     await db.execute(
         update(ReportAttempt)
@@ -110,7 +111,11 @@ async def mark_ready(
                 ReportAttempt.generation_meta, literal({}, JSONB)
             ).op("||")(
                 literal(
-                    {"prompt_stage": prompt_stage, "prompt_version": prompt_version},
+                    {
+                        **(report_metadata or {}),
+                        "prompt_stage": prompt_stage,
+                        "prompt_version": prompt_version,
+                    },
                     JSONB,
                 )
             ),
@@ -169,3 +174,26 @@ async def student_turn_count(db: AsyncSession, session_id: UUID) -> int:
         DialogueMessage.sender == MessageSender.STUDENT,
     )
     return len(list(await db.scalars(statement)))
+
+
+async def save_source(
+    db: AsyncSession, attempt_id: UUID, source: dict, digest: str
+) -> None:
+    """Freeze the report input before calling the provider; metadata is private."""
+    result = await db.execute(
+        update(ReportAttempt)
+        .where(
+            ReportAttempt.id == attempt_id,
+            ReportAttempt.status == GenerationStatus.PROCESSING.value,
+        )
+        .values(
+            generation_meta=func.coalesce(
+                ReportAttempt.generation_meta, literal({}, JSONB)
+            ).op("||")(
+                literal({"report_source": source, "source_digest": digest}, JSONB)
+            )
+        )
+    )
+
+    if result.rowcount != 1:
+        raise ValueError("Report attempt is no longer processing")
