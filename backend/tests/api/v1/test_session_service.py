@@ -37,7 +37,7 @@ class FakeSessionStore:
         self.course_id = uuid4()
         self.topics = {self.topic_id: self.course_id}
         self.stages = {self.topic_id: "conversation"}
-        self.members = {(self.user_id, self.course_id)}
+        self.students = {(self.user_id, self.course_id)}
         self.sessions: dict[tuple[UUID, UUID], FakeSession] = {}
         self.create_calls = 0
 
@@ -49,8 +49,8 @@ class FakeSessionStore:
             return None
         return self.stages.get(topic_id, "conversation")
 
-    async def is_course_member(self, user_id: UUID, course_id: UUID) -> bool:
-        return (user_id, course_id) in self.members
+    async def is_course_student(self, user_id: UUID, course_id: UUID) -> bool:
+        return (user_id, course_id) in self.students
 
     async def get_session_id(self, user_id: UUID, topic_id: UUID) -> UUID | None:
         session = self.sessions.get((user_id, topic_id))
@@ -111,7 +111,7 @@ async def test_reentry_keeps_existing_session(
 
 async def test_different_users_get_separate_sessions(store: FakeSessionStore) -> None:
     other_user_id = uuid4()
-    store.members.add((other_user_id, store.course_id))
+    store.students.add((other_user_id, store.course_id))
 
     first = await create_or_enter_session(
         user_id=store.user_id, topic_id=store.topic_id, store=store
@@ -152,12 +152,12 @@ async def test_missing_topic_is_rejected(store: FakeSessionStore) -> None:
 
 
 @pytest.mark.parametrize("has_session", [False, True])
-async def test_non_member_is_rejected(
+async def test_non_student_is_rejected(
     store: FakeSessionStore, has_session: bool
 ) -> None:
     if has_session:
         store.sessions[(store.user_id, store.topic_id)] = FakeSession(id=uuid4())
-    store.members.clear()
+    store.students.clear()
 
     with pytest.raises(CourseAccessDeniedError):
         await create_or_enter_session(

@@ -52,7 +52,7 @@ def test_create_session_returns_ids_and_commits(
     monkeypatch.setattr(
         session_crud, "get_topic_course_id", AsyncMock(return_value=uuid4())
     )
-    monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=True))
+    monkeypatch.setattr(session_crud, "is_course_student", AsyncMock(return_value=True))
     monkeypatch.setattr(session_crud, "get_session_id", AsyncMock(return_value=None))
     monkeypatch.setattr(
         session_crud, "get_topic_stage", AsyncMock(return_value="conversation")
@@ -110,7 +110,9 @@ def test_session_errors_return_http_status_and_roll_back(
         "get_topic_course_id",
         AsyncMock(return_value=uuid4() if topic_exists else None),
     )
-    monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=False))
+    monkeypatch.setattr(
+        session_crud, "is_course_student", AsyncMock(return_value=False)
+    )
 
     lookup_mock = AsyncMock(return_value=None)
     create_mock = AsyncMock(return_value=uuid4())
@@ -147,7 +149,7 @@ def test_setup_topic_without_session_does_not_insert(
     monkeypatch.setattr(
         session_crud, "get_topic_course_id", AsyncMock(return_value=uuid4())
     )
-    monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=True))
+    monkeypatch.setattr(session_crud, "is_course_student", AsyncMock(return_value=True))
     monkeypatch.setattr(session_crud, "get_session_id", AsyncMock(return_value=None))
     monkeypatch.setattr(
         session_crud, "get_topic_stage", AsyncMock(return_value="setup")
@@ -186,7 +188,7 @@ def test_enter_existing_session_returns_original_id(
     monkeypatch.setattr(
         session_crud, "get_topic_course_id", AsyncMock(return_value=uuid4())
     )
-    monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=True))
+    monkeypatch.setattr(session_crud, "is_course_student", AsyncMock(return_value=True))
 
     lookup_mock = AsyncMock(return_value=existing_session_id)
     create_mock = AsyncMock(return_value=uuid4())
@@ -245,4 +247,43 @@ def test_expired_token_cannot_create_session(
     assert response.json() == {"detail": AUTH_UNAUTHORIZED_DETAIL}
     assert response.headers["www-authenticate"] == "Bearer"
     service_mock.assert_not_awaited()
+    session_route_db.commit.assert_not_awaited()
+
+
+def test_member_who_is_not_a_student_cannot_enter(
+    auth_client: TestClient,
+    store: FakeStore,
+    session_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A TA is a member of the course but not a student of it."""
+    ta = seed_user(store, account_id="session-ta")
+    login = auth_client.post(
+        "/api/v1/auth/login",
+        json={"account_id": ta.account_id, "password": "password1"},
+    )
+    assert login.status_code == 200
+
+    monkeypatch.setattr(
+        session_crud, "get_topic_course_id", AsyncMock(return_value=uuid4())
+    )
+    # The broader membership check would let a TA in; only the student check counts.
+    monkeypatch.setattr(session_crud, "is_course_member", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        session_crud, "is_course_student", AsyncMock(return_value=False)
+    )
+    lookup_mock = AsyncMock(return_value=uuid4())
+    create_mock = AsyncMock(return_value=uuid4())
+    monkeypatch.setattr(session_crud, "get_session_id", lookup_mock)
+    monkeypatch.setattr(session_crud, "insert_session_id", create_mock)
+
+    response = auth_client.post(
+        f"/api/v1/topics/{uuid4()}/sessions",
+        headers={"Authorization": bearer_from(login)},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Course membership required"}
+    lookup_mock.assert_not_awaited()
+    create_mock.assert_not_awaited()
     session_route_db.commit.assert_not_awaited()
