@@ -27,7 +27,7 @@ from app.services.central_synthesis import (
 )
 from app.services.model_client import ModelCallError, OpenAIChatClient
 from app.services.teacher_ai_settings import course_api_key
-from app.services.token_budget import estimate_total_request_tokens
+from app.services.token_budget import context_budget_for, estimate_total_request_tokens
 
 logger = logging.getLogger("app.model")
 client = OpenAIChatClient()
@@ -56,17 +56,13 @@ def prepare_request(request: dict) -> tuple[list, dict, str]:
     prompt = prompt_for(PromptStage.CLASS_SUMMARY)
     if len(encoded.encode("utf-8")) > MAX_PAYLOAD_BYTES:
         raise ValueError("Stage3 payload exceeds supported size")
-    if (
-        material["reports"]
-        and estimate_total_request_tokens(
-            model_id=request["model_id"],
-            instructions=prompt.instructions,
-            material=encoded,
-            schema=_SCHEMA,
-            output_tokens=prompt.max_output_tokens,
-        )
-        > settings.REPORT_CONTEXT_TOKEN_BUDGET
-    ):
+    if material["reports"] and estimate_total_request_tokens(
+        model_id=request["model_id"],
+        instructions=prompt.instructions,
+        material=encoded,
+        schema=_SCHEMA,
+        output_tokens=prompt.max_output_tokens,
+    ) > context_budget_for(request["model_id"], report=True):
         raise ValueError("Stage3 request exceeds model budget")
     return reports, material, encoded
 

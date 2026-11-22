@@ -249,7 +249,13 @@ def _model_http(exc: ModelCallError) -> HTTPException:
         if exc.status_code in {429, 503}
         else status.HTTP_502_BAD_GATEWAY
     )
-    return HTTPException(status_code=code, detail="Model call failed")
+    return HTTPException(
+        status_code=code,
+        detail="Model call failed",
+        headers={"Retry-After": str(exc.retry_after)}
+        if hasattr(exc, "retry_after")
+        else None,
+    )
 
 
 async def _owned(
@@ -419,7 +425,7 @@ async def _ask_and_store(
     except ContextWindowExceeded as exc:
         await db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=str(exc),
         ) from exc
     except UnsupportedModelTokenizerError as exc:

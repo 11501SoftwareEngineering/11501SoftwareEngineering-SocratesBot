@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.core.config import settings
 from app.core.prompts import PromptDefinition
 from app.models.message import DialogueMessage
 from app.models.topic import Topic
@@ -17,6 +16,7 @@ from app.services.model_client import (
 from app.services.token_budget import (
     ContextWindowExceeded,
     UnsupportedModelTokenizerError,
+    context_budget_for,
     estimate_total_request_tokens,
 )
 
@@ -153,7 +153,7 @@ async def build_bounded_context(
 
     ``api_key`` is the course teacher's key; None uses the single server key.
     """
-    budget = settings.DIALOGUE_CONTEXT_TOKEN_BUDGET
+    budget = context_budget_for(model_id)
     if (
         checkpoint.summarized_message_count < 0
         or checkpoint.summarized_message_count > len(messages)

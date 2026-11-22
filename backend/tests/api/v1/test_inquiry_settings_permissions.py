@@ -204,13 +204,13 @@ def test_creation_uses_course_owner_default(
         course_crud, "get_ta_permissions", AsyncMock(return_value=["edit_topics"])
     )
     loaded = AsyncMock(
-        return_value=SimpleNamespace(default_model_id="openai/gpt-6.1-sol")
+        return_value=SimpleNamespace(default_model_id="gemini-3.1-flash-lite")
     )
     monkeypatch.setattr(settings_crud, "get_settings", loaded)
     monkeypatch.setattr(
         settings_crud,
         "get_inquiry_model",
-        AsyncMock(return_value=SimpleNamespace(model_id="openai/gpt-6.1-sol")),
+        AsyncMock(return_value=SimpleNamespace(model_id="gemini-3.1-flash-lite")),
     )
     monkeypatch.setattr(
         inquiry, "openrouter_api_key", AsyncMock(return_value="test-only")
@@ -232,8 +232,8 @@ def test_creation_uses_course_owner_default(
     )
     assert response.status_code == 200, response.text
     loaded.assert_awaited_once_with(course_route_db, owner)
-    assert generated.call_args.args[0] == "openai/gpt-6.1-sol"
-    assert topic.model_id == "openai/gpt-6.1-sol" and topic.content_language == "en"
+    assert generated.call_args.args[0] == "gemini-3.1-flash-lite"
+    assert topic.model_id == "gemini-3.1-flash-lite" and topic.content_language == "en"
 
 
 @pytest.mark.parametrize(
@@ -242,9 +242,6 @@ def test_creation_uses_course_owner_default(
 def test_default_resolution_fallback_and_stale_selection(monkeypatch, saved, exists):
     import asyncio
 
-    from fastapi import HTTPException
-
-    from app.core.config import settings
     from app.services.teacher_ai_settings import effective_default_model
 
     db = AsyncMock()
@@ -259,13 +256,6 @@ def test_default_resolution_fallback_and_stale_selection(monkeypatch, saved, exi
     )
     lookup = AsyncMock(return_value=object() if exists else None)
     monkeypatch.setattr(settings_crud, "get_inquiry_model", lookup)
-    if saved and not exists:
-        with pytest.raises(HTTPException) as exc:
-            asyncio.run(effective_default_model(db, uuid4()))
-        assert exc.value.status_code == 422
-    else:
-        assert asyncio.run(effective_default_model(db, uuid4())) == (
-            saved or settings.OPENAI_MODEL
-        )
+    assert asyncio.run(effective_default_model(db, uuid4())) == "gemini-3.1-flash-lite"
     if saved is None:
         lookup.assert_not_awaited()

@@ -36,6 +36,7 @@ from app.services.dialogue_progress import (
 from app.services.model_client import ModelCallError, ModelClient
 from app.services.token_budget import (
     ContextWindowExceeded,
+    context_budget_for,
     estimate_total_request_tokens,
 )
 
@@ -270,7 +271,7 @@ async def _bounded_object(client: ModelClient, **kwargs) -> dict:
         schema=kwargs["schema"],
         output_tokens=kwargs["max_tokens"],
     )
-    if estimate > settings.DIALOGUE_CONTEXT_TOKEN_BUDGET:
+    if estimate > context_budget_for(kwargs["model"]):
         raise ContextWindowExceeded(
             f"{kwargs['name']} exceeds the dialogue context budget"
         )

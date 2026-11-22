@@ -24,13 +24,15 @@ def test_every_catalog_model_has_a_tokenizer() -> None:
         assert tokens > 0
 
 
-def test_product_defaults_target_luna_with_reviewed_encoding():
+def test_product_defaults_target_gemini_with_conservative_estimate():
     from app.core.config import Settings
-    from app.core.model_catalog import INQUIRY_CATALOG_MODELS
-    from app.services.token_budget import MODEL_ENCODINGS
 
     for name in ("OPENAI_MODEL", "OPENAI_VALIDITY_MODEL"):
         model = Settings.model_fields[name].default
-        assert model == "openai/gpt-6-luna"
-        assert model in INQUIRY_CATALOG_MODELS
-        assert MODEL_ENCODINGS[model] == "o200k_base"
+        assert model == "gemini-3.1-flash-lite"
+        assert (
+            estimate_request_tokens(
+                model_id=model, instructions="Chinese", material="test", schema={}
+            )
+            > 0
+        )

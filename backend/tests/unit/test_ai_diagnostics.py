@@ -146,7 +146,11 @@ async def test_bad_provider_metadata_does_not_break_valid_completion(monkeypatch
 
     assert (
         await OpenAIChatClient(transport=httpx.MockTransport(handler)).complete_object(
-            name="dialogue_status", schema={}, instructions="x", material="x"
+            name="dialogue_status",
+            schema={},
+            instructions="x",
+            material="x",
+            model="openai/gpt-6-luna",
         )
         == {}
     )

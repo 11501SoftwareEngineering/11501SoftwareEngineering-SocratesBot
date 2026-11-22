@@ -202,6 +202,7 @@ async def test_default_model_builds_the_full_context(
 ) -> None:
     default_model = Settings.model_fields["OPENAI_MODEL"].default
     monkeypatch.setattr(settings, "DIALOGUE_CONTEXT_TOKEN_BUDGET", 3_000)
+    monkeypatch.setattr(settings, "GEMINI_DIALOGUE_CONTEXT_TOKEN_BUDGET", 15000)
     client = SummaryClient()
 
     context = await build_bounded_context(
@@ -222,6 +223,6 @@ async def test_default_model_builds_the_full_context(
         ),
     )
 
-    assert default_model == "openai/gpt-6-luna"
+    assert default_model == "gemini-3.1-flash-lite"
     assert client.summary_inputs
     assert "compare who benefits" in context.material

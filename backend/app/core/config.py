@@ -77,10 +77,20 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: SecretStr
     OPENAI_API_KEYS: SecretStr = SecretStr("")
     ANTHROPIC_API_KEY: SecretStr
-    OPENAI_MODEL: NonEmptyStr = "openai/gpt-6-luna"
+    OPENAI_MODEL: NonEmptyStr = "gemini-3.1-flash-lite"
     # Legacy configuration compatibility; course validity uses the activity model.
-    OPENAI_VALIDITY_MODEL: NonEmptyStr = "openai/gpt-6-luna"
+    OPENAI_VALIDITY_MODEL: NonEmptyStr = "gemini-3.1-flash-lite"
     OPENAI_BASE_URL: NonEmptyStr = "https://openrouter.ai/api/v1"
+    GEMINI_API_KEY: SecretStr = SecretStr("")
+    GEMINI_API_KEYS: SecretStr = SecretStr("")
+    GEMINI_RPM: int = Field(default=15, ge=1, le=10000)
+    GEMINI_TPM: int = Field(default=250_000, ge=1024)
+    GEMINI_RPD: int = Field(default=500, ge=1)
+    GEMINI_QUEUE_WAIT_SECONDS: float = Field(default=20, ge=0, le=30)
+    GEMINI_DIALOGUE_CONTEXT_TOKEN_BUDGET: int = Field(
+        default=64_000, ge=1024, le=262144
+    )
+    GEMINI_REPORT_CONTEXT_TOKEN_BUDGET: int = Field(default=128_000, ge=1024, le=262144)
     DIALOGUE_CONTEXT_TOKEN_BUDGET: int = Field(default=12_000, ge=1_024)
     REPORT_CONTEXT_TOKEN_BUDGET: int = Field(default=32_000, ge=1_024)
 

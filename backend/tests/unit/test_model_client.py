@@ -274,16 +274,18 @@ async def test_course_setup_times_out_as_a_model_timeout(
         return _completion({"topic": "late"})
 
     with pytest.raises(ModelTimeoutError) as caught:
-        await _client(slow).complete_json(instructions="Design", material="course")
+        await _client(slow).complete_json(
+            instructions="Design", material="course", model="openai/gpt-6-luna"
+        )
 
     assert caught.value.status_code is None
     assert isinstance(caught.value, ModelCallError)
 
 
-def test_default_model_is_a_valid_openrouter_id() -> None:
+def test_default_model_is_the_single_gemini_model() -> None:
     field = type(settings).model_fields["OPENAI_MODEL"]
 
-    assert field.default == "openai/gpt-6-luna"
+    assert field.default == "gemini-3.1-flash-lite"
 
 
 async def test_opening_has_own_schema_key_and_task_limits():

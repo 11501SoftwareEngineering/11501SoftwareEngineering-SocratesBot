@@ -88,12 +88,19 @@ const defaultModelId = computed(() => settings.data.value?.default_model?.id ?? 
 
 // API key
 const newKey = ref('')
+const extraKeys = ref(['', ''])
 const keyError = ref('')
 const keyNotice = ref('')
 const saveKey = useMutation({
-  mutationFn: () => aiApi.setApiKey(newKey.value.trim()),
+  mutationFn: () => {
+    const extra = extraKeys.value.map((k) => k.trim()).filter(Boolean)
+    return extra.length
+      ? aiApi.setApiKey(newKey.value.trim(), extra)
+      : aiApi.setApiKey(newKey.value.trim())
+  },
   onSuccess: () => {
     newKey.value = ''
+    extraKeys.value = ['', '']
     keyError.value = ''
     keyNotice.value = t('ai.keySaved')
     void queryClient.invalidateQueries({ queryKey: aiKeys.settings })
@@ -234,6 +241,17 @@ function submitKey() {
           :placeholder="settings.data.value?.configured ? t('ai.newKey') : t('ai.openRouterKey')"
           :aria-invalid="!!keyError"
           :aria-describedby="keyError ? 'api-key-error' : undefined"
+        />
+        <Input
+          v-for="(_, index) in extraKeys"
+          :id="`api-key-${index + 2}`"
+          :key="index"
+          v-model="extraKeys[index]"
+          type="password"
+          autocomplete="off"
+          class="h-12 text-body-lg"
+          :aria-label="`Gemini API key ${index + 2}`"
+          :placeholder="`${t('ai.newKey')} ${index + 2}`"
         />
         <p v-if="keyError" id="api-key-error" role="alert" class="text-body text-destructive">
           {{ keyError }}

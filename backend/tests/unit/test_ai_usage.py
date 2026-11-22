@@ -177,7 +177,11 @@ async def test_start_write_failure_stops_before_provider_call(monkeypatch):
 
     with pytest.raises(ModelCallError) as caught:
         await OpenAIChatClient(transport=httpx.MockTransport(handler)).complete_object(
-            name="dialogue_status", schema={}, instructions="x", material="x"
+            name="dialogue_status",
+            schema={},
+            instructions="x",
+            material="x",
+            model="openai/gpt-6-luna",
         )
     assert caught.value.status_code == 503 and not dispatched
 
@@ -193,7 +197,11 @@ async def test_transport_failure_keeps_unknown_attempt(monkeypatch):
 
     with pytest.raises(ModelCallError):
         await OpenAIChatClient(transport=httpx.MockTransport(handler)).complete_object(
-            name="dialogue_status", schema={}, instructions="x", material="x"
+            name="dialogue_status",
+            schema={},
+            instructions="x",
+            material="x",
+            model="openai/gpt-6-luna",
         )
     finish.assert_awaited_once_with(ident, None)
 

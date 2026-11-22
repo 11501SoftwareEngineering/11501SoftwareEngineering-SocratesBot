@@ -140,4 +140,25 @@ describe('teacher AiSettingsView（P14）', () => {
     expect(aiApi.setApiKey).toHaveBeenCalledWith('sk-or-new-key-123')
     expect(w.text()).toContain('API key 已儲存')
   })
+  it('uses the main page with three password fields and no added provider or project controls', async () => {
+    vi.mocked(aiApi.settings).mockResolvedValue(configured)
+    vi.mocked(aiApi.setApiKey).mockResolvedValue({
+      configured: true,
+      masked_key: 'AQ....1234 x3',
+      updated_at: null,
+    })
+    const w = await mountView()
+    expect(w.findAll('input[type="password"]')).toHaveLength(3)
+    expect(w.find('#gemini-project-0').exists()).toBe(false)
+    await w.find('#api-key').setValue('AQ.synthetic-first-key-12345')
+    await w.find('#api-key-2').setValue('AQ.synthetic-second-key-12345')
+    await w.find('#api-key-3').setValue('AQ.synthetic-third-key-12345')
+    await w.find('form').trigger('submit')
+    await flushPromises()
+    expect(aiApi.setApiKey).toHaveBeenCalledWith('AQ.synthetic-first-key-12345', [
+      'AQ.synthetic-second-key-12345',
+      'AQ.synthetic-third-key-12345',
+    ])
+    expect((w.find('#api-key-2').element as HTMLInputElement).value).toBe('')
+  })
 })

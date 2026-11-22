@@ -192,7 +192,7 @@ def write_trace(response, metadata, secret):
                 for configured_key in sorted(secrets, key=len, reverse=True):
                     if configured_key:
                         value = value.replace(configured_key, "[REDACTED]")
-                return re.sub(r"sk-[A-Za-z0-9_-]+", "[REDACTED]", value)
+                return re.sub(r"(?:sk-|AIza|AQ\.)[A-Za-z0-9_.-]+", "[REDACTED]", value)
             return value
 
         record = {

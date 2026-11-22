@@ -63,9 +63,9 @@ export const aiApi = {
     const res = await apiClient.get<AiSettings>('/users/me/ai/settings')
     return res.data
   },
-  async setApiKey(api_key: string) {
+  async setApiKey(api_key: string, additionalKeys: string[] = []) {
     const res = await apiClient.put<Omit<AiSettings, 'default_model'>>('/users/me/ai/api-key', {
-      api_key,
+      ...(additionalKeys.length ? { api_keys: [api_key, ...additionalKeys] } : { api_key }),
     })
     return res.data
   },

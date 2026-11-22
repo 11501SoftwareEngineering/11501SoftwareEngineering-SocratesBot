@@ -13,6 +13,7 @@ from typing import Any, Protocol
 import httpx
 
 from app.core.config import settings
+from app.core.gemini import GEMINI_BASE_URL, GEMINI_MODEL
 from app.core.model_catalog import INQUIRY_CATALOG_MODELS
 from app.services import ai_diagnostics, ai_usage
 from app.services.key_pool import cooldown_seconds, server_key_pool
@@ -365,6 +366,10 @@ class OpenAIChatClient:
     ) -> dict:
         limits = limits_for(name)
         model_id = model or settings.OPENAI_MODEL
+        if getattr(api_key, "gemini_only", False) and model_id != GEMINI_MODEL:
+            from fastapi import HTTPException
+
+            raise HTTPException(422, "Select the Gemini model for this activity")
         key = (
             api_key
             if api_key is not None
@@ -390,6 +395,8 @@ class OpenAIChatClient:
             if max_tokens is None
             else min(max_tokens, limits.max_tokens),
         }
+        if model_id == GEMINI_MODEL:
+            payload["reasoning_effort"] = "minimal"
         if limits.low_reasoning and model_id in REASONING_MODELS:
             payload["reasoning"] = {"effort": "low"}
         ai_diagnostics.call_started(name, model_id, payload, instructions)
@@ -422,6 +429,12 @@ class OpenAIChatClient:
         usage_key: str | None = None,
         usage_task: str = "dialogue_reply",
     ) -> httpx.Response:
+        if payload["model"] == GEMINI_MODEL:
+            from app.services.gemini_client import send_gemini
+
+            return await send_gemini(
+                self, payload, headers, timeout_s, usage_key, usage_task
+            )
         pool = (
             server_key_pool()
             if (
@@ -478,7 +491,7 @@ class OpenAIChatClient:
                 transport=self._transport, timeout=timeout_s
             ) as client:
                 current_response = await client.post(
-                    f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
+                    f"{(GEMINI_BASE_URL if payload['model'] == GEMINI_MODEL else settings.OPENAI_BASE_URL).rstrip('/')}/chat/completions",
                     headers=headers,
                     json=payload,
                 )

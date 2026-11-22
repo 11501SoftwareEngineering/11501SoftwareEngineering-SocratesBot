@@ -54,6 +54,8 @@ async def save_api_key(
         await db.rollback()
         raise RuntimeError(_STORE_FAILED) from None
     row = await get_settings(db, user_id)
+    if row is not None:
+        await db.refresh(row)
     if row is None or row.api_key_ciphertext is None or row.masked_key is None:
         raise RuntimeError(_STORE_FAILED)
     return row

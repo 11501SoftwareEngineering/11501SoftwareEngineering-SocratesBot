@@ -1,11 +1,13 @@
 """Read and update a teacher's provider key and default model."""
 
+import json
 import uuid
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.gemini import GEMINI_MODEL
 from app.core.security import decrypt_api_key, encrypt_api_key
 from app.crud import course as course_crud
 from app.crud import teacher_ai_settings as settings_crud
@@ -41,11 +43,7 @@ def _default_model(model: InquiryModel | None) -> DefaultModelResponse | None:
 async def _loaded_default(
     db: AsyncSession, row: TeacherAiSettings | None
 ) -> DefaultModelResponse | None:
-    model_id = (
-        settings.OPENAI_MODEL
-        if row is None or row.default_model_id is None
-        else row.default_model_id
-    )
+    model_id = GEMINI_MODEL
     model = await settings_crud.get_inquiry_model(db, model_id)
     return _default_model(model)
 
@@ -64,11 +62,14 @@ async def read_settings(db: AsyncSession, current_user: User) -> AiSettingsRespo
 async def save_api_key(
     db: AsyncSession, current_user: User, payload: ApiKeyRequest
 ) -> ApiKeyResponse:
+    keys = payload.api_keys if payload.api_keys is not None else [payload.api_key]
+    stored = keys[0] if len(keys) == 1 else json.dumps({"version": 1, "keys": keys})
+    mask = mask_api_key(keys[0]) + (f" x{len(keys)}" if len(keys) > 1 else "")
     row = await settings_crud.save_api_key(
         db,
         current_user.id,
-        encrypt_api_key(payload.api_key),
-        mask_api_key(payload.api_key),
+        encrypt_api_key(stored),
+        mask,
     )
     if (
         row.api_key_ciphertext is None
@@ -92,8 +93,18 @@ async def openrouter_api_key(db: AsyncSession, user_id: uuid.UUID) -> str:
             settings.OPENAI_API_KEY.get_secret_value(), user_id, "server"
         )
     try:
-        return AttributedKey(decrypt_api_key(stored), user_id, "teacher")
-    except RuntimeError:
+        value = decrypt_api_key(stored)
+        keys = [value]
+        if value.startswith("{"):
+            bundle = json.loads(value)
+            if bundle.get("version") != 1:
+                raise ValueError("Unsupported credential bundle")
+            keys = ApiKeyRequest(api_keys=bundle["keys"]).api_keys
+        credential = AttributedKey(keys[0], user_id, "teacher")
+        credential.api_keys = tuple(keys)
+        credential.gemini_only = True
+        return credential
+    except (RuntimeError, ValueError, KeyError, TypeError):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Teacher API key cannot be read",
@@ -107,6 +118,8 @@ async def clear_api_key(db: AsyncSession, current_user: User) -> None:
 async def set_default_model(
     db: AsyncSession, current_user: User, payload: DefaultModelRequest
 ) -> DefaultModelUpdateResponse:
+    if payload.model_id != GEMINI_MODEL:
+        raise HTTPException(422, "Unknown model")
     model = await settings_crud.get_inquiry_model(db, payload.model_id)
     if model is None:
         raise HTTPException(
@@ -121,20 +134,15 @@ async def set_default_model(
 
 
 async def effective_default_model(db: AsyncSession, teacher_id: uuid.UUID) -> str:
-    """Use the course owner's saved catalog model, otherwise the server default.
-
-    A stale saved selection fails explicitly instead of silently changing models.
-    Server fallback remains valid without a catalog row for legacy deployments.
-    """
+    """Offer the sole Gemini default while keeping historical settings stored."""
     row = await settings_crud.get_settings(db, teacher_id)
-    selected = None if row is None else row.default_model_id
-    if selected is None:
-        return settings.OPENAI_MODEL
-    if await settings_crud.get_inquiry_model(db, selected) is None:
-        raise HTTPException(
-            status_code=422, detail="Saved default model is unavailable"
-        )
-    return selected
+    if (
+        row is not None
+        and row.default_model_id == GEMINI_MODEL
+        and await settings_crud.get_inquiry_model(db, GEMINI_MODEL) is None
+    ):
+        raise HTTPException(422, "Saved default model is unavailable")
+    return GEMINI_MODEL
 
 
 async def course_api_key(db: AsyncSession, course_id: uuid.UUID) -> str:

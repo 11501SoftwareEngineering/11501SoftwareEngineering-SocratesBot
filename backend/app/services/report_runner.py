@@ -28,7 +28,7 @@ from app.services.report_adapter import (
 )
 from app.services.report_text import validate_report
 from app.services.teacher_ai_settings import course_api_key
-from app.services.token_budget import estimate_total_request_tokens
+from app.services.token_budget import context_budget_for, estimate_total_request_tokens
 
 logger = logging.getLogger("app.model")
 client = OpenAIChatClient()
@@ -70,16 +70,13 @@ async def run_report(attempt_id: UUID) -> None:
             if not source["exchanges"]:
                 parsed = no_responses_summary(source["material"]["interfaceLanguage"])
             else:
-                if (
-                    estimate_total_request_tokens(
-                        model_id=model_id,
-                        instructions=prompt.instructions,
-                        material=material,
-                        schema=_SCHEMA,
-                        output_tokens=prompt.max_output_tokens,
-                    )
-                    > settings.REPORT_CONTEXT_TOKEN_BUDGET
-                ):
+                if estimate_total_request_tokens(
+                    model_id=model_id,
+                    instructions=prompt.instructions,
+                    material=material,
+                    schema=_SCHEMA,
+                    output_tokens=prompt.max_output_tokens,
+                ) > context_budget_for(model_id, report=True):
                     raise ValueError("Report source exceeds configured budget")
                 api_key = await _api_key(session_id)
                 parsed = await client.complete_object(

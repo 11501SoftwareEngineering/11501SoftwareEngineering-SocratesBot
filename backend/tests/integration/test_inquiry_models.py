@@ -107,14 +107,11 @@ def test_teacher_and_ta_read_seeded_catalog_and_student_is_denied() -> None:
             )
 
             teacher_view = _json(await inquiry_service.list_inquiry_models(db, teacher))
-            assert [
-                (m["model_id"], m["name"], m["input_price_usd"], m["output_price_usd"])
-                for m in teacher_view
-            ] == EXPECTED
-            assert {m["provider_id"] for m in teacher_view} == {"openai"}
-            assert teacher_view[3]["description"] == LUNA
-            assert teacher_view[7]["description"] == LUNA_PRO
-            assert all(isinstance(m["input_price_usd"], float) for m in teacher_view)
+            assert len(teacher_view) == 1
+            assert teacher_view[0]["model_id"] == "gemini-3.1-flash-lite"
+            assert teacher_view[0]["provider_id"] == "google"
+            assert teacher_view[0]["input_price_usd"] == 0.25
+            assert teacher_view[0]["output_price_usd"] == 1.50
 
             assert _json(await inquiry_service.list_inquiry_models(db, ta)) == (
                 teacher_view

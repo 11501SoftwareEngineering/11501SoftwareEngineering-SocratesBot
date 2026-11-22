@@ -166,7 +166,13 @@ def _model_failure(exc: ModelCallError) -> HTTPException:
         if exc.status_code in {429, 503}
         else status.HTTP_502_BAD_GATEWAY
     )
-    return HTTPException(status_code=code, detail="Inquiry generation failed")
+    return HTTPException(
+        status_code=code,
+        detail="Inquiry generation failed",
+        headers={"Retry-After": str(exc.retry_after)}
+        if hasattr(exc, "retry_after")
+        else None,
+    )
 
 
 async def _model_json(

@@ -6,6 +6,8 @@ import json
 
 import tiktoken
 
+from app.core.config import settings
+from app.core.gemini import GEMINI_MODEL
 from app.core.model_catalog import INQUIRY_CATALOG_MODELS
 from app.services.model_client import _outbound
 
@@ -19,11 +21,30 @@ MODEL_ENCODINGS = {
     for model_id in _OPENAI_MODELS
     for name in (model_id, model_id.removeprefix("openai/"))
 }
-
 _CHAT_MESSAGE_OVERHEAD = 4
 _CHAT_REPLY_OVERHEAD = 3
 _SCHEMA_OVERHEAD = 32
 _SAFETY_MARGIN = 64
+
+
+def context_budget_for(model_id: str, *, report: bool = False) -> int:
+    """Select a local guard consistent with that model's estimator.
+
+    This is not the vendor context window or completion cap. Gemini's UTF-8
+    bound overcounts especially Chinese; its guard must not reuse the smaller
+    budget calibrated against the OpenAI tokenizer.
+    """
+    if model_id == GEMINI_MODEL:
+        return (
+            settings.GEMINI_REPORT_CONTEXT_TOKEN_BUDGET
+            if report
+            else settings.GEMINI_DIALOGUE_CONTEXT_TOKEN_BUDGET
+        )
+    return (
+        settings.REPORT_CONTEXT_TOKEN_BUDGET
+        if report
+        else settings.DIALOGUE_CONTEXT_TOKEN_BUDGET
+    )
 
 
 class ContextWindowExceeded(ValueError):
@@ -51,6 +72,14 @@ def estimate_request_tokens(
     schema: dict,
 ) -> int:
     """Estimate system, user, schema, and message-framing input tokens."""
+    if model_id == GEMINI_MODEL:
+        system, user = _outbound(instructions, material)
+        return (
+            len(
+                (system + user + json.dumps(schema, ensure_ascii=False)).encode("utf-8")
+            )
+            + 256
+        )
     encoding = _encoding_for(model_id)
 
     def count(text: str) -> int:

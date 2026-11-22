@@ -13,8 +13,8 @@ from app.core.enums import UserRole
 from app.core.security import decrypt_api_key
 from tests.api.v1.conftest import bearer_from, seed_user
 
-_KNOWN_MODEL = "openai/gpt-6-luna"
-_KNOWN_NAME = "GPT-6 Luna"
+_KNOWN_MODEL = "gemini-3.1-flash-lite"
+_KNOWN_NAME = "Gemini 3.1 Flash-Lite"
 _OTHER_MODEL = "openai/gpt-6.1-sol"
 _OTHER_NAME = "GPT-6.1 Sol"
 
@@ -123,8 +123,8 @@ def test_settings_show_effective_default_without_saving_a_teacher_selection(
     )
     assert response.status_code == 200
     assert response.json()["default_model"] == {
-        "id": default_id,
-        "name": default_name,
+        "id": _KNOWN_MODEL,
+        "name": _KNOWN_NAME,
     }
     assert response.json()["configured"] is has_key
     if has_key:
@@ -142,7 +142,7 @@ def test_settings_show_effective_default_without_saving_a_teacher_selection(
     ],
     ids=["saved-choice-wins", "unavailable-choice-stays-unavailable"],
 )
-def test_settings_preserve_explicit_teacher_model(
+def test_settings_offer_only_gemini_without_rewriting_historical_defaults(
     auth_client, store, monkeypatch, saved_id, expected
 ) -> None:
     memory = _Memory()
@@ -155,7 +155,7 @@ def test_settings_preserve_explicit_teacher_model(
         headers={"Authorization": _login(auth_client, "ai-saved")},
     )
     assert response.status_code == 200
-    assert response.json()["default_model"] == expected
+    assert response.json()["default_model"] == {"id": _KNOWN_MODEL, "name": _KNOWN_NAME}
     assert memory.rows[teacher.id].default_model_id == saved_id
 
 
@@ -243,7 +243,7 @@ def test_bad_api_key_is_422(auth_client, store, monkeypatch, kind: str) -> None:
         "empty": "",
         "blank": "   ",
         "short": _key(19),
-        "long": _key(257),
+        "long": _key(4097),
         "whitespace": "aaaa aaaaaaaaaaaaaaaa",
     }[kind]
     response = auth_client.put(
@@ -325,3 +325,42 @@ def test_missing_auth_on_writes_is_401(auth_client, monkeypatch) -> None:
     _reject_raw_key(saved.text, secret)
     assert saved.status_code == 401
     assert chosen.status_code == 401
+
+
+def test_teacher_three_key_bundle_is_encrypted_and_never_echoed(
+    auth_client, store, monkeypatch
+):
+    import asyncio
+    import json
+
+    from app.services.teacher_ai_settings import openrouter_api_key
+
+    memory = _Memory()
+    _install(monkeypatch, memory)
+    teacher = seed_user(store, account_id="ai-three-keys", role=UserRole.TEACHER)
+    headers = {"Authorization": _login(auth_client, "ai-three-keys")}
+    keys = ["AQ.synthetic-key-" + str(n) * 30 for n in range(3)]
+    response = auth_client.put(
+        "/api/v1/users/me/ai/api-key", headers=headers, json={"api_keys": keys}
+    )
+    assert response.status_code == 200
+    assert response.json()["masked_key"].endswith("x3")
+    for key in keys:
+        assert key not in response.text
+    row = memory.rows[teacher.id]
+    assert json.loads(decrypt_api_key(row.api_key_ciphertext))["keys"] == keys
+    resolved = asyncio.run(openrouter_api_key(None, teacher.id))
+    assert resolved.api_keys == tuple(keys) and resolved.gemini_only is True
+    malformed = auth_client.put(
+        "/api/v1/users/me/ai/api-key",
+        headers=headers,
+        json={"api_keys": [*keys, "AQ.synthetic-fourth-key-123456"]},
+    )
+    assert malformed.status_code == 422
+    for key in keys:
+        assert key not in malformed.text
+    assert (
+        auth_client.delete("/api/v1/users/me/ai/api-key", headers=headers).status_code
+        == 204
+    )
+    assert memory.rows[teacher.id].api_key_ciphertext is None
