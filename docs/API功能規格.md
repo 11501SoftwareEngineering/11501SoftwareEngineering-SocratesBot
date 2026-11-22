@@ -592,6 +592,7 @@ version: 0.2
 - 呼叫方式: GET /users/me/ai/settings
 - 輸入資料: 無
 - 成功回應: `configured`, `masked_key`, `updated_at`, `default_model`{id, name}
+- 老師尚未儲存模型選擇時，`default_model` 回傳系統 `OPENAI_MODEL` 對應的目錄模型，讓畫面顯示實際生效的預設值（目前為 GPT-6 Luna）；讀取不建立或修改老師設定。已儲存的選擇優先，模型不在目錄時回傳 `null`。
 - 錯誤:
     - 非老師身分 (403)
 
