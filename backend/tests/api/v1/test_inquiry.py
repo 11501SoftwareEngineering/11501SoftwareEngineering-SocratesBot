@@ -228,7 +228,7 @@ def test_save_stores_fields_without_returning_a_version(
     course_route_db.commit.assert_awaited()
 
 
-def test_get_setup_is_instructor_only(
+def test_get_setup_denies_a_non_member(
     auth_client: TestClient,
     store: FakeStore,
     course_route_db: AsyncMock,
@@ -801,3 +801,190 @@ def test_invalid_opening_does_not_overwrite_saved_text(
     assert response.status_code == 502
     assert topic.opening_message == "Existing opening"
     recorded.assert_not_awaited()
+
+
+def _login_member(client: TestClient, store: FakeStore, account: str = "member1"):
+    """Log in a global USER account (a TA, student or outsider of the course)."""
+    seed_user(store, account_id=account, role=UserRole.USER)
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"account_id": account, "password": "password1"},
+    )
+    assert response.status_code == 200
+    return bearer_from(response)
+
+
+def _as_member(monkeypatch: pytest.MonkeyPatch, topic, *, role, permissions=()) -> None:
+    """Make the caller a non-teacher member (or outsider) of the topic's course."""
+    monkeypatch.setattr(
+        course_crud,
+        "get_course_by_id",
+        AsyncMock(return_value=SimpleNamespace(id=topic.course_id, created_by=uuid4())),
+    )
+    monkeypatch.setattr(course_crud, "get_course_role", AsyncMock(return_value=role))
+    monkeypatch.setattr(
+        course_crud, "get_ta_permissions", AsyncMock(return_value=list(permissions))
+    )
+
+
+def _setup_calls(client: TestClient, topic, bearer: str):
+    """The four setup features the spec opens to a TA holding edit_topics."""
+    headers = {"Authorization": bearer}
+    screen = {
+        "age_band": "university_plus",
+        "max_turns": 5,
+        "topic": "Cities",
+        "core_question": "Who maintains them?",
+    }
+    return [
+        client.get(f"/api/v1/topics/{topic.id}/setup", headers=headers),
+        client.put(
+            f"/api/v1/topics/{topic.id}/setup", headers=headers, json={"setup": screen}
+        ),
+        client.post(
+            f"/api/v1/topics/{topic.id}/setup/refine",
+            headers=headers,
+            json={"feedback": "shorter", "setup": screen},
+        ),
+        client.post(
+            f"/api/v1/topics/{topic.id}/setup/opening-message",
+            headers=headers,
+            json={"setup": screen},
+        ),
+    ]
+
+
+def test_ta_with_edit_topics_can_read_save_and_ai_assist_setup(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer = _login_member(auth_client, store)
+    topic = _topic()
+    recorded = _ready(monkeypatch, topic, instructor_id=uuid4())
+    _as_member(monkeypatch, topic, role="TA", permissions=["edit_topics"])
+
+    async def design(
+        self, *, instructions: str, material: str, model: str | None = None, **_extra
+    ):
+        return stage1_output(GENERATED)
+
+    async def opening(
+        self, *, instructions: str, material: str, model: str | None = None, **_extra
+    ):
+        return {"opening_message": "Where should we start?"}
+
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", design)
+    monkeypatch.setattr(OpenAIChatClient, "complete_opening", opening)
+
+    responses = _setup_calls(auth_client, topic, bearer)
+
+    assert [response.status_code for response in responses] == [200, 200, 200, 200]
+    assert topic.inquiry_topic == "Cities"
+    assert topic.opening_message == "Where should we start?"
+    recorded.assert_awaited()
+
+
+@pytest.mark.parametrize(
+    ("role", "permissions"),
+    [
+        ("TA", ["view_members"]),
+        ("TA", []),
+        ("STUDENT", []),
+        (None, []),
+    ],
+)
+def test_other_members_are_denied_every_setup_feature(
+    role: str | None,
+    permissions: list[str],
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer = _login_member(auth_client, store)
+    topic = _topic(inquiry_topic="saved topic")
+    recorded = _ready(monkeypatch, topic, instructor_id=uuid4())
+    _as_member(monkeypatch, topic, role=role, permissions=permissions)
+    called = AsyncMock()
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", called)
+    monkeypatch.setattr(OpenAIChatClient, "complete_opening", called)
+
+    responses = _setup_calls(auth_client, topic, bearer)
+
+    assert [response.status_code for response in responses] == [403, 403, 403, 403]
+    assert topic.inquiry_topic == "saved topic"
+    called.assert_not_awaited()
+    recorded.assert_not_awaited()
+    course_route_db.commit.assert_not_awaited()
+
+
+def test_ta_with_edit_topics_cannot_publish_or_delete_a_topic(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer = _login_member(auth_client, store)
+    topic = _topic()
+    _ready(monkeypatch, topic, instructor_id=uuid4())
+    _as_member(monkeypatch, topic, role="TA", permissions=["edit_topics"])
+    delete_topic = AsyncMock()
+    monkeypatch.setattr(topic_crud, "delete_topic", delete_topic)
+    headers = {"Authorization": bearer}
+
+    published = auth_client.post(
+        f"/api/v1/topics/{topic.id}/publish",
+        headers=headers,
+        json={
+            "setup": {
+                "age_band": "university_plus",
+                "max_turns": 5,
+                "topic": "Cities",
+                "core_question": "Who maintains them?",
+            }
+        },
+    )
+    deleted = auth_client.delete(f"/api/v1/topics/{topic.id}", headers=headers)
+
+    assert published.status_code == 403
+    assert deleted.status_code == 403
+    assert topic.stage == "setup"
+    delete_topic.assert_not_awaited()
+
+
+def test_setup_of_an_unknown_topic_is_404_for_a_ta(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer = _login_member(auth_client, store)
+    monkeypatch.setattr("app.crud.topic.get_topic_by_id", AsyncMock(return_value=None))
+
+    response = auth_client.get(
+        f"/api/v1/topics/{uuid4()}/setup", headers={"Authorization": bearer}
+    )
+
+    assert response.status_code == 404
+
+
+def test_ta_permission_change_applies_to_the_next_setup_request(
+    auth_client: TestClient,
+    store: FakeStore,
+    course_route_db: AsyncMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bearer = _login_member(auth_client, store)
+    topic = _topic(inquiry_topic="saved topic")
+    _ready(monkeypatch, topic, instructor_id=uuid4())
+    _as_member(monkeypatch, topic, role="TA", permissions=["edit_topics"])
+    url = f"/api/v1/topics/{topic.id}/setup"
+    headers = {"Authorization": bearer}
+
+    assert auth_client.get(url, headers=headers).status_code == 200
+
+    monkeypatch.setattr(course_crud, "get_ta_permissions", AsyncMock(return_value=[]))
+
+    assert auth_client.get(url, headers=headers).status_code == 403

@@ -317,10 +317,10 @@ def _apply(topic: Topic, generated: GeneratedInquiry) -> None:
 async def get_inquiry_setup(
     db: AsyncSession, teacher: User, topic_id: UUID
 ) -> InquirySetupResponse:
-    """Return the saved inquiry for an instructor of the course.
+    """Return the saved inquiry to the teacher or a TA with ``edit_topics``.
 
     Raises:
-        HTTPException: 404 if the topic is missing; 403 if not an instructor.
+        HTTPException: 404 if the topic is missing; 403 for anyone else.
     """
     topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     return _response(topic)
@@ -465,8 +465,8 @@ async def save_inquiry_setup(
     """Save the eight fields while the topic is still in setup.
 
     Raises:
-        HTTPException: 404 if the topic is missing; 403 if not an instructor;
-            400 if the topic is not in setup.
+        HTTPException: 404 if the topic is missing; 403 unless the teacher or a TA
+            with ``edit_topics``; 400 if the topic is not in setup.
     """
     topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     try:
@@ -576,8 +576,9 @@ async def refine_inquiry(
     """Suggest eight fields from the screen and the feedback. Nothing is saved.
 
     Raises:
-        HTTPException: 404 if the topic is missing; 403 if not an instructor;
-            400 if the topic is not in setup; 502 or 503 if the model call fails.
+        HTTPException: 404 if the topic is missing; 403 unless the teacher or a TA
+            with ``edit_topics``; 400 if the topic is not in setup; 502 or 503
+            if the model call fails.
     """
     topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     await _require_setup(topic)
@@ -611,8 +612,9 @@ async def opening_message(
     """Draft an opening line from the supplied setup and store it.
 
     Raises:
-        HTTPException: 404 if the topic is missing; 403 if not an instructor;
-            400 if the topic is not in setup; 502 or 503 if the model call fails.
+        HTTPException: 404 if the topic is missing; 403 unless the teacher or a TA
+            with ``edit_topics``; 400 if the topic is not in setup; 502 or 503
+            if the model call fails.
     """
     topic = await get_instructed_topic(db, teacher, topic_id, allow_ta=True)
     await _require_setup(topic)
