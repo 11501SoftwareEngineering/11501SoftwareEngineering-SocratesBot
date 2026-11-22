@@ -502,3 +502,263 @@ sequenceDiagram
 ```
 
 Frontend must treat closed phase and job readiness separately, handle a stale-count409, stop accepting replies after terminal history/409, and display failed preparation with retry rather than success. A backend cannot push-navigation to every open tab by itself: frontend must refresh/poll the existing topic/history status or handle the rejected next reply. Implementing frontend screens is outside this branch.
+
+
+## Real usage metering (usage follow-up branch, not deployed)
+
+GET `/users/me/ai/usage` is implemented on `codex/ai-usage-metering` above PR272d6cf9e1. It supersedes the default-zero scaffold in open PR239; main0456421 and PR272 alone do not deliver real metering. This follow-up adds migration `b8e39a1547c2` (parent `8ad603f2c910`), which must run before the writer/reader is enabled. It does not import historical provider-account activity or reconstruct calls made before instrumentation.
+
+The endpoint requires the existing authenticated active global teacher role. It takes no body or teacher-ID parameter and returns only the current caller's ledger, for the current UTC calendar month `[month start, next month start)`. The course owner's identity is captured when resolving credentials; it applies to teacher/TA setup, student validity/status/planning, compression/catch-up, personal reports and class synthesis. Teacher-key/server-key priority is unchanged. Server-funded course calls still belong to the course teacher's usage view. Historical attribution does not change if ownership later changes.
+
+### Response and unknown values
+
+```json
+{
+  "month": "2026-11",
+  "request_count": 3,
+  "input_tokens": 1200,
+  "output_tokens": 400,
+  "total_tokens": 1600,
+  "cost_usd": 0.003,
+  "cost_source": "openrouter",
+  "updated_at": "2026-11-21T10:00:00Z",
+  "by_stage": [
+    {"stage":"setup","request_count":0,"input_tokens":0,"output_tokens":0,"total_tokens":0,"cost_usd":null},
+    {"stage":"dialogue","request_count":3,"input_tokens":1200,"output_tokens":400,"total_tokens":1600,"cost_usd":0.003},
+    {"stage":"report","request_count":0,"input_tokens":0,"output_tokens":0,"total_tokens":0,"cost_usd":null},
+    {"stage":"summary","request_count":0,"input_tokens":0,"output_tokens":0,"total_tokens":0,"cost_usd":null}
+  ]
+}
+```
+
+- `request_count` counts outbound request attempts, including retries and failures; it is not a dialogue-turn count. A normal turn can call validity, status and planning separately. Deterministic zero-answer reports/summaries and replayed stored replies make no provider call and add no usage.
+- `input_tokens`, `output_tokens`, `total_tokens` use provider `prompt_tokens`, `completion_tokens`, `total_tokens`, respectively. A total becomes null when any counted attempt lacks that field. No tokenizer estimates replace unknown values. An empty month/stage has0 known requests and0 tokens.
+- `cost_usd` sums the provider's account charge (`usage.cost`), not catalog estimates or upstream BYOK costs. It is null with no rows or any unknown cost; a provider-reported zero is a valid0. `cost_source=openrouter` only when the aggregate charge is available, otherwise null.
+- `by_stage` always has setup/dialogue/report/summary in that order, independently applying the same completeness rules. A missing cost in one stage need not hide another stage's known cost.
+- `updated_at` is the most recent record start/completion, null without rows. This is a metering view, not an invoice or provider-account balance.
+- Compatibility with PR239: the existing field names/order of stages remain, but token aggregates can now be null to distinguish unavailable counts from true zero. Frontend must display unavailable/partial data honestly.
+- Errors:401 authentication,403 teacher/password gate; unexpected database availability failures are server errors, not successful fabricated-zero results. UUID/body validation does not apply because there are no input identifiers or body.
+
+### Recording, failures and privacy
+
+Each actual send (including a retry) first commits a ledger row in an independent database session. It stores teacher identity, task/stage/model, teacher/server credential source and timestamp; never the key, prompt, transcript or raw model response. The provider response's usage is recorded before model-output parsing, so malformed/truncated/schema-invalid responses can still carry counted cost. Business transaction rollback does not undo the committed record.
+
+If the start write fails, no provider request is dispatched and the AI call fails as service unavailable. If completion persistence fails or the process stops after dispatch, the pre-existing row remains unknown and an operator gets a fixed `ai_usage_completion_unavailable` event identifier. No additional provider call is made to hide that recording failure. Transport errors/timeouts without reported usage remain unknown. This does not guarantee recovery of exact charges after a process/network failure, and no automatic generation-ID reconciliation is included.
+
+```mermaid
+sequenceDiagram
+    participant Caller as Teacher / student / background job
+    participant API as Backend
+    participant DB as Postgres
+    participant Model as OpenRouter
+    Caller->>API: Existing course AI operation
+    API->>API: Resolve course owner, model and credential
+    loop Each provider attempt including retry
+        API->>DB: Commit content-free usage row (independent transaction)
+        API->>Model: Existing chat completion request
+        Model-->>API: Response with usage or transport failure
+        API->>DB: Persist reported counts/cost or leave unknown
+    end
+    API->>API: Parse/validate model output
+    Note over API,DB: Usage remains if application rejects output or rolls back
+    Caller->>API: Teacher GET users/me/ai/usage
+    API->>DB: Read own ledger in current UTC month
+    API-->>Caller: Totals and four stages; null for unknown values
+```
+
+Provider-field reference: [OpenRouter usage accounting](https://openrouter.ai/docs/cookbook/administration/usage-accounting). No additional usage request parameter or paid accounting lookup is required. Key deletion preserves ledger history; deleting the teacher account removes its rows through the user foreign key.
+
+
+## AI call debugging (usage and diagnostics follow-up)
+
+This follow-up implements only real usage and diagnostics. The reported Luna502 and relevance judgment are not repaired here. Status still has the existing1000 output-token cap; no model/prompt/validity/retry policy is changed. No paid model calls were made for this work. The supplied browser502 is insufficient to determine the historical cause.
+
+### Correlation and normal logs
+
+Every ordinary HTTP response receives `X-Request-ID`, generated by the backend, exposed to browser JavaScript through CORS. Capture this header from the failing request in DevTools; the HTTP access line also includes it. This is a diagnostic identifier, distinct from the dialogue's submitted `request_id` used for replay/idempotency. A retry over HTTP has its own diagnostic ID.
+
+`app.ai` emits structured lines starting `ai_event` with JSON fields. Group by `http_request_id`; then distinguish each provider `call_id`. Background personal-report and synthesis logs include `job_id` and `job_kind`, retaining parent request correlation when available. Asynchronous requests/jobs use separate context so one student's call is not attributed to another request in the logs.
+
+| Event / field | How it identifies the problem |
+|---|---|
+| `call_started` | Task (`dialogue_validity`, `dialogue_status`, `dialogue_planning`, compression, setup, report, synthesis), selected model, prompt version/SHA256, schema SHA256, request byte size and `max_output_tokens`. Hashes identify exact prompt/schema versions without logging input text. |
+| `provider_dispatch` | Individual attempt number and `usage_event_id`, connecting to the durable usage row. |
+| `provider_response` | HTTP status, available actual model/provider generation ID, attempt latency, response/content size, `finish_reason`, token/reasoning counts, reported cost, and whether a provider error envelope exists. No raw response text in the normal event. |
+| `provider_retry` | Existing retry policy's attempt/delay; no extra retries added by logging. |
+| `json_parsed` | Provider output was valid object JSON; this does not establish schema or evidence validity. |
+| `call_failed` | Fixed failure category and provider status, correlated to the current call. |
+| `validation_failed` | Schema name and validation locations/types; values/messages are excluded, arbitrary extra keys are replaced by `extra_field`. |
+| `evidence_validation_failed` | Invalid student-exchange references/progress relationships, separately from valid JSON/schema. |
+| `validity_decision` | YES/NO gate result and student exchange, without retaining the model's reasoning text. A NO short-circuits the later calls as before. |
+| `job_validation_failed` / `job_failed` | Report/synthesis job failure tied to its attempt and last provider call. |
+
+### Diagnose the current type of502
+
+1. Copy the failing response's `X-Request-ID` and find its `call_started`/`provider_response`/`call_failed` events.
+2. If task is `dialogue_status`, cap is1000, `finish_reason=length` and reason is `output_truncated`, that **establishes truncation for that new observed call**. Completion/reasoning counts and content length show whether the budget was consumed before complete JSON arrived. It does not prove every earlier502 had this cause.
+3. `invalid_response_json` means the provider envelope was not JSON; `invalid_response_envelope` means the expected choices/message shape was missing. `invalid_output_json` means message content could not parse as JSON; `non_object_output` means it parsed to the wrong root type. These differ from truncation.
+4. `schema_validation` plus validation locations identifies invalid/missing typed fields. `invalid_progress_evidence` identifies unacceptable/future exchange references even when the JSON and schema are valid. Inspect the associated response trace in development if necessary.
+5. `provider_error` and the recorded HTTP status identify upstream rejection/failure (for example402/429/5xx). `transport_error` or `timeout` identifies a connection/deadline failure; a trace may not exist without a response. `model_refusal` / `missing_content` identify those separate output conditions.
+6. `usage_record_start_failed` means accounting could not record an attempt, so dispatch was blocked. A fixed `ai_usage_completion_unavailable` log with event ID means the provider call may have completed but usage persistence is unknown; do not equate this with zero consumption.
+
+Public AI error statuses/messages remain compatible: these categories are operator diagnostics, not a new raw-error API. Having more diagnostics does not itself solve truncation, schema errors or poor pedagogy.
+
+### Opt-in response files and reduced SQL noise
+
+- `SQL_ECHO=false` is the default. SQL echo only activates with `SQL_ECHO=true` **and** `APP_ENV=development`. Existing migration/error logs are retained.
+- Normal structured AI events contain no prompt, transcript, credential, raw model response or model reasoning text.
+- For authorized development debugging, set `AI_TRACE_ENABLED=true`, keep `APP_ENV=development`, and restart. The raw-trace flag has no effect in production.
+- Response JSON files are at `backend/.local/ai-traces/ai-responses-<pid>.jsonl`; records have the same HTTP/call/job identifiers as structured logs. Each worker rotates at1,000,000 bytes with3 backups. A single response is bounded to a131072-character prefix if needed; truncation is labeled.
+- Files retain the provider response/output for inspection, with keys/known credential values/token-shaped strings redacted. Reasoning text, headers and input prompts are excluded. The `.local` directory is Git-ignored. A file failure logs a fixed warning and does not change the model response.
+- These files can still contain student text echoed by the model. Use authorized test data, protect local access, and remove traces when debugging ends. They are neither public APIs nor data to attach unredacted to PRs.
+
+```mermaid
+sequenceDiagram
+    participant UI as Browser
+    participant API as Backend
+    participant Logs as Structured logs / optional dev trace
+    participant Model as OpenRouter
+    UI->>API: Existing AI operation
+    API->>Logs: HTTP request ID; task/call/model/version/budget
+    API->>Model: Existing provider request
+    Model-->>API: Response or failure
+    API->>Logs: Status, finish reason, usage, elapsed time; redacted trace if enabled
+    API->>API: Existing JSON, schema and evidence checks
+    API->>Logs: Distinct failure category/location if rejected
+    API-->>UI: Existing success/error + X-Request-ID
+    Note over UI,Logs: Operator joins request ID to call and optional trace
+```
+
+
+### Developer walkthrough
+
+Applies to PR274's usage/diagnostics branch, not an assurance that main or your running backend has the changes. No paid reproduction is required to read or test these diagnostics. The synthetic example below illustrates a truncation diagnosis; it is not the original user's captured response.
+
+#### 1. Start the right version with quiet SQL logging
+
+First finish the normal backend setup in `backend/README.md` (Postgres, dependencies and existing environment configuration). Run from the repository's `backend/` directory:
+
+```powershell
+# Development settings; process environment overrides backend/.env.
+$env:APP_ENV = "development"
+$env:SQL_ECHO = "false"
+$env:AI_TRACE_ENABLED = "false"
+New-Item -ItemType Directory -Force .local | Out-Null
+uv run --locked alembic upgrade head
+uv run --locked fastapi dev app/main.py *>&1 | Tee-Object -FilePath .local/backend.log
+```
+
+The migration is required for usage recording. The dev lifespan also runs migrations, but an explicit upgrade makes schema errors visible before testing AI requests. `make -C backend dev` from the repository root starts the same FastAPI command when Make is available. Keep normal service configuration/credentials in the existing environment; never paste them into a bug report.
+
+On Bash, set the same variables with `export APP_ENV=development`, `export SQL_ECHO=false`, `export AI_TRACE_ENABLED=false`; create `.local`, then run the same migration and `uv run --locked fastapi dev app/main.py 2>&1 | tee .local/backend.log`.
+
+Flags load when the process starts. Restart after changing them. To inspect only these safe settings, use:
+
+```powershell
+uv run --locked python -c "from app.core.config import settings; print({'APP_ENV': settings.APP_ENV, 'SQL_ECHO': settings.SQL_ECHO, 'AI_TRACE_ENABLED': settings.AI_TRACE_ENABLED})"
+git rev-parse HEAD
+```
+
+Normal events use Python logger `app.ai` at INFO; keep that logger enabled in your logging setup. They appear in backend process output; `Tee-Object` is what saves that output to the optional `.local/backend.log` file. There is no automatically created normal-log file unless you redirect output or configure your log collector. SQL echo stays off; migrations, errors and HTTP access logs remain visible.
+
+#### 2. Capture the failing HTTP request's diagnostic ID
+
+In browser DevTools, open Network, select the failed `messages/stream` POST, and copy **Response Headers → X-Request-ID**. Capture the time and HTTP status too. A console line containing only `502 (Bad Gateway)` cannot identify the failed AI stage.
+
+Frontend code that already has the fetch response can read the header without making another request:
+
+```javascript
+const diagnosticId = response.headers.get("X-Request-ID");
+console.info("Backend diagnostic ID:", diagnosticId);
+```
+
+The backend exposes the header through CORS. Do not confuse these identifiers:
+
+| Identifier | Scope | Where to find it |
+|---|---|---|
+| `http_request_id` / response `X-Request-ID` | One incoming HTTP request, including all AI stages it triggers | Response header, HTTP access line and structured events |
+| `call_id` | One logical model call, such as status generation | `call_started` and later events |
+| `attempt` | One outbound HTTP attempt within that model call | `provider_dispatch`, `provider_response`, retry events |
+| `provider_request_id` | Provider generation, when a safe ID was returned | `provider_response` |
+| `usage_event_id` | One durable accounting row per outbound attempt | Dispatch/response events and usage ledger |
+| `job_id`, `job_kind` | Background report/summary attempt | Background events; parent HTTP correlation is retained when available |
+| Submitted dialogue `request_id` | Application retry/replay key | Existing dialogue request body; it is **not** the diagnostic header |
+
+Retrying the same student submission keeps its application replay key but creates a new HTTP diagnostic ID. A call's provider retries retain the call ID and increment `attempt`. One normal student request can have validity, status and planning call IDs; do not combine their output caps or usage as if they were one model response.
+
+#### 3. Find the matching AI events
+
+From `backend/`, filter the normal log file you created above:
+
+```powershell
+$diagnosticId = "paste-the-response-header-here"
+Select-String -LiteralPath .local/backend.log -SimpleMatch $diagnosticId
+```
+
+For a compact view of the JSON events:
+
+```powershell
+Get-Content -LiteralPath .local/backend.log |
+    Where-Object { $_.Contains("ai_event ") } |
+    ForEach-Object {
+        $item = $_.Substring($_.IndexOf("ai_event ") + 9) | ConvertFrom-Json
+        if ($item.http_request_id -eq $diagnosticId) { $item }
+    } |
+    Select-Object event, task, call_id, attempt, model, max_output_tokens, finish_reason, reason
+```
+
+Bash equivalent for filtering is `rg --fixed-strings "$diagnosticId" .local/backend.log`. With containers or a centralized log service, search that service's backend output instead; `.local` files are inside the backend/container filesystem unless deliberately mounted.
+
+Expected order for a successful model call: `call_started` → `provider_dispatch` → `provider_response` → `json_parsed`. Schema/evidence validation can still fail after `json_parsed`. A whole turn normally shows validity first; if `validity_decision=NO`, status/planning are intentionally absent. A failed status call also prevents planning. Stored-reply replay and deterministic zero-answer reports/synthesis perform no provider request.
+
+#### 4. Interpret a truncation example correctly
+
+Illustrative selected JSON fields from **one** status call:
+
+```jsonl
+{"event":"call_started","http_request_id":"demo-request","call_id":"demo-status","task":"dialogue_status","model":"openai/gpt-6-luna","max_output_tokens":1000,"prompt_version":"stage2_status-1.0.0"}
+{"event":"provider_response","http_request_id":"demo-request","call_id":"demo-status","task":"dialogue_status","http_status":200,"finish_reason":"length","completion_tokens":1000,"reasoning_tokens":900,"content_chars":112}
+{"event":"call_failed","http_request_id":"demo-request","call_id":"demo-status","task":"dialogue_status","provider_status":200,"reason":"output_truncated"}
+```
+
+This evidence establishes that the provider returned a truncated status completion even though its HTTP status was200. The backend can consequently return502. The output cap is for model output, not the student's input length. Reasoning-token metadata may explain where output capacity went; missing metadata is unknown. Do not conclude that every502 needs a larger cap, or that the student's answer was too long. A budget change is a separately reviewed fix; this PR only records evidence.
+
+Other useful signatures:
+
+| What the events show | Diagnosis / next evidence |
+|---|---|
+| `invalid_output_json`, finish `stop` | Content failed JSON parsing without a reported length stop; inspect that call's development trace if authorized. |
+| `validation_failed`, schema `StatusOut`, error `location` and `type` | Typed output is invalid. For example, a missing progress field differs from malformed JSON. At most12 validation issues are logged; values are excluded. |
+| `evidence_validation_failed` then `invalid_progress_evidence` | JSON/schema may be valid, but references or milestone ordering failed the backend's evidence checks. See static issue descriptions/exchange information and inspect the cited state in authorized development data. |
+| `provider_error` with HTTP402/429/5xx | Upstream rejection/failure; capture status, model, generation ID and retry sequence. Raw provider error text is not in normal logs. |
+| `timeout` / `transport_error`, no response event | No usable provider response reached the client; absence of usage is not zero cost. |
+| `usage_record_start_failed`, no dispatch event | The accounting row could not be committed, so no provider request was sent. Check migration/database availability. |
+| `ai_usage_completion_unavailable` plus event ID | Provider work may have completed but accounting completion could not be written. The existing row remains unknown; check database availability. |
+| `job_validation_failed` / `job_failed` | Follow that job ID and last model call; report/synthesis postprocessing can fail independently of valid provider JSON. |
+
+If there is no `X-Request-ID`, first verify the deployed revision, actual backend URL and reverse-proxy/CORS behavior. A proxy-generated502 or an older backend may not have this header. If there is an HTTP ID but no AI events, check whether the request failed before a provider call and whether `app.ai` INFO logging is collected. Neither situation proves a token-cap failure.
+
+#### 5. Enable and inspect response traces only when needed
+
+For authorized development test data, stop the process, change `AI_TRACE_ENABLED` to true (environment or `backend/.env`), and restart with `APP_ENV=development`. Reproduce once. The flag does not reconstruct earlier responses. It never enables raw traces in production.
+
+Files appear under `backend/.local/ai-traces/ai-responses-<pid>.jsonl`, including `.jsonl.1` through `.jsonl.3` backups. Search all worker/reload PIDs and rotated files:
+
+```powershell
+Get-ChildItem -LiteralPath .local/ai-traces -File -Filter "ai-responses-*.jsonl*" |
+    Select-String -SimpleMatch $diagnosticId
+```
+
+Each JSONL line includes the same request/call/job metadata and a `response` object. Match **both** the HTTP ID and the specific failing call ID before inspecting output; the latest line might belong to another stage. For a normal chat envelope, returned model text is at `response.choices[0].message.content`; it may itself be a JSON string. For malformed/oversized envelopes, inspect `response.raw_text_prefix` and its `truncated` marker instead. The trace records the provider envelope before parsing, which is useful precisely when parsing fails.
+
+Retention: rotation threshold1,000,000 bytes, three backups plus the current file, **per worker**; it is not time-based retention or a strict global disk quota. Response text is limited to131072 characters before decoding the stored trace. Credential-like fields/known key values are redacted; reasoning text, request headers and input prompts are excluded. Redaction is not a guarantee that no personal content remains—model responses can quote students. Protect the directory, use test data, and manually remove traces after the investigation. Turn the flag off and restart afterward. `.local` is Git-ignored; never commit or publicly attach its files.
+
+No response file is expected when tracing is off, the environment is production, or the provider never returned a response. `ai_trace_write_failed` means file writing failed; normal events remain useful and the logging failure does not trigger another model request.
+
+#### 6. Send a useful, redacted bug report
+
+Include the backend commit SHA; time/timezone; HTTP status and diagnostic ID; task/call/job IDs; selected/actual model; prompt version/hash; output cap; provider status/finish reason; token/reasoning metadata when available; and the fixed failure category/schema locations. Explain expected versus observed behavior. Include whether tracing was enabled and whether a retry occurred.
+
+Share only the relevant redacted structured events. Use a minimal synthetic dialogue to reproduce where possible. Do not paste API keys, authorization headers, complete environment files, provider reasoning, unreviewed response traces or real student details. A browser502 alone is useful as a symptom report but cannot identify truncation versus schema/evidence/provider failure.
+
+Implementation map for maintainers: `services/ai_diagnostics.py` formats events/traces; `services/model_client.py` instruments dispatch/envelope parsing; `services/dialogue_turn.py` identifies schema/evidence/validity outcomes; report/summary runners add job correlation; request logging middleware adds the HTTP ID; `core/database.py` controls SQL echo. Focused verification is `uv run --locked pytest tests/unit/test_ai_diagnostics.py tests/unit/test_model_client.py tests/unit/test_dialogue_turn.py -q` from `backend/`, using synthetic responses without paid calls.

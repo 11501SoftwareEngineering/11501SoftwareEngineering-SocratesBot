@@ -173,9 +173,15 @@ async def test_invalid_evidence_reference_rejected_before_planning(reference):
     assert client.calls == ["dialogue_validity", "dialogue_status"]
 
 
-async def test_future_milestone_rejected():
-    with pytest.raises(ModelCallError):
+async def test_future_milestone_rejected(caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="app.ai")
+    with pytest.raises(ModelCallError) as caught:
         await _run(ScriptedClient(VALIDITY_YES, _status(), PLANNING), exchange=2)
+    assert caught.value.reason == "invalid_progress_evidence"
+    assert "evidence_validation_failed" in caplog.text
+    assert "student-exchange evidence" in caplog.text
 
 
 async def test_planner_receives_named_brief_language_and_record():

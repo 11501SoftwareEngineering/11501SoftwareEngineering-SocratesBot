@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import math
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -13,6 +14,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.model_catalog import INQUIRY_CATALOG_MODELS
+from app.services import ai_diagnostics, ai_usage
 
 logger = logging.getLogger("app.model")
 # A provider can ask for a long pause. This request does not wait past two seconds.
@@ -146,8 +148,14 @@ def _outbound(instructions: str, material: str) -> tuple[str, str]:
 class ModelCallError(Exception):
     """A provider failure. The message never includes the key or the reply text."""
 
-    def __init__(self, status_code: int | None) -> None:
+    def __init__(self, status_code: int | None, *, reason: str | None = None) -> None:
         self.status_code = status_code
+        self.reason = reason or (
+            "output_validation" if status_code == 200 else "provider_error"
+        )
+        ai_diagnostics.emit(
+            "call_failed", reason=self.reason, provider_status=status_code
+        )
         super().__init__("model call failed")
 
 
@@ -155,7 +163,7 @@ class ModelTimeoutError(ModelCallError):
     """The provider did not finish within the task's time limit."""
 
     def __init__(self) -> None:
-        super().__init__(None)
+        super().__init__(None, reason="timeout")
 
 
 # Every inquiry catalog model is listed with the "reasoning" parameter in
@@ -383,41 +391,81 @@ class OpenAIChatClient:
         }
         if limits.low_reasoning and model_id in REASONING_MODELS:
             payload["reasoning"] = {"effort": "low"}
+        ai_diagnostics.call_started(name, model_id, payload, instructions)
         headers = {"Authorization": f"Bearer {key}"}
         try:
             async with asyncio.timeout(limits.timeout_s):
-                response = await self._send(payload, headers, limits.timeout_s)
+                response = await self._send(
+                    payload,
+                    headers,
+                    limits.timeout_s,
+                    usage_key=api_key,
+                    usage_task=name,
+                )
         except TimeoutError:
             logger.info("model provider timed out")
             raise ModelTimeoutError() from None
         if response.status_code >= 400:
             logger.info("model provider status %s", response.status_code)
             raise ModelCallError(response.status_code) from None
-        return _parse_completion(response)
+        parsed = _parse_completion(response)
+        ai_diagnostics.emit("json_parsed")
+        return parsed
 
     async def _send(
-        self, payload: dict[str, Any], headers: dict[str, str], timeout_s: float
+        self,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+        timeout_s: float,
+        *,
+        usage_key: str | None = None,
+        usage_task: str = "dialogue_reply",
     ) -> httpx.Response:
         response: httpx.Response | None = None
         for attempt in (1, 2):
             try:
+                event_id = await ai_usage.begin(usage_key, usage_task, payload["model"])
+            except Exception:
+                logger.error("ai_usage_start_unavailable task=%s", usage_task)
+                raise ModelCallError(503, reason="usage_record_start_failed") from None
+            current_response = None
+            started = time.perf_counter()
+            ai_diagnostics.emit(
+                "provider_dispatch",
+                attempt=attempt,
+                usage_event_id=str(event_id) if event_id else None,
+            )
+            try:
                 async with httpx.AsyncClient(
                     transport=self._transport, timeout=timeout_s
                 ) as client:
-                    response = await client.post(
+                    current_response = await client.post(
                         f"{settings.OPENAI_BASE_URL.rstrip('/')}/chat/completions",
                         headers=headers,
                         json=payload,
                     )
+                    response = current_response
+                    ai_diagnostics.response_received(
+                        response,
+                        attempt=attempt,
+                        elapsed_ms=round((time.perf_counter() - started) * 1000),
+                        event_id=event_id,
+                        secret=headers["Authorization"].removeprefix("Bearer "),
+                    )
             except httpx.HTTPError:
                 logger.info("model provider status unavailable")
-                raise ModelCallError(None) from None
+                raise ModelCallError(None, reason="transport_error") from None
+            finally:
+                await ai_usage.finish(event_id, current_response)
             delay = _retry_delay(response)
             if (
                 response.status_code in {429, 503}
                 and attempt == 1
                 and delay is not None
             ):
+                ai_diagnostics.emit(
+                    "provider_retry", attempt=attempt, delay_seconds=delay
+                )
                 if delay:
                     await asyncio.sleep(delay)
                 continue
@@ -442,18 +490,30 @@ def _retry_delay(response: httpx.Response) -> float | None:
 def _parse_completion(response: httpx.Response) -> dict:
     try:
         body = response.json()
+    except ValueError:
+        raise ModelCallError(
+            response.status_code, reason="invalid_response_json"
+        ) from None
+    try:
         choice = body["choices"][0]
         if choice.get("finish_reason") == "length":
-            raise ValueError
+            raise ModelCallError(response.status_code, reason="output_truncated")
         message = choice["message"]
+        if message.get("refusal"):
+            raise ModelCallError(response.status_code, reason="model_refusal")
         content = message.get("content")
-        if message.get("refusal") or not isinstance(content, str):
-            raise ValueError
+        if not isinstance(content, str):
+            raise ModelCallError(response.status_code, reason="missing_content")
+    except (KeyError, IndexError, TypeError, AttributeError):
+        raise ModelCallError(
+            response.status_code, reason="invalid_response_envelope"
+        ) from None
+    try:
         parsed = json.loads(content)
-    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError):
-        logger.info("model provider status %s", response.status_code)
-        raise ModelCallError(response.status_code) from None
+    except (ValueError, TypeError):
+        raise ModelCallError(
+            response.status_code, reason="invalid_output_json"
+        ) from None
     if not isinstance(parsed, dict):
-        logger.info("model provider status %s", response.status_code)
-        raise ModelCallError(response.status_code) from None
+        raise ModelCallError(response.status_code, reason="non_object_output")
     return parsed
