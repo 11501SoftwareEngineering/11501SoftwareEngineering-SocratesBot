@@ -58,10 +58,10 @@ def test_session_response_requires_ids(field: str) -> None:
 def test_dialogue_values_use_one_lowercase_token() -> None:
     """Dialogue values use the same lowercase token in the API and the database."""
     action = EndDialogueRequest.model_json_schema()["$defs"]["DialogueAction"]
-    assert action["enum"] == ["complete", "continue", "abandon"]
-    assert action["description"] == "complete | continue | abandon"
+    assert action["enum"] == ["complete", "continue", "abandon", "finish"]
+    assert action["description"] == "complete | continue | abandon | finish"
     history = DialogueHistoryResponse.model_json_schema()["$defs"]
     assert history["MessageSender"]["description"] == "ai | student"
     assert history["DialogueOutcome"]["description"] == (
-        "open | completed | abandoned | closed_by_summary"
+        "open | completed | ended | abandoned | closed_by_summary"
     )

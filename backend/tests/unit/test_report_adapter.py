@@ -114,6 +114,7 @@ def test_input_snapshot_is_private_frozen_and_has_native_names():
         "transcript",
         "finalProgress",
         "endingReason",
+        "goalReached",
     }
     assert snapshot["material"]["transcript"][0]["role"] == "user"
     assert str(session.id) not in str(snapshot["material"])

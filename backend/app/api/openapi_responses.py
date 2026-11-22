@@ -702,6 +702,8 @@ DIALOGUE_END_RESPONSES = {
         "Cannot apply end action yet",
         {
             "not_ready": "Inquiry goal is not met",
+            "too_early": "Finish early requires three student answers",
+            "ended": "Dialogue has already ended",
             "busy": "Another reply is in progress",
         },
     ),
@@ -709,7 +711,8 @@ DIALOGUE_END_RESPONSES = {
 REPORT_START_RESPONSES = {
     **DIALOGUE_READ_RESPONSES,
     409: json_detail_example(
-        "Only outcome=completed can produce a report", "Dialogue is not completed"
+        "Only completed or ended dialogues can produce a report",
+        "Dialogue is not report-eligible",
     ),
 }
 REPORT_READ_RESPONSES = {

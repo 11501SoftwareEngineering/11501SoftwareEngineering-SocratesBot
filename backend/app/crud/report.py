@@ -43,7 +43,7 @@ async def insert_pending(
     attempt = ReportAttempt(
         session_id=session_id,
         status=GenerationStatus.PENDING.value,
-        generation_meta=None if progress is None else {"progress": progress},
+        generation_meta={} if progress is None else {"progress": progress},
         lease_expires_at=datetime.now(UTC) + LEASE,
     )
     db.add(attempt)

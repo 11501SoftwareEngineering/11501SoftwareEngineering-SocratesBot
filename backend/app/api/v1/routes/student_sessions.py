@@ -101,10 +101,11 @@ async def end_dialogue(
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> EndDialogueResponse:
-    """Complete only after goal achievement, continue, or abandon.
+    """Complete after goal achievement, finish after three answers, continue or abandon.
 
-    Continue clears consent but retains goal achievement. Complete does not start
-    report generation: call POST /sessions/{sessionId}/report separately.
+    Continue clears consent but retains goal achievement. Complete and finish
+    atomically enqueue a report; GET report polls and POST report retries/reuses.
+    The final allowed reply automatically ends with reason turn_limit.
     Abandoned and closed_by_summary dialogues are not report-eligible.
     """
     return await dialogue_service.end_dialogue(

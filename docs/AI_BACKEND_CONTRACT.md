@@ -1,6 +1,6 @@
 # AI backend API contract and sequences
 
-Contract revision 1, 21 November 2026. Local candidate based on `f015e190b9daf92661ffb362408d639da5b9db54` (PR250–255 and main `f762701`). This guide describes implemented behavior; the early-stop/turn-limit reporting proposal is **not implemented or approved for adoption** in this revision. Paths below have the `/api/v1` prefix. Generate OpenAPI from the same checkout when integrating.
+Contract revision 6, 21 November 2026. Local Chunk06 candidate on Chunk05 plus main59efe44. Early-stop/cap/report changes below are implemented locally and require review, migration and deployment before frontend adoption. Paths have the `/api/v1` prefix. Use OpenAPI from the same revision.
 
 ## Authentication and error responses
 
@@ -62,7 +62,7 @@ The name `session_status` has two endpoint-specific meanings:
 
 | Endpoint family | Values |
 | --- | --- |
-| Session entry, history, end | `open`, `completed`, `abandoned`, `closed_by_summary` (dialogue outcome) |
+| Session entry, history, end | `open`, `completed`, `ended`, `abandoned`, `closed_by_summary` (dialogue outcome) |
 | Student rows in course-topic list | `IN_PROGRESS`, `COMPLETED`, or null before entry (legacy status) |
 
 Do not decide reply eligibility from the course-list enum. Use session history and topic stage. `open` alone does not guarantee another turn: the cap may already be spent. The opening shown in history is not a counted student turn.
@@ -94,15 +94,18 @@ Retry the same logical submission with the same `request_id` **and content**. On
 
 ## Ending and starting reports
 
-| End action | Current result |
+| End action | Result |
 | --- | --- |
-| `complete` | Requires stored goal achievement; otherwise 409. Sets outcome `completed`, clears consent. |
-| `continue` | Keeps `open`, clears consent, preserves stored goal achievement. Does not reset or extend the cap. |
-| `abandon` | Sets outcome `abandoned`, clears goal/consent. No personal report. |
+| `complete` | Requires historical goal achievement, otherwise409. Outcome `completed`, reason `goal_reached`; enqueue report. |
+| `finish` | Requires at least three stored student answers, otherwise409. Outcome `ended`, reason `student_requested_stop`; preserve goal and enqueue report. |
+| `continue` | Keep `open`, clear consent, preserve achieved goal; never extend cap. |
+| `abandon` | Existing behavior: outcome `abandoned`, clear goal/consent, no report. Do not use this for Finish early. |
 
-End on an already-ended session returns 400; end while the process-local reply guard is held returns 409. Current readiness/goal flags can diverge after later progress changes (LC-03); this remains a code fix in the dialogue chunk, not solved by this guide.
+At the final allowed student answer, the backend commits the reply, progress, outcome `ended`, reason `turn_limit`, and pending report in one transaction. It requires no subsequent end request. Report model work starts after commit. A provider failure before reply persistence leaves the answer uncommitted; retry the same request ID. Browser closure is not an ending action.
 
-Reaching the cap without the goal currently strands completion/report eligibility. Do not fake `goal_reached=true` or invent a supported finish action. Early-stop/cap reporting and model stop/safety status handling remain the separate local proposal LC-01/02.
+History, end and SSE done expose `report_eligible`, `ending_reason`, `can_finish_early`. SSE also exposes `session_status` and `goal_reached`. Use outcome/report_eligible to navigate, NOT is_completed alone: is_completed retains its completed-outcome meaning, and is false for ended sessions. At the cap consent is false even when the goal was achieved. End/history/SSE all preserve historical goal achievement. `ended_at` records any report-producing end; `completed_at` retains successful completion semantics. Report completion_reason is goal_reached/student_requested_stop/turn_limit (legacy completed remains readable).
+
+Repeated same terminal action returns200 without enqueuing another attempt. Finish after cap returns the existing ended result. Conflicting terminal actions return409. The session row lock serializes end and reply persistence across workers; if end wins, an in-flight model result cannot append to the closed transcript. Same-process busy replies return409. This does not guarantee exactly-once model billing.
 
 ```mermaid
 sequenceDiagram
@@ -110,38 +113,33 @@ sequenceDiagram
     participant API as FastAPI
     participant DB as Postgres
     participant Model as OpenRouter
-    Student->>API: POST /topics/{topicId}/sessions
-    API->>DB: Create or find owned session
-    API-->>Student: session_id and current outcome
-    Student->>API: GET /sessions/{sessionId}/messages
-    API-->>Student: History, counts, goal and consent
-    loop while open and under cap in conversation
+    loop while open and below cap
         Student->>API: POST messages/stream with request_id
-        alt committed request replay
-            API->>DB: Read saved reply
-        else new turn
-            API->>Model: validity, then status/planning if valid
-            API->>DB: Commit student/AI pair and progress
+        API->>Model: Evaluate and generate reply
+        API->>DB: Lock session, validate cutoff, store exchange
+        alt final allowed answer
+            API->>DB: Set ended / turn_limit and insert pending report atomically
         end
-        API-->>Student: SSE text then done
+        API->>DB: Commit
+        API-->>Student: SSE text + done with outcome/report_eligible
     end
-    alt complete requested and goal achieved
-        Student->>API: POST end action complete
-        API->>DB: Set outcome completed
-        API-->>Student: completed; report not yet scheduled
-        Student->>API: POST /sessions/{sessionId}/report
-        API->>DB: Reuse attempt or insert eligible retry
-        API-->>Student: report_status and report
-        Student->>API: GET report to poll
-        API-->>Student: Latest status and latest ready body if any
-    else continue or abandon
-        Student->>API: POST end action continue or abandon
-        API->>DB: Remain open or set abandoned
-        API-->>Student: Current outcome; no report
+    opt student ends before cap
+        Student->>API: POST end action complete or finish
+        API->>DB: Validate goal or three answers, lock, end + enqueue, commit
+        API-->>Student: Outcome, goal, reason, report_eligible
+    end
+    API->>Model: Generate report from frozen evidence after commit
+    Model-->>API: Structured complete / partial / inconclusive assessment
+    API->>DB: Save ready report, or failed on technical failure
+    Student->>API: GET report to poll
+    API-->>Student: report_status and structured report
+    opt retry after technical failure, or legacy session without report
+        Student->>API: POST report
+        API->>DB: Reuse live/ready attempt or insert retry
     end
 ```
 
-GET `/sessions/{sessionId}/report` does not start generation. Before completion it returns 409; after completion but before any attempt it returns 404. First call POST, then GET to poll. Both return 200 for a successful request, including pending/processing; failed generation is represented by `report_status=failed`, not necessarily a failing polling HTTP status.
+GET report never starts generation. It returns409 for ineligible outcomes,404 for no attempt (possible for legacy sessions), and200 with pending/processing/ready/failed otherwise. New report-producing endings enqueue automatically. POST remains the recovery/reuse endpoint. Inconclusive is a valid ready report, not a technical failure: evidence_status=insufficient, with observed evidence and limitations. Prefer useful partial summaries whenever possible; no goal achievement or milestone requirement gates report generation.
 
 | Newest attempt at POST | Behavior |
 | --- | --- |
@@ -156,18 +154,15 @@ Teacher POST `/topics/{topicId}/reports/{sessionId}` uses the same retry/reuse r
 {"report_status":"pending","report":null}
 ```
 
-Report format gaps remain explicit: the current formatter supplies IDs, constant `version=1`, turn count and `completion_reason=completed`, but not `anonymous_id`/`completed_at`. Structured citations are not enforced yet. The teaching list contains wrapped `{report_status, report, student_display_name}` items; current code does not supply the spec's grouping tags/summary version. These are remaining report/Stage3 contract gaps, not fields the frontend can assume exist.
+Reports retain validated timeline citations and private native summaries from Chunk05. Reports expose server ending metadata and goal_reached separately; anonymous_id remains undefined. Teaching counts retain completed_count for successful completion and add ended_count for early/cap endings. Ready/failed counts include both. Group tags and full native Stage3 synthesis remain a later chunk.
 
 ## Scope and verification
 
-This chunk corrects descriptions/OpenAPI and SSE text fidelity. It does not change permissions, topic settings persistence, goal logic, ending actions, report DTOs or database schemas. Those remain tracked in the project register. Historical PR sequence charts are historical; this revision is the current candidate guide.
-
-The new regression tests exercise actual ASGI routing/serialization, SSE decoding, replay and ending/report ordering with in-memory persistence. Existing service/route tests supplement them. This is not a real Postgres integration or live-model dialogue evaluation. See the local chunk handoff for exact commands and results.
-
+Chunk06 adds lifecycle, migration, automatic enqueue, evidence policy and API documentation. Local mock tests do not establish real-Postgres concurrency or live-model summary quality. See the chunk handoff for validation and deployment prerequisites.
 
 ## Dialogue contract repairs (Chunk04)
 
-`goal_reached` is historical eligibility to complete, not the latest model's milestone state. Continue preserves it. After another saved reply, including an off-topic reply, the stored ending-choice flag and SSE done flag agree and offer completion again when eligibility was already achieved. History returns `current_progress` separately; its milestones may regress without erasing achievement. No stop/turn-limit lifecycle extension is included.
+`goal_reached` is historical eligibility to complete, not the latest model's milestone state. Continue preserves it. After another saved reply, including an off-topic reply, the stored ending-choice flag and SSE done flag agree and offer completion again when eligibility was already achieved. History returns `current_progress` separately; its milestones may regress without erasing achievement. Chunk06 adds the ending behavior above.
 
 The planner receives `approvedInquiryBrief`, `interfaceLanguage`, and `dialogueRecord`; the brief includes the turn cap. Context compaction budgets this actual envelope and planner schema. Validity, status, planning and legacy catch-up each check their request schema/material/output reserve before their provider call. Oversized requests return413; missing tokenizer support returns503. Legacy catch-up fails explicitly on oversized history rather than silently truncating evidence.
 
@@ -189,4 +184,4 @@ Public report keys remain compatible. Reflection/working position, strongest rea
 
 New timeline items retain string `evidence` and add `evidence_reference: {message_id, turn, quote}`. Quotes are copied from stored student messages; the validator checks ownership-derived source, turn, ID, question and exact quote, and rejects duplicates/malformed entries. This checks source integrity, not whether every model interpretation is philosophically or semantically justified. Legacy stored reports remain readable but are not retroactively certified.
 
-`completed_at`, when available, comes from the session's server timestamp. `anonymous_id` remains unimplemented pending an agreed alias scope; clients must not assume it exists. Reports larger than `REPORT_CONTEXT_TOKEN_BUDGET` (default32000 estimated request tokens including output reserve) fail before provider invocation rather than silently dropping evidence. This is a configurable local guard, not a guarantee of provider context capacity. Existing retry/poll behavior remains. No full native Stage3 synthesis or early-stop lifecycle implementation is included.
+`completed_at`, when available, comes from the session's server timestamp. `anonymous_id` remains unimplemented pending an agreed alias scope; clients must not assume it exists. Reports larger than `REPORT_CONTEXT_TOKEN_BUDGET` (default32000 estimated request tokens including output reserve) fail before provider invocation rather than silently dropping evidence. This is a configurable local guard, not a guarantee of provider context capacity. Existing retry/poll behavior remains. Full native Stage3 synthesis remains a later chunk.

@@ -13,5 +13,5 @@ class CreateSessionResponse(BaseModel):
     session_id: UUID
     topic_id: UUID
     session_status: DialogueOutcome = Field(
-        description="open | completed | abandoned | closed_by_summary"
+        description="open | completed | ended | abandoned | closed_by_summary"
     )

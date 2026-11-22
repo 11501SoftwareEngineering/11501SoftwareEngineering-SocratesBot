@@ -31,6 +31,11 @@ def test_ready_complete_report_start_poll_and_ready_reuse(
         dialogue, "_owned", AsyncMock(return_value=(memory.session, memory.topic, []))
     )
 
+    monkeypatch.setattr(
+        message_crud, "lock_session", AsyncMock(return_value=memory.session)
+    )
+    monkeypatch.setattr(message_crud, "count_student_turns", AsyncMock(return_value=3))
+
     async def save_end(_db, **values):
         for key in ("outcome", "status", "goal_reached", "awaiting_end_consent"):
             setattr(memory.session, key, values[key])
@@ -51,8 +56,11 @@ def test_ready_complete_report_start_poll_and_ready_reuse(
         path + "/end", headers=headers, json={"action": "complete"}
     )
     assert completed.json()["session_status"] == "completed"
-    assert memory.reports_scheduled == []
-    assert auth_client.get(path + "/report", headers=headers).status_code == 404
+    assert len(memory.reports_scheduled) == 1
+    assert (
+        auth_client.get(path + "/report", headers=headers).json()["report_status"]
+        == "pending"
+    )
     started = auth_client.post(path + "/report", headers=headers)
     assert started.json() == {"report_status": "pending", "report": None}
     memory.attempts[-1].lease_expires_at = datetime.now(UTC) + timedelta(minutes=5)
@@ -102,7 +110,9 @@ def test_actual_stream_response_and_committed_replay(
 ):
     bearer, _owner = _login(auth_client, store, "replay", UserRole.USER)
     session_id, request_id, reply_id = uuid4(), uuid4(), uuid4()
-    session = SimpleNamespace(id=session_id, outcome="open", awaiting_end_consent=True)
+    session = SimpleNamespace(
+        id=session_id, outcome="open", awaiting_end_consent=True, goal_reached=True
+    )
     messages = [
         SimpleNamespace(request_id=request_id, sender="student"),
         SimpleNamespace(
