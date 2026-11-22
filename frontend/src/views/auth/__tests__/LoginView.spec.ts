@@ -5,11 +5,20 @@ import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { QueryClient, VueQueryPlugin } from '@tanstack/vue-query'
 import LoginView from '../LoginView.vue'
 import { authApi, type User } from '@/api/auth'
+import { coursesApi, type CourseSummary } from '@/api/courses'
 
 // 把真正打 API 的 authApi.login 換成假的，測試時不會發出網路請求、不需要後端
 vi.mock('@/api/auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api/auth')>()
   return { ...actual, authApi: { ...actual.authApi, login: vi.fn<typeof actual.authApi.login>() } }
+})
+// 學生登入後會查課程列表，判斷是不是助教（決定首頁）
+vi.mock('@/api/courses', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/courses')>()
+  return {
+    ...actual,
+    coursesApi: { ...actual.coursesApi, list: vi.fn<typeof actual.coursesApi.list>() },
+  }
 })
 
 const stub = { template: '<div />' }
@@ -47,7 +56,7 @@ async function submit(
 }
 
 const teacher: User = {
-  account: 'wang',
+  account_id: 'wang',
   name: '王老師',
   role: 'TEACHER',
   roles: ['TEACHER'],
@@ -62,6 +71,7 @@ describe('LoginView', () => {
     setActivePinia(createPinia())
     router = createTestRouter()
     vi.mocked(authApi.login).mockReset()
+    vi.mocked(coursesApi.list).mockReset().mockResolvedValue([])
   })
 
   it('沒填帳號密碼時，不送出並提示', async () => {
@@ -97,6 +107,19 @@ describe('LoginView', () => {
     const wrapper = await mountLogin(router, '/login?redirect=/student/courses/c1')
     await submit(wrapper, 's001', 'password123')
     expect(router.currentRoute.value.path).toBe('/student/courses/c1')
+  })
+
+  it('學生帳號在某門課當助教時，登入後先進教學端（照 Prototype）', async () => {
+    vi.mocked(authApi.login).mockResolvedValueOnce({
+      token: 't',
+      user: { ...teacher, role: 'STUDENT', roles: ['STUDENT'] },
+    })
+    vi.mocked(coursesApi.list).mockResolvedValueOnce([
+      { course_id: 'c1', name: '哲學', my_role: 'ta' } as CourseSummary,
+    ])
+    const wrapper = await mountLogin(router)
+    await submit(wrapper, 's011', 'password123')
+    expect(router.currentRoute.value.path).toBe('/teacher/courses')
   })
 
   it('不會被 redirect 導到外部網站', async () => {

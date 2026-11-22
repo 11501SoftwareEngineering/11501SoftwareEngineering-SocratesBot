@@ -1,5 +1,8 @@
 # API 功能規格
 
+> 本文件依 PR #272（實作 cf2c335，含相依 PR）校準，尚不代表 main 或後端已部署。預覽、main 文件及 OpenAPI 產生方式見 [契約版本說明](AI_BACKEND_CONTRACT.md)。
+
+
 version: 0.2
 
 ## 全域規範
@@ -143,7 +146,7 @@ version: 0.2
 ---
 
 ## 課程名單
-助教權限有四項，如下表說明
+助教權限有四項，如下表說明。指派助教時可省略 `permissions`，省略即給予全部四項；其他 API 照常回傳 `permissions` / `my_permissions`，前端不需要時可忽略
 
 | permission | 允許做的事 |
 | --- | --- |
@@ -179,19 +182,19 @@ version: 0.2
     - 查無此課程 (404)
 
 ### 指派助教
-- 功能說明: 老師輸入任一已註冊帳號，指派為本課程助教並勾選權限。原為本課程學生者改任助教時保留歷史對話，並從學生統計排除；不在本課程者直接以助教身分加入課程
+- 功能說明: 老師輸入學生帳號（全域角色為 USER），指派為本課程助教並給予權限（未指定時給予全部四項）；老師帳號與管理員不可擔任助教。原為本課程學生者改任助教時保留歷史對話，並從學生統計排除；不在本課程者直接以助教身分加入課程。確認彈窗先以 `check: true` 呼叫，只做檢查並取得姓名、不寫入，讓錯誤在按下「新增」前就能顯示；確認後再以 `check: false`（或不帶）正式指派
 - 呼叫方式: POST /courses/{courseId}/tas
 - 授權: 老師
-- 輸入資料: `account_id`, `permissions`(僅接受 edit_topics, view_reports, edit_summary, view_members)
-- 成功回應: `user_id`, `account_id`, `name`, `permissions`, `message`
+- 輸入資料: `account_id`, `permissions`（選填，僅接受 edit_topics, view_reports, edit_summary, view_members；省略時給予全部四項）, `check`（選填，只接受 `true` / `false`，預設 `false`）
+- 成功回應: `user_id`, `account_id`, `name`, `permissions`, `message`（`check: true` 時為 `TA can be assigned`，正式指派為 `TA assigned`）
 - 錯誤:
-    - 帳號未填寫或含未知權限 (422)
+    - 帳號未填寫、含未知權限，或 `check` 不是 `true` / `false` (422)
     - 非該課程老師 (403)
     - 查無此帳號 (404)
-    - 已是本課程助教，或帳號身分不允許（如本課程老師、管理員），或同時有其他請求變更了該帳號的課程身分 (400)
+    - 指派對象已是本課程助教，或帳號不是學生帳號（全域角色為 TEACHER，或為管理員），或同時有其他請求變更了該帳號的課程身分 (400)
 
 ### 更新助教權限
-- 功能說明: 老師逐項更新助教權限；儲存後下一次 API 請求立即依新權限檢查
+- 功能說明: 老師逐項更新助教權限；儲存後下一次 API 請求立即依新權限檢查。助教已不分權限，前端不使用此 API，暫時保留
 - 呼叫方式: PUT /courses/{courseId}/tas/{userId}
 - 授權: 老師
 - 輸入資料: `permissions`
@@ -253,7 +256,7 @@ version: 0.2
 - 授權: 老師、助教、學生
 - 輸入資料: 無
 - 成功回應: `course_id`, `name`, `invite_code`, `my_role`, `my_permissions`, `topics`[`topic_id`, `title`, `description`, `topic_status`（內容見上方表格）, `age_band`, `max_turns`, 依身分另含下列欄位]
-    - 學生: 只列 `conversation`、`summary` 階段的題目；另含 `session_status`（未進入時為 null）, `session_id`
+    - 學生: 只列 `conversation`、`summary` 階段的題目；另含 `session_status`（此列表為 `IN_PROGRESS` / `COMPLETED`，未進入時為 null；不同於 Session API 的小寫 outcome）, `session_id`
     - 老師與助教: `answered_count`, `student_count`
 - 錯誤:
     - 非課程成員或查無此課程 (404)
@@ -284,33 +287,45 @@ version: 0.2
 
 ## 題目設定階段
 
+目前候選版本的實際 API、SSE、錯誤碼與時序圖見 [AI backend contract](AI_BACKEND_CONTRACT.md)。以下標註「尚未實作」的欄位或權限不是可用功能；後續修正不得只修改文件來掩蓋程式缺口。
+
 ### 取得題目設定
-- 功能說明: 開啟題目設定頁（`setup` 階段可編輯，之後唯讀），尚未設定的欄位為 null
+- 功能說明: 開啟題目設定頁（`setup` 階段可編輯，之後唯讀），null 值的欄位會省略（包含 setup 內的欄位），前端須接受缺少可選 key
 - 呼叫方式: GET /topics/{topicId}/setup
-- 授權: 設定權限
+- 授權: 設定權限（目前程式仍要求全域老師及課程老師；助教支援待 BE-01 修正）
 - 輸入資料: 無
-- 成功回應: `topic_id`, `course_id`, `topic_status`, `model_id`, `setup`{八欄設定物件，欄位見上表}
+- 成功回應: `topic_id`, `course_id`, `topic_status`, `model_id`, `content_language`, `setup`{八欄設定物件，欄位見上表}
 - 錯誤:
     - 無權限 (403)
     - 查無此題目 (404)
 
+### AI 產生題目設定建議
+- 呼叫方式: POST /topics/{topicId}/setup/generate
+- 授權: 目前仍限老師及課程老師檢查；助教設定權限缺口另追蹤
+- 輸入資料: `age_band`, `max_turns`, `content_language`, `course_description`, `model_id`
+- 成功回應: `topic_id`, `course_id`, `topic_status`, `model_id`, `content_language`, `setup`，以及 `assessments`, `clarification_questions`, `suggestions`, `warnings`
+- 僅回傳建議，不儲存設定、語言或模型；採用建議時，PUT setup 或 POST publish 須明確傳入 model_id／content_language；省略時保留原值
+- 錯誤: 非 setup (400)、未授權 (401／403)、題目不存在 (404)、輸入或模型目錄不合法／語意需修訂 (422)、模型失敗 (502／503)、模型逾時 (504)
+- `422.detail` 可能是請求驗證陣列，也可能是模型建議修訂的字串
+
 ### AI 依回饋修訂題目設定
-- 功能說明: 「確認活動設定」頁的「重新產生」按鈕按下後呼叫，依老師回饋重新產生八欄設定
+- 功能說明: 「確認活動設定」頁的「重新產生」按鈕按下後呼叫，依老師回饋重新產生八欄設定及回饋；只回傳建議，不自動儲存
 - 呼叫方式: POST /topics/{topicId}/setup/refine
-- 授權: 設定權限
+- 授權: 設定權限（目前程式仍要求全域老師及課程老師；助教支援待 BE-01 修正）
 - 輸入資料: `setup`, `feedback`
 - 成功回應: 同「取得題目設定」
 - 錯誤:
-    - 欄位不符規則 (422)
+    - 欄位不符規則，或模型要求修訂描述 (422)
     - 無權限 (403)
     - 查無此題目 (404)
     - 題目已不在設定階段 (400)
     - AI 服務失敗 (502／503)
+    - 模型逾時 (504)
 
 ### AI 重新產生開場訊息
-- 功能說明: 「確認活動設定」頁開場訊息欄的「重新產生」按鈕按下後呼叫，依目前設定（含手動修改）重新產生 `opening_message`
+- 功能說明: 「確認活動設定」頁開場訊息欄的「重新產生」按鈕按下後呼叫，依目前設定（含手動修改）重新產生並儲存 `opening_message` 與 revision；不一併儲存其他畫面欄位
 - 呼叫方式: POST /topics/{topicId}/setup/opening-message
-- 授權: 設定權限
+- 授權: 設定權限（目前程式仍要求全域老師及課程老師；助教支援待 BE-01 修正）
 - 輸入資料: `setup`
 - 成功回應: `opening_message`
 - 錯誤:
@@ -319,11 +334,13 @@ version: 0.2
     - 查無此題目 (404)
     - 題目已不在設定階段 (400)
     - AI 服務失敗 (502／503)
+    - 模型逾時 (504)
+    - 生成期間設定被其他請求修改 (409)
 
 ### 儲存題目設定
 - 功能說明: 「確認活動設定」頁的「儲存草稿」按鈕按下後呼叫，儲存 `setup` 階段的八欄設定
 - 呼叫方式: PUT /topics/{topicId}/setup
-- 授權: 設定權限
+- 授權: 設定權限（目前程式仍要求全域老師及課程老師；助教支援待 BE-01 修正）
 - 輸入資料: `setup`
 - 成功回應:「取得題目設定」的回應, `message`
 - 錯誤:
@@ -336,7 +353,7 @@ version: 0.2
 - 功能說明: 先把畫面上的八欄存下來，設定完整才在同一筆交易把題目從 `setup` 轉為 `conversation`，固定八欄、內容語言與模型，開放學生對話；發布前前端須顯示確認。不完整的內容不會留下
 - 呼叫方式: POST /topics/{topicId}/publish
 - 授權: 老師
-- 輸入資料: `setup`（八欄，與儲存題目設定的 `setup` 相同）
+- 輸入資料: `setup`（八欄），選填 `model_id`、`content_language`；省略保留原值，null／空白不合法，模型須存在於目錄。
 - 成功回應:「取得題目設定」的回應, `message`
 - 錯誤:
     - 欄位不符規則，或設定未完整 (422)
@@ -358,94 +375,109 @@ version: 0.2
     - 非課程成員或查無此題目 (404)
 
 ### 建立對話 Session
-- 功能說明: 學生第一次進入題目時建立本人 Session，固定題目設定、內容語言、模型及設定版本。已有 Session 時回傳該 Session
+- 功能說明: 首次進入時建立本人 Session；已有 Session 時回傳同一筆及其目前 outcome，不會重開已結束的對話。發布後鎖定題目設定，不代表此 API 另存完整設定快照
 - 呼叫方式: POST /topics/{topicId}/sessions
-- 授權: 學生
+- 授權: 已登入且為課程成員（目前並未限定課程學生身分）
 - 輸入資料: 無
-- 成功回應: `session_id`, `topic_id`, `session_status`（已有 Session 時為該對話目前的狀態）
+- 成功回應: `session_id`, `topic_id`, `session_status`（`open` / `completed` / `ended` / `abandoned` / `closed_by_summary`）
 - 錯誤:
-    - 非課程學生 (403)
+    - 非課程成員 (403)
     - 查無此題目，或題目仍在 `setup` (404)
     - 題目已進入 `summary`，且本人還沒有 Session (400)
+    - 摘要工作仍有有效 pending/processing lease，暫停建立新 Session (409)
 
 ### 取得對話紀錄
 - 功能說明: 取得本人 Session 的正式訊息歷史與進度，也用於斷線後校準
 - 呼叫方式: GET /sessions/{sessionId}/messages
 - 授權: 本人
 - 輸入資料: 無
-- 成功回應: `messages`[`message_id`, `sender`（`ai` / `student`）, `content`, `created_at`], `session_status`, `max_turns`, `completed_turns`, `goal_reached`, `awaiting_end_consent`
+- 成功回應: `messages`[`message_id`, `sender`（`ai` / `student`）, `content`, `created_at`], `session_status`, `max_turns`, `completed_turns`, `goal_reached`, `awaiting_end_consent`, `current_progress`, `report_eligible`, `ending_reason`, `can_finish_early`
 - 錯誤:
-    - 非此對話擁有者 (403)
-    - 查無此對話 (404)
+    - 查無此對話或非本人 (404)
 
 ### 發送回答並串流接收 AI 回覆 (SSE)
-- 功能說明: 學生送出回答，以 `text/event-stream` 接收 AI 回覆。同一筆重試沿用相同 `request_id`，後端不得重複儲存、扣回合或計費
+- 功能說明: 學生送出回答，以 `text/event-stream` 接收 AI 回覆。同一筆重試沿用相同 `request_id` 與 content。已提交的回覆會重播，不再呼叫模型或新增回合；失敗／跨 worker 的請求不保證 provider 只計費一次
 - 呼叫方式: POST /sessions/{sessionId}/messages/stream
 - 授權: 本人
 - 輸入資料: `content`（最多 6000 字元，不可空白）, `request_id`
 - 成功回應: 串流事件
-    - `data` 事件: 可直接接續的文字片段
-    - `done` 事件: `message_id`, `completed_turns`, `is_completed`, `awaiting_end_consent`
+    - 未命名事件（標準事件類型 `message`）: 整段回覆文字，多個 data 行以 LF 接合；不是每個網路 chunk 一個事件。模型與交易完成後才開始 SSE
+    - `done` 事件: `message_id`, `completed_turns`, `is_completed`, `awaiting_end_consent`, `session_status`, `goal_reached`, `report_eligible`, `ending_reason`, `can_finish_early`
 - 錯誤:
     - 訊息內容為空或超過上限 (422)
-    - 非此對話擁有者 (403)
-    - 查無此對話 (404)
+    - 查無此對話或非本人 (404)
     - 對話已完成、已達回合上限，或題目已進入 `summary` (400)
-    - 同一 Session 有其他請求進行中，待其完成後再送出 (400)
-    - AI 服務失敗 (502／503)
+    - 同一 Session 有其他請求進行中，或生成期間狀態已變更 (409)
+    - 超過上下文預算 (413)
+    - AI 服務失敗或 tokenizer 不支援 (502／503)
+    - SSE 開始前的錯誤為 JSON HTTP 回應，先檢查 status/content-type
 
 ### 結束或繼續對話
-- 功能說明: 達成探究目標時學生同意結束或選擇繼續；或退出探究（標記 ABANDONED，不列完成、不產生報告）
+- 功能說明: 達成探究目標時學生同意結束或選擇繼續；或退出探究（outcome 標記 `abandoned`，不列完成、不產生報告）
 - 呼叫方式: POST /sessions/{sessionId}/end
 - 授權: 本人
-- 輸入資料: `action`（`complete` / `continue` / `abandon`）
-- 成功回應: `session_id`, `session_status`, `message`
+- 輸入資料: `action`（`complete` / `continue` / `abandon` / `finish`）
+- 成功回應: `session_id`, `session_status`, `message`, `goal_reached`, `report_eligible`, `ending_reason`, `can_finish_early`
 - 錯誤:
     - 動作值無效 (422)
-    - 非此對話擁有者 (403)
-    - 查無此對話 (404)
-    - 對話已結束（已完成或已退出），無法再變更 (400)
-    - 尚未達成探究目標就要求 `complete`，可繼續對話後再送出 (400)
+    - 查無此對話或非本人 (404)
+    - 重複相同結束動作為200；已結束後要求不相容動作為409
+    - 尚未達成探究目標就要求 `complete`，或其他回覆仍在進行中 (409)
+
+`continue` 清除 consent 但保留已達成的 goal，不增加回合上限。`complete` 與 `finish` 結束交易時自動建立 pending 報告。`finish` 至少三次學生回答，否則409；不要求 goal_reached。最後允許的回合由後端自動設 outcome=ended、ending_reason=turn_limit，並排程報告，不需前端再呼叫 end。finish 的 reason=student_requested_stop。goal 保留原值；證據不足不阻擋報告。此為 Chunk06 分支契約，需審核、migration、部署後採用。
+
+### 啟動本人個人報告
+- 呼叫方式: POST /sessions/{sessionId}/report
+- 授權: 本人；outcome 必須為 `completed` 或 `ended`
+- 輸入資料: 無
+- 成功回應: HTTP 200，`report_status`, `report`
+- 無 attempt、最新失敗或 pending/processing lease 過期：新增 attempt 並排程。仍有效的 pending/processing 或 ready：直接沿用，不強制重新生成
+- 錯誤: 未授權 (401／403)、查無此對話或非本人 (404)、outcome 非 completed/ended (409)、UUID 驗證錯誤 (422)
+- 啟動後以 GET 同一路徑輪詢；GET 本身不啟動生成
 
 ### 取得本人個人報告
 - 功能說明: 對話完成後取得本人結構化報告；報告準備中時回傳處理狀態供前端輪詢
 - 呼叫方式: GET /sessions/{sessionId}/report
 - 授權: 本人
 - 輸入資料: 無
-- 成功回應: `report_status`（`pending` / `processing` / `ready` / `failed`）, `report`（`ready` 時才有值）包含
-    - 識別及完成資訊: `report_id`, `version`, `session_id`, `topic_id`, `anonymous_id`, `completed_at`, `completed_turns`, `completion_reason`
+- 成功回應: `report_status`（`pending` / `processing` / `ready` / `failed`）, `report`（最新可用的 ready 內容，沒有則 null；最新 attempt 失敗／處理中仍可能帶較早的 ready 內容）包含
+    - 目前識別及完成資訊: `report_id`, `version`（目前固定 1）, `session_id`, `topic_id`, `completed_turns`, `completion_reason`（goal_reached / student_requested_stop / turn_limit；舊資料可能為 completed）
+    - `ended_at` 記錄可產生報告的結束時間，`goal_reached` 保留實際目標達成狀態；`completed_at` 使用伺服器記錄的對話完成時間（舊資料可能省略）；`anonymous_id` 尚待定義匿名代碼範圍，前端不可假設存在
     - `viewpoint_summary`, `final_viewpoint`, `viewpoint_status`
     - `reasons`, `strongest_reason`, `challenges`[`challenge`, `responded`], `revision_or_defense`, `focus_connection`, `other_perspectives`, `open_questions`
     - `evidence_status`（`sufficient` / `partial` / `insufficient`）, `limitations`
     - `timeline`[`turn`, `question`, `evidence`, `viewpoint_before`, `viewpoint_after`, `change_type`, `attribution`（`explicit` / `sequence_only` / `none`）]
-    - 證據引用格式: `message_id`, `turn`, `quote`
+    - 新報告保留 timeline.evidence 字串，另提供 evidence_reference {message_id, turn, quote} 並查核學生訊息來源、回合、原文；舊報告維持可讀但未追溯驗證。此時間線是證據索引，不推定立場改變或因果關係。
     - 不包含學生姓名
 - 錯誤:
-    - 非此對話擁有者 (403)
-    - 查無此對話 (404)
-    - 對話尚未完成 (400)
+    - 查無此對話或非本人 (404)
+    - outcome 非 completed/ended (409)
+    - 可產生報告但尚未建立 report attempt (404)
+
 
 ---
+
+### 教師重試個人報告
+- 呼叫方式: POST /topics/{topicId}/reports/{sessionId}
+- 授權: 目前為全域老師且具課程 instructor 身分
+- 無 request body；回應與本人 report 相同
+- 沿用有效 pending/processing 與相容的 ready 報告；失敗／過期可重試。教師端另可重建缺少或不符合原生證據、或探究設定已不匹配的 ready 報告，供 Stage3 使用。只有新增 attempt 才取新 progress snapshot
+- 錯誤: 未授權／無權限 (401／403)、題目或屬於該題目的 Session 不存在 (404)、outcome 非 completed/ended (409)、UUID 不合法 (422)
 
 ## 全班報告與摘要
 
 ### 取得教學端學生報告
-- 功能說明: 教學端查看題目的各項人數與學生報告，每份報告附學生註冊姓名
 - 呼叫方式: GET /topics/{topicId}/reports
-- 授權: 老師、助教需 `view_reports`
-- 輸入資料: 無
-- 成功回應: `class_size`, `completed_count`, `ready_count`, `processing_count`, `failed_count`, `summary_version`（分群標籤所依據的摘要版本，即「取得教學端摘要」的最新版本；尚無摘要時為 null）, 
-    - `groups`[`group_id`, `name`, `count`]該版本的群組清單，供前端產生篩選 tag；尚無摘要時為空陣列
-    - `reports`[個人報告的 `report` 結構, `student_display_name`, `group_ids`(此學生在哪一 group)]
-    - 前端依 `group_ids` 做 tag 篩選，`group_ids` 為空且 `summary_version` 不為 null 者即為「未分類」
-- 錯誤:
-    - 無權限 (403)
-    - 查無此題目 (404)
+- 授權: 全域 teacher 且具課程 instructor 身分；目前未開放一般 TA
+- 成功回應: `class_size`, `completed_count`, `ended_count`, `ready_count`, `processing_count`, `failed_count`, `reports`[{`report_status`, `report`, `student_display_name`}]
+- `completed_count` 僅計成功完成，`ended_count` 另計提前結束／回合上限。個別 report 可為 null，或在最新 attempt 處理中／失敗時保留舊 ready 內容
+- 此列表沒有 `summary_version`、`groups` 或每位學生的 `group_ids`；摘要分組在摘要讀取端點取得
+- 錯誤: 無權限 (403)、查無題目 (404)
 
 ### 取得教學端摘要
-- 功能說明: 讀取摘要。沒帶 `version` 時回最新一版；帶了就回那一版。`published_version` 仍是學生目前看到的版本
+- 功能說明: 讀取摘要。沒帶 `version` 時回最新一版；帶了就回那一版。`published_version` 仍是學生目前看到的版本；`preparation_status` 回報最新生成工作狀態（無工作時為 null）
 - 呼叫方式: GET /topics/{topicId}/summary
-- 授權: 老師、助教需 `edit_summary` 或 `view_reports`
+- 授權: 全域 teacher 且具課程 instructor 身分；目前未開放一般 TA
 - 輸入資料: query `version`（可省略；有帶時須為大於等於 1 的整數）
 - 成功回應: `topic_status`, `published_version`（學生目前看到的版本號，沒有則 null）, `summary`（沒帶 `version` 時為最新一版，題目尚未進入 `summary` 時為 null；有帶時為該版），結構為
     - `summary_id`, `version`, `summary_status`（`draft` / `reviewed` / `published` / `withdrawn`）, `overview`, `viewpoint_summary`, `denominator`
@@ -458,23 +490,24 @@ version: 0.2
     - 指定的版本不存在 (404)
 
 ### 產生摘要草稿
-- 功能說明: 以 `ready` 報告動態分群產生新摘要草稿，成功時存成新的一版，不自動發布，不影響學生已看到的版本。題目在 `conversation` 時第一次呼叫，會把 `topic_status` 轉為 `summary` 並結束學生對話（不可退回）
+- 功能說明: 以 `ready` 報告動態分群產生新摘要草稿，成功時存成新的一版，不自動發布，不影響學生已看到的版本。必須所有現有對話已結束，且每個可產生報告的對話最新報告均為 ready；成功儲存摘要後才把 topic_status 轉為 summary，不再關閉未結束的學生對話
 - 呼叫方式: POST /topics/{topicId}/summary
-- 授權:
-    - 題目在 `conversation`（會結束學生對話）: 僅老師
-    - 題目已在 `summary`（重新產生）: 老師、助教需 `edit_summary`
+- 授權: 全域 teacher 且具課程 instructor 身分；目前未開放一般 TA
 - 輸入資料: 無
-- 成功回應: `topic_status`（`summary`）, `published_version`, `summary`（結構同上，`summary_status` 為 `draft`）
+- 成功回應: HTTP 200，`topic_status` 保留目前階段、`published_version`、`summary=null`、`preparation_status=pending`。背景生成；以 GET 同一路徑輪詢 pending/processing/ready/failed。ready 才存入 draft 並切換 summary 階段；失敗不撤回既有發布版本
 - 錯誤:
     - 無權限 (403)
     - 查無此題目 (404)
     - 題目仍在 `setup`，或沒有可用報告 (400)
-    - AI 服務失敗 (502／503)
+    - 仍有 open 對話、最新報告未 ready，或原生證據不相容需重新生成 (409)
+    - 超過50份報告、payload 或模型 token 預算 (413)
+    - 模型 tokenizer 不支援 (503)
+    - 排程後的模型／驗證失敗以 preparation_status=failed 表示，不會回溯改變已回傳的 HTTP 200
 
 ### 修訂摘要草稿
 - 功能說明: 以畫面上的文字修訂最新一版。文字有變才存成下一版；文字沒變則版本號不變。狀態回到 `draft`，已發布給學生的快照不變
 - 呼叫方式: PATCH /topics/{topicId}/summary
-- 授權: 老師、助教需 `edit_summary`
+- 授權: 全域 teacher 且具課程 instructor 身分；目前未開放一般 TA
 - 輸入資料: `overview`, `viewpoint_summary`（不可空白）
 - 成功回應: `summary`（結構同上，`summary_status` 為 `draft`）
 - 錯誤:
@@ -530,13 +563,17 @@ version: 0.2
 皆在 /users/me/ai 路徑下，僅限 teacher 可用
 
 ### 取得 AI 用量
-- 功能說明: 取得本人本月 AI 用量
+
+> 實作狀態：本 usage 修正分支提供真實 provider-request ledger 與聚合，需合併及執行 migration `b8e39a1547c2` 才可採用；main 與 PR239 scaffold 不具備此能力。只包含啟用計量後由本系統發出的請求，不回補歷史／外部帳號用量。
+
+- 功能說明: 依 UTC 月份統計本人作為課程 owner 的 AI 請求（含 TA／學生觸發、背景報告、重試及失敗呼叫），來源為 provider 回傳值
 - 呼叫方式: GET /users/me/ai/usage
 - 輸入資料: 無
-- 成功回應: `month`, `total_tokens`, `input_tokens`, `output_tokens`, `request_count`, `by_stage`（分階段統計，格式見下）, `cost_usd`（無資料時為 null，不代表 0）, `cost_source`, `updated_at`
+- 成功回應: `month`, `total_tokens`, `input_tokens`, `output_tokens`, `request_count`, `by_stage`（分階段統計，格式見下）, `cost_usd`（無資料或任一請求成本未知時為 null；provider 明確回0才表示0）, `cost_source`, `updated_at`
     - `by_stage`: 陣列，固定 4 筆，依 `setup`、`dialogue`、`report`、`summary` 的順序；本月沒有用量的階段也要回傳（數量為 0、`cost_usd` 為 null）
         - `stage`: `setup`（活動設定）、`dialogue`（學生對話）、`report`（個人報告）、`summary`（全班統整）
-        - `request_count`, `total_tokens`, `input_tokens`, `output_tokens`: 整數
+        - `request_count`: 整數，實際 provider request 嘗試次數；同一學生回合可能有多個呼叫
+        - `total_tokens`, `input_tokens`, `output_tokens`: 整數或 null；任一請求缺該項 usage 時，該項總數為 null，不假裝是0
         - `cost_usd`: 該階段本月花費（美元）；無資料時為 null，不代表 0
     - `by_stage` 範例:
         ```json
@@ -555,6 +592,7 @@ version: 0.2
 - 呼叫方式: GET /users/me/ai/settings
 - 輸入資料: 無
 - 成功回應: `configured`, `masked_key`, `updated_at`, `default_model`{id, name}
+- 老師尚未儲存模型選擇時，`default_model` 回傳系統 `OPENAI_MODEL` 對應的目錄模型，讓畫面顯示實際生效的預設值（目前為 GPT-6 Luna）；讀取不建立或修改老師設定。已儲存的選擇優先，模型不在目錄時回傳 `null`。
 - 錯誤:
     - 非老師身分 (403)
 
@@ -625,3 +663,59 @@ version: 0.2
     - 非管理員 (403)
     - 查無此老師帳號 (404)
     - 目標帳號為設定檔超級管理員，不可重設 (403)
+
+## 模型與語言設定補充（Chunk02）
+
+建立題目可明確傳入 `model_id`、`content_language`。老師或助教建立時，未指定模型則使用課程建立老師的預設模型，再回退到伺服器設定；失效的已儲存模型回應422。此規則不改變金鑰擁有者。PUT setup 與 POST publish 可傳入上述兩個選填欄位；省略保留原值，null／空白無效。設定讀取、儲存、AI產生、修訂、開場白允許該課程老師或有 edit_topics 的助教；發布僅允許該課程老師。
+
+### Chunk06 frontend ending contract
+
+History/end/SSE done add `report_eligible`, `ending_reason`, `can_finish_early`; SSE done also adds `session_status` and `goal_reached`. `ended` is a new outcome. Do not rely only on `is_completed` to navigate to reports. Report adds `ended_at`, `goal_reached`; teaching list adds `ended_count`. `completed_count` remains successful completions.
+
+Inconclusive reports retain the full report structure, with `evidence_status=insufficient`, observations and `limitations`. A useful partial summary is preferred; missing milestones alone are not inconclusive. `report_status=ready` means generation succeeded, not that learning goals were reached. GET polls automatically started reports; POST retries/reuses or starts legacy missing attempts. No report is created merely by closing the browser. Full sequence charts: [AI_BACKEND_CONTRACT.md](AI_BACKEND_CONTRACT.md).
+
+
+## 課程 AI 模型與憑證路由（Chunk07/08）
+
+各階段優先使用題目已儲存的模型；未設定時使用 `OPENAI_MODEL`，包含 validity、status、planning、context/catch-up、個人報告與班級摘要。Stage1 generate 的明確模型選擇仍只影響該次產生，需 Save/Publish 才儲存。報告來源快照與摘要請求保留非機密模型資訊；重試已捕捉的請求不改用其他模型。
+
+課程擁有者的個人 key 優先，無個人 key 才使用單一伺服器 `OPENAI_API_KEY`；助教／學生觸發不改變付費者。無法解密或個人 key 呼叫失敗不轉用伺服器額度。憑證不寫入報告、來源快照或摘要 JSON。伺服器憑證可設定 key 輪替池，老師 key 不會改用伺服器額度；沒有新增前端欄位或端點。完整順序圖見 [AI backend contract](AI_BACKEND_CONTRACT.md#model-and-credential-routing-combined-chunk0708)。
+
+
+## Stage3 原生整合與報告就緒條件
+
+個人報告在各自對話完成／提前結束／回合上限後產生，學生不必等全班即可讀取。班級摘要 POST 必須等待所有現有對話結束，且所有 completed/ended 對話的最新報告為 ready；缺漏、pending/processing/failed 或不相容原生證據回409。舊報告可由教師既有重試端點重新產生。abandoned 與歷史 closed_by_summary 不屬於報告分母。
+
+最多50份報告；超出報告數、payload或token預算回413，無報告回400。分類只使用具立場與理由證據的報告；無法分類的報告仍計入分母，使用既有 ungrouped 欄位表示。群組人數與比例由後端計算，不接受模型計數。
+
+產生期間以有效 lease 阻擋新 session（409），既有個人報告仍可讀取。ready 提交前再次確認無開放對話且來源報告未變；失敗保留原已發布版本。保留原有審核、發布、撤回端點與 DTO，原生詳細結果及來源映射只存在私有 JSON。完整流程見 [AI_BACKEND_CONTRACT](AI_BACKEND_CONTRACT.md#native-stage3-class-synthesis)。
+
+
+## 教師結束 Stage2（PR #272，尚未部署）
+
+- GET `/topics/{topicId}/conversation-status`：教師查詢 `open_dialogue_count`、`stage2_closed`、`confirmation_required`、`preparation_status`。僅計已建立且 open 的對話，不計未進入學生；讀取不觸發工作。
+- POST `/topics/{topicId}/end-conversation`：body `{"confirm_open_dialogues": true}`。若未確認且仍有 open 對話，409 detail 回傳 code 與最新數量，沒有結束副作用。
+- 確認後原子結束 open 對話：outcome=ended、reason=teacher_ended_stage2，保留 goal。教師不受三次回答下限限制；topic 立即進入 summary，技術失敗也不重新開放。
+- HTTP200 表示已關閉且工作已排程，不代表摘要就緒。後端先等待個人報告再自動統整；GET summary 輪詢工作狀態，原有審閱／發布流程不變。重複關閉沿用有效或 ready 工作，失敗／逾時可重試。
+- 零回答：個人報告為 ready/insufficient，明示未提交回答；不呼叫模型、不計入全班分母。全班皆無回答時仍有 denominator0 的誠實證據不足草稿。
+- 新端點沿用全域 teacher + course instructor 授權。完整 payload、錯誤、競態、恢復與前端流程見 [teacher closure contract](AI_BACKEND_CONTRACT.md#teacher-controlled-stage2-closure-pr-272-not-deployed)。本提案不修改前端；前端需輪詢／重讀現有狀態才能導頁。
+
+
+## AI 診斷日誌（usage/diagnostics 修正分支）
+
+HTTP 回應新增 `X-Request-ID`，CORS 已 expose，供前端回報502時定位。後端 `ai_event` 串接 HTTP request/call/job ID，記錄 task、model、prompt 版本/hash、輸出上限、provider status、finish_reason、token/reasoning 數、latency、generation/usage ID。可分辨截斷、JSON、schema、證據引用、provider、timeout；不變更現有 AI 回應/API error 行為。
+
+SQL_ECHO 預設 false。AI_TRACE_ENABLED 預設 false；僅 development 啟用時，原始回應（去除憑證與 reasoning 文字）寫入被 Git 忽略的 `.local/ai-traces`，每 worker1MB/3備份輪替。可能含學生文字，僅供授權測試資料及本機除錯，production 不啟用。完整定位步驟見 [AI debugging](AI_BACKEND_CONTRACT.md#ai-call-debugging-usage-and-diagnostics-follow-up)。此修正不調整1000 token上限或修復502本身。
+
+開發者操作步驟（含啟動指令、如何從 browser 取 X-Request-ID、PowerShell/Bash 搜尋、範例解析、trace 檔案與回報清單）見 [developer walkthrough](AI_BACKEND_CONTRACT.md#developer-walkthrough)。
+
+
+## Stage2 status 截斷修正（PR274 之後的本地 hot fix）
+
+已用 Luna 重現 legacy progress catch-up 的 provider HTTP200/finish_reason=length：1000 completion tokens 後 JSON 字串未結束，backend 映射502。僅將 cap 改3000 的對照呼叫以1017 tokens 完成，schema/證據均通過；測試用 key/account 有可用額度，非402/429。
+
+status prompt 升版 stage2_status-1.0.1，輸出上限1000→3000，同時套用一般回合與舊對話進度補算；原有 context budget 會計入新 reserve。沒有新增 API 欄位、migration、model 替換、放寬驗證或重試。新增 progress_catch_up_started 診斷 marker。詳見 [truncation hot fix](AI_BACKEND_CONTRACT.md#stage2-status-truncation-hot-fix-local-follow-up-above-pr274)。原始 session/log 未提供，不能斷言每個歷史502皆同因。
+
+Stage2 相關性修正（PR275）：validity 提示詞 stage2_validity-1.0.2 將相關但未提供理由、表達不確定或質疑問題前提的回答判為 YES；只有離題才為 NO。理由證據與達標條件仍由後續 status 及伺服器檢查。API 欄位不變，更新後須重啟後端。詳見 [AI backend contract](AI_BACKEND_CONTRACT.md#stage2-relevance-gate-correction-pr275)。
+
+伺服器 key rotation：OPENAI_API_KEYS 可設定多組伺服器 key；老師個人 key 優先且不切換到伺服器額度。429/402 冷卻後改用其他健康 key，每次模型呼叫最多3次、保持模型與輸入不變。既有公開 API、欄位及錯誤轉換不變，無 migration。設定、完整順序圖與診斷見 [server key rotation](AI_BACKEND_CONTRACT.md#server-key-rotation)。

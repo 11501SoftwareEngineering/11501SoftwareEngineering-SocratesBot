@@ -31,7 +31,7 @@ const { data, isPending, error, refetch } = useQuery({
 })
 const { keyword, results } = useSearch(
   () => data.value ?? [],
-  (t) => [t.account, t.name],
+  (t) => [t.account_id, t.name],
 )
 const refresh = () => queryClient.invalidateQueries({ queryKey: adminKeys.teachers })
 
@@ -56,7 +56,7 @@ function showPassword(result: TeacherPasswordResponse, title: string) {
 
 const createMutation = useMutation({
   mutationFn: () =>
-    adminApi.createTeacher({ account: form.account.trim(), name: form.name.trim() }),
+    adminApi.createTeacher({ account_id: form.account.trim(), name: form.name.trim() }),
   onSuccess: (result) => {
     createOpen.value = false
     void refresh()
@@ -87,7 +87,10 @@ function ask(teacher: Teacher, action: 'reset' | 'delete') {
 }
 
 const resetMutation = useMutation({
-  mutationFn: (id: string) => adminApi.resetTeacherPassword(id),
+  mutationFn: async (teacher: Teacher) => {
+    const result = await adminApi.resetTeacherPassword(teacher.id)
+    return { account_id: teacher.account_id, name: teacher.name, password: result.password }
+  },
   onSuccess: (result) => {
     resetOpen.value = false
     showPassword(result, '已重設密碼')
@@ -106,24 +109,24 @@ const deleteMutation = useMutation({
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[960px] px-4 py-10 sm:py-12">
+  <div class="mx-auto w-full max-w-[992px] px-4 py-10 sm:py-12">
     <ListSection v-model:search="keyword" title="老師管理" search-label="搜尋老師">
       <template #actions>
-        <Button @click="openCreate">新增老師 <AddRingIcon /></Button>
+        <Button @click="openCreate"><AddRingIcon /> 新增老師</Button>
       </template>
 
       <QueryState
         :loading="isPending"
         :error="error"
         :empty="results.length === 0"
-        :empty-text="keyword ? '找不到符合的老師' : '目前還沒有老師帳號，按「新增老師」建立第一個'"
+        :empty-text="keyword ? '找不到老師' : '還沒有老師帳號'"
         error-text="無法取得老師列表"
         @retry="refetch()"
       >
         <ListCard
           v-for="teacher in results"
           :key="teacher.id"
-          :title="`帳號：${teacher.account}`"
+          :title="`帳號：${teacher.account_id}`"
           :meta="[`姓名：${teacher.name}`, `建立於 ${formatDate(teacher.created_at)}`]"
         >
           <template #actions>
@@ -133,14 +136,14 @@ const deleteMutation = useMutation({
               :aria-label="`重設 ${teacher.name} 的密碼`"
               @click="ask(teacher, 'reset')"
             >
-              <span class="hidden sm:inline">重設密碼</span> <RefreshIcon />
+              <RefreshIcon /> <span class="hidden sm:inline">重設密碼</span>
             </Button>
             <Button
               variant="destructive"
               :aria-label="`刪除 ${teacher.name}`"
               @click="ask(teacher, 'delete')"
             >
-              <span class="hidden sm:inline">刪除</span> <TrashIcon />
+              <TrashIcon /> <span class="hidden sm:inline">刪除</span>
             </Button>
           </template>
         </ListCard>
@@ -150,7 +153,6 @@ const deleteMutation = useMutation({
     <FormDialog
       v-model:open="createOpen"
       title="建立教師帳號"
-      description="建立後系統會產生一組初始密碼，老師第一次登入時要自己改密碼。"
       :loading="createMutation.isPending.value"
       :error="errors.form"
       @submit="handleCreate"
@@ -158,22 +160,24 @@ const deleteMutation = useMutation({
       <FormField v-slot="field" label="帳號名稱" hint="老師登入時使用" :error="errors.account">
         <Input v-model="form.account" v-bind="field" :id="field.id" autocomplete="off" />
       </FormField>
-      <FormField v-slot="field" label="老師姓名" hint="會顯示在學生的課程列表" :error="errors.name">
+      <FormField v-slot="field" label="教師姓名" hint="會顯示在學生的課程列表" :error="errors.name">
         <Input v-model="form.name" v-bind="field" :id="field.id" autocomplete="off" />
       </FormField>
     </FormDialog>
 
     <ConfirmDialog
+      centered
       v-model:open="resetOpen"
       title="確認重設密碼?"
       :description="`會產生一組新的初始密碼，「${target?.name}」原本的密碼將無法使用。`"
       confirm-text="重設"
       :loading="resetMutation.isPending.value"
       :error="actionError"
-      @confirm="target && resetMutation.mutate(target.id)"
+      @confirm="target && resetMutation.mutate(target)"
     />
 
     <ConfirmDialog
+      centered
       v-model:open="deleteOpen"
       title="確認刪除?"
       :description="`刪除後「${target?.name}」將無法登入，這個動作無法復原。`"
@@ -188,7 +192,7 @@ const deleteMutation = useMutation({
       v-if="notice"
       v-model:open="noticeOpen"
       :title="notice.title"
-      :account="notice.account"
+      :account="notice.account_id"
       :name="notice.name"
       :password="notice.password"
     />

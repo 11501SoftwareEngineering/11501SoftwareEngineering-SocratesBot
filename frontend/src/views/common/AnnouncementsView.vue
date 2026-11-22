@@ -13,7 +13,7 @@ const sorted = computed(() =>
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[960px] px-4 py-10 sm:py-12">
+  <div class="mx-auto w-full max-w-[992px] px-4 py-10 sm:py-12">
     <h1 class="mb-5 text-h1-title text-foreground">公告</h1>
     <p
       v-if="sorted.length === 0"

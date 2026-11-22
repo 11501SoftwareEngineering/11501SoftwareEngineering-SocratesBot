@@ -2,7 +2,7 @@
 import type { DialogContentEmits, DialogContentProps } from 'reka-ui'
 
 import type { HTMLAttributes } from 'vue'
-import { XIcon } from '@lucide/vue'
+import { CloseRingIcon } from '@/components/icons'
 import { reactiveOmit } from '@vueuse/core'
 import { cn } from '@/lib/utils'
 import {
@@ -53,11 +53,12 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits)
       >
         <slot />
 
+        <!-- Figma「P13_StudentReport」右上角的 close_ring 圖示 -->
         <DialogClose
-          class="absolute top-4 right-4 p-0.5 transition-colors rounded-md hover:bg-secondary"
+          class="absolute top-8 right-8 rounded-full text-foreground outline-none transition-colors hover:text-muted-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
-          <XIcon class="w-4 h-4" />
-          <span class="sr-only">Close</span>
+          <CloseRingIcon class="size-8" />
+          <span class="sr-only">關閉</span>
         </DialogClose>
       </DialogContent>
     </DialogOverlay>

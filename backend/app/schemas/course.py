@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 
 from app.core.enums import CourseRole, TaPermission
 from app.services.course_invites import INVITE_ALPHABET, INVITE_LENGTH
@@ -29,6 +29,32 @@ class CourseCreateResponse(BaseModel):
     invite_code: str = Field(examples=[_EXAMPLE_INVITE])
     my_role: CourseRole = Field(examples=[CourseRole.TEACHER])
     message: str = Field(default="Course created", examples=["Course created"])
+
+
+class CourseUpdateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255, examples=["Software Engineering"])
+    description: str | None = Field(default=None, examples=["Fall 2026"])
+
+
+class CourseUpdateResponse(BaseModel):
+    course_id: UUID = Field(examples=[_EXAMPLE_COURSE_ID])
+    name: str = Field(examples=["Software Engineering"])
+    description: str | None = Field(default=None, examples=["Fall 2026"])
+    invite_code: str = Field(examples=[_EXAMPLE_INVITE])
+    message: str = Field(default="Course updated", examples=["Course updated"])
+
+
+class CourseDetailResponse(BaseModel):
+    course_id: UUID = Field(examples=[_EXAMPLE_COURSE_ID])
+    name: str = Field(examples=["Software Engineering"])
+    description: str | None = Field(default=None, examples=["Fall 2026"])
+    teacher_name: str = Field(examples=["Teacher One"])
+    my_role: CourseRole = Field(examples=[CourseRole.STUDENT])
+    my_permissions: list[TaPermission] = Field(
+        default_factory=list,
+        description="TA permissions in this course; empty for other roles",
+    )
+    invite_code: str = Field(examples=[_EXAMPLE_INVITE])
 
 
 class CourseListItem(BaseModel):
@@ -87,10 +113,17 @@ _EXAMPLE_TA_PERMISSIONS = [TaPermission.EDIT_TOPICS, TaPermission.VIEW_MEMBERS]
 
 class TaAssignRequest(BaseModel):
     account_id: str = Field(min_length=1, max_length=64, examples=["alice"])
-    permissions: list[TaPermission] = Field(
-        default_factory=list,
+    permissions: list[TaPermission] | None = Field(
+        default=None,
         examples=[_EXAMPLE_TA_PERMISSIONS],
-        description="Granted TA permissions; duplicates are ignored",
+        description=(
+            "Granted TA permissions; omit to grant all four. Duplicates are ignored"
+        ),
+    )
+    check: StrictBool = Field(
+        default=False,
+        examples=[False],
+        description="true: only run the checks and return the account, no write",
     )
 
 
@@ -99,7 +132,11 @@ class TaAssignResponse(BaseModel):
     account_id: str = Field(examples=["alice"])
     name: str = Field(examples=["Alice"])
     permissions: list[TaPermission] = Field(examples=[_EXAMPLE_TA_PERMISSIONS])
-    message: str = Field(default="TA assigned", examples=["TA assigned"])
+    message: str = Field(
+        default="TA assigned",
+        examples=["TA assigned"],
+        description='"TA can be assigned" when check is true',
+    )
 
 
 class TaPermissionsUpdateRequest(BaseModel):

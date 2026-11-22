@@ -360,7 +360,11 @@ def test_service_rejects_non_member_without_creating_session() -> None:
                     store=store,
                 )
 
-            session_count = await db.scalar(select(func.count()).select_from(Session))
+            session_count = await db.scalar(
+                select(func.count())
+                .select_from(Session)
+                .where(Session.user_id == student.id)
+            )
             assert session_count == 0
 
     asyncio.run(run())
@@ -380,7 +384,11 @@ def test_service_rejects_missing_topic_without_creating_session() -> None:
                     store=store,
                 )
 
-            session_count = await db.scalar(select(func.count()).select_from(Session))
+            session_count = await db.scalar(
+                select(func.count())
+                .select_from(Session)
+                .where(Session.user_id == student.id)
+            )
             assert session_count == 0
 
     asyncio.run(run())

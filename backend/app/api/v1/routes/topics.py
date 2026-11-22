@@ -14,11 +14,13 @@ from app.api.openapi_responses import (
     TOPIC_DELETE_RESPONSES,
     TOPIC_EXPLANATION_RESPONSES,
 )
-from app.schemas.inquiry import CreateInquiryTopicRequest, InquirySetupResponse
+from app.schemas.inquiry import (
+    CreatedInquiryResponse,
+    CreateInquiryTopicRequest,
+)
 from app.schemas.session import CreateSessionResponse
 from app.schemas.topic import (
-    StudentCourseTopicsResponse,
-    TeacherCourseTopicsResponse,
+    CourseTopicsResponse,
     TopicExplanationResponse,
 )
 from app.services import inquiry as inquiry_service
@@ -30,21 +32,22 @@ router = APIRouter(tags=["topics"])
 
 @router.get(
     "/courses/{courseId}/topics",
-    response_model=TeacherCourseTopicsResponse | StudentCourseTopicsResponse,
+    response_model=CourseTopicsResponse,
+    response_model_exclude_unset=True,
     responses=COURSE_TOPIC_LIST_RESPONSES,
 )
 async def list_course_topics(
     courseId: UUID,
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> TeacherCourseTopicsResponse | StudentCourseTopicsResponse:
-    """List a course's topics; the shape depends on the caller's role."""
+) -> CourseTopicsResponse:
+    """List a course's topics; fields depend on the caller's role."""
     return await topics_service.list_course_topics(db, current_user, courseId)
 
 
 @router.post(
     "/courses/{courseId}/topics",
-    response_model=InquirySetupResponse,
+    response_model=CreatedInquiryResponse,
     response_model_exclude_none=True,
     responses=TOPIC_CREATE_RESPONSES,
 )
@@ -53,7 +56,7 @@ async def create_topic(
     payload: CreateInquiryTopicRequest,
     current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> InquirySetupResponse:
+) -> CreatedInquiryResponse:
     """Create a setup topic and fill the eight fields from the course description."""
     return await inquiry_service.create_inquiry_topic(
         db, current_user, courseId, payload

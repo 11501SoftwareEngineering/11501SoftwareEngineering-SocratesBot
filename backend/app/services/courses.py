@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authz import is_super_admin
-from app.core.enums import CourseRole, TaPermission
+from app.core.enums import CourseRole, TaPermission, UserRole
 from app.crud import course as course_crud
 from app.crud import user as user_crud
 from app.models.course import Course, CourseMembership
@@ -19,10 +19,13 @@ from app.models.user import User
 from app.schemas.course import (
     CourseCreateRequest,
     CourseCreateResponse,
+    CourseDetailResponse,
     CourseJoinRequest,
     CourseJoinResponse,
     CourseListItem,
     CourseMemberListItem,
+    CourseUpdateRequest,
+    CourseUpdateResponse,
     TaAssignRequest,
     TaAssignResponse,
     TaPermissionsUpdateRequest,
@@ -128,6 +131,17 @@ def sort_permissions(permissions: Iterable[str]) -> list[str]:
     return sorted(set(permissions), key=lambda p: _PERMISSION_ORDER[TaPermission(p)])
 
 
+async def get_my_ta_permissions(
+    db: AsyncSession, user: User, course_id: UUID, role: CourseRole | None
+) -> list[str]:
+    """The caller's ordered TA permissions in ``course_id``; empty unless TA."""
+    if role is not CourseRole.TA:
+        return []
+    return sort_permissions(
+        await course_crud.get_ta_permissions(db, course_id=course_id, user_id=user.id)
+    )
+
+
 async def require_course_teacher_or_ta(
     db: AsyncSession, user: User, course_id: UUID, permission: TaPermission
 ) -> tuple[Course, CourseRole]:
@@ -225,6 +239,46 @@ async def list_my_courses(db: AsyncSession, user: User) -> list[CourseListItem]:
             )
         )
     return items
+
+
+async def get_course(
+    db: AsyncSession, user: User, course_id: UUID
+) -> CourseDetailResponse:
+    """Course info for a member; non-members get 404 like a missing course."""
+    course = await course_crud.get_course_by_id(db, course_id)
+    role = await get_my_course_role(db, user, course_id) if course else None
+    if course is None or role is None:
+        raise course_not_found()
+    return CourseDetailResponse(
+        course_id=course.id,
+        name=course.name,
+        description=course.description,
+        teacher_name=await course_crud.get_user_name(db, course.created_by),
+        my_role=role,
+        my_permissions=await get_my_ta_permissions(db, user, course.id, role),
+        invite_code=course.invitation_code,
+    )
+
+
+async def update_course(
+    db: AsyncSession, teacher: User, course_id: UUID, payload: CourseUpdateRequest
+) -> CourseUpdateResponse:
+    course = await require_course_teacher(db, teacher, course_id)
+    try:
+        course = await course_crud.update_course(
+            db, course, name=payload.name, description=payload.description
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise
+    return CourseUpdateResponse(
+        course_id=course.id,
+        name=course.name,
+        description=course.description,
+        invite_code=course.invitation_code,
+        message="Course updated",
+    )
 
 
 async def delete_course(db: AsyncSession, teacher: User, course_id: UUID) -> None:
@@ -375,29 +429,26 @@ async def list_course_members(
             else (course_crud.MEMBERSHIP_STUDENT, course_crud.MEMBERSHIP_TA)
         )
     rows = await course_crud.list_course_members(db, course_id, roles=db_roles)
-
-    ta_ids: list[UUID] = []
-    for member, membership in rows:
-        if membership.role == course_crud.MEMBERSHIP_TA:
-            ta_ids.append(member.id)
     ta_permissions = await course_crud.list_ta_permissions(
-        db, course_id=course_id, user_ids=ta_ids
+        db,
+        course_id=course_id,
+        user_ids=[
+            member.id
+            for member, membership in rows
+            if membership.role == course_crud.MEMBERSHIP_TA
+        ],
     )
-
-    items: list[CourseMemberListItem] = []
-    for member, membership in rows:
-        permissions = ta_permissions.get(member.id, [])
-        items.append(
-            CourseMemberListItem(
-                user_id=member.id,
-                account_id=member.account_id,
-                name=member.name,
-                role=_ROLE_BY_DB_VALUE[membership.role],
-                joined_at=membership.joined_at,
-                permissions=sort_permissions(permissions),
-            )
+    return [
+        CourseMemberListItem(
+            user_id=member.id,
+            account_id=member.account_id,
+            name=member.name,
+            role=_ROLE_BY_DB_VALUE[membership.role],
+            joined_at=membership.joined_at,
+            permissions=sort_permissions(ta_permissions.get(member.id, [])),
         )
-    return items
+        for member, membership in rows
+    ]
 
 
 async def remove_course_student(
@@ -439,21 +490,17 @@ async def _require_active_ta(
     return membership
 
 
-async def assign_course_ta(
-    db: AsyncSession, teacher: User, course_id: UUID, payload: TaAssignRequest
-) -> TaAssignResponse:
-    """Make any registered account a TA of the course with ``permissions``.
+# Assigning without ``permissions`` grants all of them.
+_ALL_TA_PERMISSIONS = sort_permissions(TaPermission)
 
-    A student of the course is promoted in place (sessions are kept); someone
-    who left or was removed rejoins as a TA; anyone else is added as a TA.
+
+async def _require_assignable_account(db: AsyncSession, account_id: str) -> User:
+    """Return the account behind ``account_id`` if it may become a TA.
 
     Raises:
-        HTTPException: 404 course / account missing; 403 not the course
-            teacher; 400 already a TA here, a teacher of this course, or an
-            admin.
+        HTTPException: 404 account missing; 400 an admin or a teacher account.
     """
-    await require_course_teacher(db, teacher, course_id)
-    target = await user_crud.get_user_by_account(db, payload.account_id)
+    target = await user_crud.get_user_by_account(db, account_id)
     if target is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -461,27 +508,74 @@ async def assign_course_ta(
         )
     if is_super_admin(target):
         raise _ta_assign_rejected("Admins cannot be TAs")
-    if await course_crud.is_course_instructor(
-        db, course_id=course_id, teacher_id=target.id
-    ):
-        raise _ta_assign_rejected("Teachers of this course cannot be TAs")
+    # Only student (USER) accounts; this also covers the course's own teacher.
+    if target.role != UserRole.USER.value:
+        raise _ta_assign_rejected("Teacher accounts cannot be TAs")
+    return target
+
+
+def _is_active_ta(membership: CourseMembership | None) -> bool:
+    return (
+        membership is not None
+        and membership.left_at is None
+        and membership.role == course_crud.MEMBERSHIP_TA
+    )
+
+
+async def assign_course_ta(
+    db: AsyncSession, teacher: User, course_id: UUID, payload: TaAssignRequest
+) -> TaAssignResponse:
+    """Make a student (USER) account a TA of the course.
+
+    ``payload.permissions`` picks the granted permissions; omitted, all four
+    are granted.
+
+    A student of the course is promoted in place (sessions are kept); someone
+    who left or was removed rejoins as a TA; anyone else is added as a TA.
+
+    With ``payload.check`` only the checks run, nothing is written, so the
+    confirm dialog can show the account's name or the error first.
+
+    Raises:
+        HTTPException: 404 course / account missing; 403 not the course
+            teacher; 400 already a TA here, a teacher account, or an admin.
+    """
+    await require_course_teacher(db, teacher, course_id)
+    target = await _require_assignable_account(db, payload.account_id)
+    permissions = (
+        _ALL_TA_PERMISSIONS
+        if payload.permissions is None
+        else sort_permissions(payload.permissions)
+    )
+    if payload.check:
+        membership = await course_crud.get_membership(
+            db, course_id=course_id, user_id=target.id
+        )
+        if _is_active_ta(membership):
+            raise _ta_assign_rejected(_ALREADY_TA_DETAIL)
+        return TaAssignResponse(
+            user_id=target.id,
+            account_id=target.account_id,
+            name=target.name,
+            permissions=permissions,
+            message="TA can be assigned",
+        )
+
     # Lock the row (active or soft-left) so a concurrent removal, leave or
     # revoke cannot slip in between this check and the write.
     membership = await course_crud.get_membership(
         db, course_id=course_id, user_id=target.id, for_update=True
     )
-    if (
-        membership is not None
-        and membership.left_at is None
-        and membership.role == course_crud.MEMBERSHIP_TA
-    ):
+    if _is_active_ta(membership):
         raise _ta_assign_rejected(_ALREADY_TA_DETAIL)
 
-    permissions = sort_permissions(payload.permissions)
     try:
         if membership is None:
             await course_crud.add_ta_membership(
-                db, course_id=course_id, user_id=target.id, permissions=permissions
+                db,
+                course_id=course_id,
+                user_id=target.id,
+                permissions=permissions,
             )
         else:
             await course_crud.promote_to_ta(db, membership, permissions)

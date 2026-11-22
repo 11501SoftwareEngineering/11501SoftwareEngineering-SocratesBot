@@ -1,4 +1,4 @@
-"""Unprefixed inquiry routes. The caller is the course instructor."""
+"""Unprefixed inquiry routes. Setup allows course teachers or authorized TAs; publish requires teacher."""
 
 from typing import Annotated
 from uuid import UUID
@@ -6,14 +6,18 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import TeacherUser, get_db
+from app.api.deps import ActiveUser, TeacherUser, get_db
 from app.api.openapi_responses import (
     INQUIRY_GENERATE_RESPONSES,
+    INQUIRY_MODEL_LIST_RESPONSES,
     INQUIRY_PUBLISH_RESPONSES,
     INQUIRY_SETUP_READ_RESPONSES,
     INQUIRY_SETUP_WRITE_RESPONSES,
+    INQUIRY_SUGGEST_RESPONSES,
 )
 from app.schemas.inquiry import (
+    GenerateInquiryRequest,
+    InquiryModelResponse,
     InquirySetupResponse,
     InquirySetupWriteResponse,
     OpeningMessageRequest,
@@ -27,6 +31,19 @@ router = APIRouter(tags=["inquiry"])
 
 
 @router.get(
+    "/inquiry-models",
+    response_model=list[InquiryModelResponse],
+    responses=INQUIRY_MODEL_LIST_RESPONSES,
+)
+async def list_inquiry_models(
+    current_user: ActiveUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[InquiryModelResponse]:
+    """List the models a teacher or TA can pick, with per-million-token prices."""
+    return await inquiry_service.list_inquiry_models(db, current_user)
+
+
+@router.get(
     "/topics/{topicId}/setup",
     response_model=InquirySetupResponse,
     response_model_exclude_none=True,
@@ -34,10 +51,10 @@ router = APIRouter(tags=["inquiry"])
 )
 async def get_inquiry_setup(
     topicId: UUID,
-    current_user: TeacherUser,
+    current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InquirySetupResponse:
-    """Read the saved inquiry."""
+    """Read saved fields; null-valued keys are omitted, including inside setup."""
     return await inquiry_service.get_inquiry_setup(db, current_user, topicId)
 
 
@@ -50,26 +67,42 @@ async def get_inquiry_setup(
 async def save_inquiry_setup(
     topicId: UUID,
     payload: SaveInquiryRequest,
-    current_user: TeacherUser,
+    current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InquirySetupWriteResponse:
-    """Save the eight fields during setup. This does not publish."""
+    """Save setup and explicit model/language selections; omitted selections are preserved."""
     return await inquiry_service.save_inquiry_setup(db, current_user, topicId, payload)
+
+
+@router.post(
+    "/topics/{topicId}/setup/generate",
+    response_model=InquirySetupResponse,
+    response_model_exclude_none=True,
+    responses=INQUIRY_SUGGEST_RESPONSES,
+)
+async def generate_inquiry(
+    topicId: UUID,
+    payload: GenerateInquiryRequest,
+    current_user: ActiveUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> InquirySetupResponse:
+    """Suggest eight fields from the course description. This does not save them."""
+    return await inquiry_service.generate_inquiry(db, current_user, topicId, payload)
 
 
 @router.post(
     "/topics/{topicId}/setup/refine",
     response_model=InquirySetupResponse,
     response_model_exclude_none=True,
-    responses=INQUIRY_GENERATE_RESPONSES,
+    responses=INQUIRY_SUGGEST_RESPONSES,
 )
 async def refine_inquiry(
     topicId: UUID,
     payload: RefineInquiryRequest,
-    current_user: TeacherUser,
+    current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InquirySetupResponse:
-    """Regenerate the eight fields from the setup on screen and the feedback."""
+    """Suggest eight fields from the setup on screen and the feedback. This does not save them."""
     return await inquiry_service.refine_inquiry(db, current_user, topicId, payload)
 
 
@@ -81,7 +114,7 @@ async def refine_inquiry(
 async def opening_message(
     topicId: UUID,
     payload: OpeningMessageRequest,
-    current_user: TeacherUser,
+    current_user: ActiveUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> OpeningMessageResponse:
     """Draft an opening line from the supplied setup and store it."""

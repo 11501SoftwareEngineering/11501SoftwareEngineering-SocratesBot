@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # Optional comma-separated seed pack names (empty → default core packs).
     SEED_PACKS: str = ""
 
+    # Debug output is explicit and development-only.
+    SQL_ECHO: bool = False
+    AI_TRACE_ENABLED: bool = False
+
     # Database (PostgreSQL)
     POSTGRES_USER: Annotated[SecretStr, Field(min_length=1)]
     POSTGRES_DB: Annotated[SecretStr, Field(min_length=1)]
@@ -56,6 +60,8 @@ class Settings(BaseSettings):
 
     # Security & JWT
     JWT_SECRET_KEY: Annotated[SecretStr, Field(min_length=32)]
+    # Encrypts a teacher's OpenRouter key at rest. Losing it makes stored keys unreadable.
+    TEACHER_API_KEY_SECRET: Annotated[SecretStr, Field(min_length=32)]
     JWT_ALGORITHM: NonEmptyStr
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -69,9 +75,14 @@ class Settings(BaseSettings):
 
     # LLM API via OpenRouter. The model id stays in server config; clients never send or read it.
     OPENAI_API_KEY: SecretStr
+    OPENAI_API_KEYS: SecretStr = SecretStr("")
     ANTHROPIC_API_KEY: SecretStr
-    OPENAI_MODEL: NonEmptyStr = "openai/gpt-4o-mini"
+    OPENAI_MODEL: NonEmptyStr = "openai/gpt-6-luna"
+    # Legacy configuration compatibility; course validity uses the activity model.
+    OPENAI_VALIDITY_MODEL: NonEmptyStr = "openai/gpt-6-luna"
     OPENAI_BASE_URL: NonEmptyStr = "https://openrouter.ai/api/v1"
+    DIALOGUE_CONTEXT_TOKEN_BUDGET: int = Field(default=12_000, ge=1_024)
+    REPORT_CONTEXT_TOKEN_BUDGET: int = Field(default=32_000, ge=1_024)
 
     @model_validator(mode="after")
     def _default_language_must_be_supported(self) -> Self:

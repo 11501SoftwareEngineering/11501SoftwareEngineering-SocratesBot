@@ -9,6 +9,7 @@ const mergeClasses = extendTailwindMerge({
     classGroups: {
       'font-size': [
         'text-header',
+        'text-page-title',
         'text-h1-title',
         'text-footer',
         'text-h2-title',
@@ -62,6 +63,8 @@ const API_ERROR_MESSAGES: Record<string, string> = {
   'Session not found': '找不到這段對話',
   'Not the session owner': '這不是你的對話',
   'Session is not completed': '對話還沒結束，完成後才能看結果',
+  'Dialogue is not completed': '對話還沒結束，完成後才能看結果',
+  'Report not found': '個人報告還沒開始產生',
   // FastAPI 找不到這個網址（通常是後端還沒有這支 API、或後端版本太舊）
   'Not Found': '找不到這個功能，可能是後端還沒更新',
   // 以下是假後端（src/mocks）才會回的

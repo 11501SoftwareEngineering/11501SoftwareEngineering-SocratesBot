@@ -76,6 +76,20 @@ async def is_course_instructor(
     return await db.scalar(statement) is not None
 
 
+async def is_active_ta_anywhere(db: AsyncSession, user_id: UUID) -> bool:
+    """Return whether ``user_id`` is an active TA of at least one course."""
+    statement = select(
+        select(CourseMembership.id)
+        .where(
+            CourseMembership.user_id == user_id,
+            CourseMembership.role == MEMBERSHIP_TA,
+            CourseMembership.left_at.is_(None),
+        )
+        .exists()
+    )
+    return bool(await db.scalar(statement))
+
+
 def _course_count_subqueries():
     student_count = (
         select(func.count())
@@ -169,6 +183,28 @@ async def get_course_role(
         CourseMembership.left_at.is_(None),
     )
     return await db.scalar(statement)
+
+
+async def count_active_students(db: AsyncSession, course_id: UUID) -> int:
+    statement = (
+        select(func.count())
+        .select_from(CourseMembership)
+        .where(CourseMembership.course_id == course_id, *_active_student_filters())
+    )
+    return int(await db.scalar(statement) or 0)
+
+
+async def update_course(
+    db: AsyncSession, course: Course, *, name: str, description: str | None
+) -> Course:
+    course.name = name
+    course.description = description
+    await db.flush()
+    return course
+
+
+async def get_user_name(db: AsyncSession, user_id: UUID) -> str:
+    return await db.scalar(select(User.name).where(User.id == user_id)) or ""
 
 
 async def delete_course(db: AsyncSession, course: Course) -> None:

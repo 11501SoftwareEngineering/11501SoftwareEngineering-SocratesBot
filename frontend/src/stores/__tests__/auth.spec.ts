@@ -12,7 +12,7 @@ import router from '@/router'
 import { useAuthStore, type User } from '../auth'
 
 const student: User = {
-  account: 'student-1',
+  account_id: 'student-1',
   name: 'Student',
   role: 'STUDENT',
   roles: ['STUDENT'],
@@ -126,7 +126,7 @@ describe('session cleanup', () => {
 
       expect(signal?.aborted).toBe(true)
       expect(isCancelledError(await cancelled)).toBe(true)
-      authStore.setAuth('new-token', { ...student, account: 'student-2' })
+      authStore.setAuth('new-token', { ...student, account_id: 'student-2' })
       queryClient.setQueryData(queryKey, 'New account course')
       finishRequest('Old account course')
       await flushPromises()

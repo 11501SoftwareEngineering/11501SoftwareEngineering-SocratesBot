@@ -12,6 +12,7 @@ help:
 	@echo "Docker: db-dev, db-dev-down, db-prod, db-prod-down"
 	@echo 'Migrations: db-revision message="...", db-upgrade, db-downgrade, db-current, db-heads'
 	@echo "CI gate: db-migration-check (Alembic chain vs origin/main)"
+	@echo "Env: TEACHER_API_KEY_SECRET in backend/.env (openssl rand -hex 32)"
 	@echo ""
 	@echo "From repo root: make -C backend db-upgrade"
 	@echo "                make -C backend db-migration-check"

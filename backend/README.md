@@ -13,6 +13,7 @@
     cp backend/config.yaml.example backend/config.yaml
     ```
     `.env` 放密鑰；`config.yaml` 放非密鑰本機設定（見下方 Super Admin）。
+    老師自備的 OpenRouter key 會加密後存進資料庫。`.env` 的 `TEACHER_API_KEY_SECRET` 是解密用的伺服器金鑰，至少 32 字元，可用 `openssl rand -hex 32` 產生。所有課程 AI 工作（含助教／學生觸發與背景報告）使用課程擁有者的 key；沒設時使用 `OPENAI_API_KEYS` 健康 key 輪替池（未設定時沿用單一 `OPENAI_API_KEY`）。老師 key 解密或呼叫失敗不會改用伺服器額度；伺服器池支援 429/402 冷卻與有限次故障轉移。換掉 `TEACHER_API_KEY_SECRET` 之後，已存的老師 key 無法解密。
 
 3. 在 repo 根目錄安裝鎖定的 Python 套件並啟用 pre-commit：
     ```bash
@@ -150,3 +151,105 @@ make -C backend db-migration-check                # 檢查是否對齊 origin/ma
 ## Python 環境
 請不要直接使用 python 或 python3 指令，用 `uv run <.py file>`。這樣才會使用 uv 的建立環境
 要新增修改任何套件，也請使用 uv 操作，不要直接使用 pip
+
+## AI Prompt 與對話上下文
+
+所有模型工作的 system prompt 放在 `app/core/prompts/*.toml`，由 `app/core/prompts.py` 依 stage 載入，例如 `dialogue`、`validity`、`status`、`personal_report` 與 `class_summary`。修改 prompt 文字時，請在同一個變更中更新該檔的 `version`，並保留文末的「版本：…」字面值與現有 strict JSON schema。版本字串格式為 `<stage>-<描述>-<版本>`，例如 `stage1-validated-complete-3.2.0`。
+
+成功生成結果的 prompt 版本存在各表的 `generation_meta`（JSONB）欄位中，內容為 `{prompt_stage, prompt_version}`。`sessions.generation_meta.context_summary` 保存滾動摘要 checkpoint（摘要文字、已涵蓋訊息數與產生它的 prompt 版本）。舊資料沒有這些細節時為 NULL。學生回覆存於 assistant 的 `DialogueMessage`，設定生成存於 `InquiryRevision`，背景報告與班級摘要則存於各自的 attempt。完整對話仍保存在 `DialogueMessage`；若上下文超出預算，`Session` 只額外保存目前的摘要 checkpoint 和已涵蓋訊息數，舊訊息不會刪除。
+
+`DIALOGUE_CONTEXT_TOKEN_BUDGET` 預設為 12,000，計算 system prompt、對話資料、strict schema、訊息格式、安全餘裕和輸出 token 預留。估算使用 `tiktoken`，依實際傳給 provider 的模型 ID 選擇明確 tokenizer 對照；沒有對照的模型會在 provider 呼叫前被拒絕。新增或更換可用模型時，請先在 `app/services/token_budget.py` 補上並驗證 tokenizer 對照。各 stage 的輸出上限由 prompt registry 設定。
+
+Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 transcript、prompt 來源 metadata 和目前摘要 checkpoint。此流程不使用 Redis 作為對話資料或 prompt 快取，之後若要加快速度，先依實際流量與 profiling 找出瓶頸。
+
+## Stage 2 對話流程
+
+每個學生回合依序執行三個模型階段（`app/services/dialogue_turn.py`）：
+
+1. **validity**：判斷學生回答是否切題並說明理由（YES / NO）。NO 時只呼叫這一次，回覆為固定的離題訊息（`app/core/dialogue_messages.toml`），不呼叫後兩個階段。
+2. **status**：產生這一回合的完整 progress 快照。
+3. **planning**：產生可見回覆與提問方式（`present_counterexample` 或 `change_one_condition`）。
+
+就緒由伺服器判定（`app/services/dialogue_progress.py`），不由模型決定。`goal_reached` 為真，需同時符合：
+
+- 至少 3 個學生回合；
+- 四個里程碑（position、reason、examination、response）都已達成，且每個證據都指向目前或之前的學生回合；
+- response 在 examination 之後；
+- 模型在 status 回報 `ready`。
+
+儲存方式：
+
+- `sessions.generation_meta.progress`：最新的 progress 快照。
+- `dialogue_messages.generation_meta.analysis`：每則 AI 回覆的 move、status、safetyLevel，以及各階段的 prompt 版本。
+- 寫入前 `save_exchange` 會先 `SELECT … FOR UPDATE` 鎖住 session，progress 與 goal 的更新在同一交易內序列化。
+
+既有 session 沒有 progress：在它的第一個新回合前，會呼叫一次 status，對整段對話（附 exchange 編號）做補算，之後照常運作。這個補算每個 session 只做一次。
+
+## 模型設定
+
+- `OPENAI_MODEL` 預設為 `openai/gpt-6-luna`。所有課程 AI 工作（包含 validity、個人報告、班級摘要）優先使用題目所選模型，未設定才用此預設。`OPENAI_VALIDITY_MODEL` 僅保留設定相容性，不再覆蓋題目模型。
+- 各任務的 timeout 與 `max_tokens` 上限（`app/services/model_client.py`）：
+  - 課程設定（`inquiry_setup`）：45 秒，上限 2400 tokens；推理模型送 `reasoning: {effort: low}`。
+  - 其他任務：60 秒，上限 4500 tokens。
+  - 呼叫端可以要求更小的值，不能超過上限。超時會拋出 `ModelTimeoutError`。
+- `REASONING_MODELS`：模型目錄中的 8 個 OpenAI 模型。2026-11-20 於 OpenRouter 公開模型清單確認，這 8 個都列出 `reasoning` 參數。
+- 對話回覆使用 topic 上設定的模型，沒有才使用 `OPENAI_MODEL`。
+
+## 個人報告的 progress 快照
+
+- `report_attempts.generation_meta.progress` 在建立 attempt 時寫入當下的 `sessions.generation_meta.progress`。之後對話再變動，報告的依據不會改變。只有建立新 attempt 時才會取新快照；教師 retry 對 ready 或有效的執行中 attempt 會沿用，不強制重新產生。
+- 沒有快照的 attempt（舊資料，或從未有 progress 的對話）只根據對話紀錄產生報告，快照欄位為 `NULL`。
+
+## 尚未實作與刻意的設計選擇
+
+- 離題回覆不顯示模型的內部推理（`thinkingProgress`），只顯示固定的說明文字。
+- `safety_interruption` 與 `student_requested_stop` 尚未結束對話。`sessions.outcome` 目前有 CHECK 約束，新增 `interrupted` 需要先決定 migration 方式。
+- 報告 schema 尚未映射新欄位，`ReportBody` 的形狀不變。
+
+## 已知限制（部署前需處理）
+
+- **tokenizer 估計限制**：目前八個 catalog 模型皆有 o200k_base 對照，因此預設 Luna 的缺少對照錯誤已修正。此對照仍為估計，未證明與 provider token 計數完全相同；openai/gpt-6-sol 尚未加入 catalog／對照。
+- 既有 session 的 progress 補算只在它的下一個新回合發生；既有 report attempt 不會回補快照。
+
+## 課程設定（Stage 1）
+
+- 建立 topic 時，課程描述在模型呼叫前經過守門（`app/services/teacher_input.py`）：長度 20 到 6000 字；拒絕鍵盤序列、重複填充、沒有字母的文字，以及單一字母佔比過高的內容。不通過回 422，不呼叫模型。
+- 模型輸出的 topic、core_question、inquiry_focus 若為占位值（未指定、N/A 等），回 503，不儲存。
+- 背景或排除事項未指定時，回應的 `warnings` 會提醒教師在核准前確認。
+- 課程設定超過 45 秒，回 504，教師的輸入保留在前端。
+- 客戶端中止回 499 尚未實作。FastAPI 不會因為客戶端斷線而取消 handler，需要另外設計。
+
+API transport, lifecycle and retry contracts: [integration guide](../docs/AI_BACKEND_CONTRACT.md).
+
+
+### Stage3 原生班級統整
+
+個人報告各自在對話結束後產生並供學生閱讀。班級摘要需等所有已建立對話結束、所有 completed/ended 對話的最新報告 ready，才可開始。缺少原生證據的舊報告須由教師重試端點重新產生。最多50份；超出輸入或token預算不會截斷資料。
+
+使用原生 CentralReport 與動態觀點分組，模型只輸出定性群組，後端驗證成員與計算比例。無法分類的報告仍列入分母；全無足夠證據時直接產生結構化結果，不呼叫模型。私有原生結果保存在既有 JSON 欄位；既有教師編輯／審核／發布／撤回及學生 DTO 不變。詳見 docs/AI_BACKEND_CONTRACT.md。無新增 migration。
+
+測試：`pytest tests/unit/test_central_synthesis.py tests/unit/test_stage3_jobs.py tests/api/v1/test_summary_routes.py -q`。真實資料庫測試為 `tests/integration/test_native_stage3_postgres.py`，需要 disposable `SESSION_TEST_DATABASE_URL`。httpyac 手動驗收見 `scenarios/user-journey/native-stage3/README.md`，不能將未執行的 scenario 視為測試通過。
+
+
+### Teacher usage metering
+
+Usage follow-up requires Alembic revision `b8e39a1547c2`. GET `/api/v1/users/me/ai/usage` aggregates provider requests attributed to the authenticated course teacher in the current UTC month, including retries/failed output. Unknown token totals/cost are null, not zero. No historic provider-account backfill. See [API contract](../docs/AI_BACKEND_CONTRACT.md#real-usage-metering-usage-follow-up-branch-not-deployed) for ownership, failure semantics and examples. Ledger recording uses a separate DB connection; size the pool for request/job connections plus metering writes.
+
+
+### AI diagnostics and response traces
+
+AI calls emit structured `ai_event` logs on `app.ai`. Browser responses include `X-Request-ID` (also exposed through CORS); use it to find the HTTP request and its validity/status/planning call IDs. Background events include report/summary job IDs. Logs include requested/actual model when available, task, prompt version/hash, schema hash, output cap, response status, finish reason, token/reasoning counts, latency, provider generation ID and usage-record ID. Normal events exclude messages, responses and credentials.
+
+SQL query echo is now disabled by default. Set `SQL_ECHO=true` explicitly in development only if SQL debugging is needed. To inspect a model's returned output, set `AI_TRACE_ENABLED=true` with `APP_ENV=development` and restart the backend. Redacted response JSON is written to `backend/.local/ai-traces/ai-responses-<pid>.jsonl`, rotating at1MB with3 backups per worker; directory is Git-ignored. This records responses, not prompts/headers; credentials and reasoning text are removed. It is disabled by default and never enabled in production by this flag. Responses may contain student text: use only authorized development data, restrict access and delete the files after debugging.
+
+See [AI debug playbook](../docs/AI_BACKEND_CONTRACT.md#ai-call-debugging-usage-and-diagnostics-follow-up) for pinpointing truncation versus malformed/schema/evidence/provider errors. Instrumentation does not change model selection, prompts, token limits or retry behavior, and does not prove the cause of an earlier unlogged502.
+
+
+Developer handoff: the [step-by-step diagnostics walkthrough](../docs/AI_BACKEND_CONTRACT.md#developer-walkthrough) covers startup/configuration, collecting X-Request-ID, Windows/Bash log filtering, interpreting a status truncation example, reading redacted response files, missing-log troubleshooting, and the exact evidence to include in a bug report. Start there when investigating a502; the logging feature itself does not fix it.
+
+
+Stage2 truncation follow-up: status prompt `stage2_status-1.0.1` provides3000 output-token headroom for both new-turn status and old-dialogue progress catch-up (formerly1000). Restart the backend after upgrading; confirm version/cap in `call_started` logs. `progress_catch_up_started` identifies catch-up. Read the [measured reproduction and compatibility notes](../docs/AI_BACKEND_CONTRACT.md#stage2-status-truncation-hot-fix-local-follow-up-above-pr274). The captured-response regression test uses mocks and makes no paid requests.
+
+Stage2 relevance follow-up: validity prompt `stage2_validity-1.0.2` accepts relevant answers without reasons, including uncertainty and premise challenges. Status still evaluates evidence and goal readiness. See [gate correction and verification limits](../docs/AI_BACKEND_CONTRACT.md#stage2-relevance-gate-correction-pr275). Restart to load the new prompt.
+
+Server key rotation: set optional OPENAI_API_KEYS to a comma-separated server pool and restart. Teacher keys keep priority;429/402 cool the failed server key and try another, at most3 distinct keys per model call. Without a pool, OPENAI_API_KEY behavior is preserved. See [configuration, sequence and operational limits](../docs/AI_BACKEND_CONTRACT.md#server-key-rotation). State is per worker; additional keys do not guarantee extra OpenRouter capacity.

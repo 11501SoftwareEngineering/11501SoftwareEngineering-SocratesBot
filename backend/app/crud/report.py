@@ -1,7 +1,8 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, literal, select, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import GenerationStatus, MessageSender
@@ -35,10 +36,14 @@ async def list_for_sessions(
     return list(await db.scalars(statement))
 
 
-async def insert_pending(db: AsyncSession, session_id: UUID) -> ReportAttempt:
+async def insert_pending(
+    db: AsyncSession, session_id: UUID, progress: dict | None = None
+) -> ReportAttempt:
+    """Create a pending attempt. ``progress`` is the snapshot the report uses."""
     attempt = ReportAttempt(
         session_id=session_id,
         status=GenerationStatus.PENDING.value,
+        generation_meta={} if progress is None else {"progress": progress},
         lease_expires_at=datetime.now(UTC) + LEASE,
     )
     db.add(attempt)
@@ -84,14 +89,37 @@ async def list_processing(db: AsyncSession) -> list[ReportAttempt]:
     return list(await db.scalars(statement))
 
 
-async def mark_ready(db: AsyncSession, attempt_id: UUID, body: dict) -> None:
+async def mark_ready(
+    db: AsyncSession,
+    attempt_id: UUID,
+    body: dict,
+    *,
+    prompt_stage: str,
+    prompt_version: str,
+    report_metadata: dict | None = None,
+) -> None:
     await db.execute(
         update(ReportAttempt)
         .where(
             ReportAttempt.id == attempt_id,
             ReportAttempt.status == GenerationStatus.PROCESSING.value,
         )
-        .values(status=GenerationStatus.READY.value, result_json=body)
+        .values(
+            status=GenerationStatus.READY.value,
+            result_json=body,
+            generation_meta=func.coalesce(
+                ReportAttempt.generation_meta, literal({}, JSONB)
+            ).op("||")(
+                literal(
+                    {
+                        **(report_metadata or {}),
+                        "prompt_stage": prompt_stage,
+                        "prompt_version": prompt_version,
+                    },
+                    JSONB,
+                )
+            ),
+        )
     )
 
 
@@ -146,3 +174,26 @@ async def student_turn_count(db: AsyncSession, session_id: UUID) -> int:
         DialogueMessage.sender == MessageSender.STUDENT,
     )
     return len(list(await db.scalars(statement)))
+
+
+async def save_source(
+    db: AsyncSession, attempt_id: UUID, source: dict, digest: str
+) -> None:
+    """Freeze the report input before calling the provider; metadata is private."""
+    result = await db.execute(
+        update(ReportAttempt)
+        .where(
+            ReportAttempt.id == attempt_id,
+            ReportAttempt.status == GenerationStatus.PROCESSING.value,
+        )
+        .values(
+            generation_meta=func.coalesce(
+                ReportAttempt.generation_meta, literal({}, JSONB)
+            ).op("||")(
+                literal({"report_source": source, "source_digest": digest}, JSONB)
+            )
+        )
+    )
+
+    if result.rowcount != 1:
+        raise ValueError("Report attempt is no longer processing")

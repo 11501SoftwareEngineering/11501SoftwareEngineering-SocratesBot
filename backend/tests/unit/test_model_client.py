@@ -11,7 +11,12 @@ import pytest
 from pydantic import SecretStr
 
 from app.core.config import settings
-from app.services.model_client import ModelCallError, OpenAIChatClient
+from app.services.model_client import (
+    ModelCallError,
+    ModelTimeoutError,
+    OpenAIChatClient,
+    TaskLimits,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -77,6 +82,27 @@ async def test_provider_error_logs_status_only(
     assert KEY not in caplog.text
     assert DIALOGUE not in caplog.text
     assert "502" in caplog.text
+
+
+async def test_passed_api_key_is_the_openrouter_bearer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    teacher_key = "sk-teacher-openrouter-key"
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr(KEY))
+    monkeypatch.setattr(settings, "OPENAI_MODEL", "gpt-test")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["authorization"] == f"Bearer {teacher_key}"
+        assert KEY.encode() not in request.content
+        return _completion({"topic": "kept"})
+
+    parsed = await _client(handler).complete_json(
+        instructions="Write JSON",
+        material="notes",
+        api_key=teacher_key,
+    )
+
+    assert parsed == {"topic": "kept"}
 
 
 async def test_refusal_is_not_logged(
@@ -191,3 +217,96 @@ async def test_retry_after_above_two_seconds_is_not_waited(
     assert caught.value.status_code == 429
     assert calls == 1
     assert slept == []
+
+
+def _capture(seen: list[dict]):
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return _completion({"reply": "ok", "goal_reached": False})
+
+    return handler
+
+
+async def test_course_setup_is_capped_and_uses_low_reasoning_on_reasoning_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr(KEY))
+    seen: list[dict] = []
+
+    await _client(_capture(seen)).complete_json(
+        instructions="Design",
+        material="course",
+        model="openai/gpt-6-luna",
+        max_tokens=5000,
+    )
+
+    assert seen[0]["max_tokens"] == 2400
+    assert seen[0]["reasoning"] == {"effort": "low"}
+
+
+async def test_non_reasoning_model_gets_no_reasoning_parameter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr(KEY))
+    seen: list[dict] = []
+
+    await _client(_capture(seen)).complete_json(
+        instructions="Design",
+        material="course",
+        model="gpt-test",
+    )
+
+    assert seen[0]["max_tokens"] == 2400
+    assert "reasoning" not in seen[0]
+
+
+async def test_course_setup_times_out_as_a_model_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", SecretStr(KEY))
+    monkeypatch.setattr(
+        "app.services.model_client.DESIGN_LIMITS",
+        TaskLimits(timeout_s=0.05, max_tokens=2400, low_reasoning=True),
+    )
+
+    async def slow(request: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(1)
+        return _completion({"topic": "late"})
+
+    with pytest.raises(ModelTimeoutError) as caught:
+        await _client(slow).complete_json(instructions="Design", material="course")
+
+    assert caught.value.status_code is None
+    assert isinstance(caught.value, ModelCallError)
+
+
+def test_default_model_is_a_valid_openrouter_id() -> None:
+    field = type(settings).model_fields["OPENAI_MODEL"]
+
+    assert field.default == "openai/gpt-6-luna"
+
+
+async def test_opening_has_own_schema_key_and_task_limits():
+    from app.services.model_client import limits_for
+
+    def handler(request):
+        body = json.loads(request.content)
+        schema = body["response_format"]["json_schema"]
+        assert schema["name"] == "inquiry_opening"
+        assert set(schema["schema"]["properties"]) == {"opening_message"}
+        assert schema["schema"]["required"] == ["opening_message"]
+        assert schema["schema"]["additionalProperties"] is False
+        assert body["max_tokens"] == 500
+        assert body["model"] == "test/model"
+        assert request.headers["authorization"] == "Bearer opening-test-key"
+        return _completion({"opening_message": "What would change your view?"})
+
+    result = await _client(handler).complete_opening(
+        instructions="Opening only",
+        material="content_language: en",
+        model="test/model",
+        api_key="opening-test-key",
+        max_tokens=2000,
+    )
+    assert result["opening_message"] == "What would change your view?"
+    assert limits_for("inquiry_opening").timeout_s == 45

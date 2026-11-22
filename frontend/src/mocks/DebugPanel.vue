@@ -10,15 +10,15 @@ import { useRoute, useRouter } from 'vue-router'
 import { useQueryClient } from '@tanstack/vue-query'
 import { ROLE_LABELS } from '@/api/auth'
 import { getApiErrorMessage } from '@/lib/utils'
-import { HOME_ROUTE, useAuthStore } from '@/stores/auth'
+import { useAuthStore } from '@/stores/auth'
 import {
   addAnnouncement,
   addCourse,
   addStudents,
   addTopic,
   clearAnnouncements,
+  failReports,
   finishMyChat,
-  addManyConclusions,
   finishTopicForClass,
   topicFromRoute,
   resetAllData,
@@ -61,9 +61,10 @@ const router = useRouter()
 const queryClient = useQueryClient()
 
 const ACCOUNTS = [
-  { account: 's001', label: '學生 王小明', note: '有一題完成、一題進行中' },
-  { account: 's012', label: '學生 鄭心怡', note: '還沒開始作答' },
-  { account: 'wang', label: '老師 王老師', note: '有兩門課' },
+  { account: 's001', label: '學生 王小明', note: '一題完成、一題進行中' },
+  { account: 's011', label: '助教 許家豪', note: '哲學概論的助教' },
+  { account: 's012', label: '學生 鄭心怡', note: '還沒加入課程（代碼 PHSP3456）' },
+  { account: 'wang', label: '老師 王老師', note: '兩門課、已設定 API key' },
   { account: 'chen', label: '老師 陳老師', note: '第一次登入，要先改密碼' },
   { account: 'admin', label: '管理員', note: '管理老師帳號' },
 ]
@@ -73,8 +74,8 @@ async function loginAs(account: string) {
   busy.value = true
   message.value = ''
   try {
-    const user = await authStore.login({ account, password: DEMO_PASSWORD })
-    await router.push({ name: HOME_ROUTE[user.role] })
+    const user = await authStore.login({ account_id: account, password: DEMO_PASSWORD })
+    await router.push({ name: authStore.homeRoute })
     message.value = `已切換成 ${user.name}`
   } catch (err) {
     const reason = getApiErrorMessage(err)
@@ -87,11 +88,8 @@ async function loginAs(account: string) {
 }
 
 const courseId = computed(() => String(route.params.courseId ?? ''))
-const topicId = computed(() => String(route.params.topicId ?? ''))
-const isStudentChat = computed(() => route.name === 'StudentChat')
-const isTeacherTopic = computed(() => route.name === 'TeacherTopic')
-// 老師問題頁、學生結果頁都可以用「新增很多結論」
-const resultTopicId = computed(() => topicFromRoute(route.params))
+// 目前頁面的探究活動（網址有 topicId，或學生報告頁從 sessionId 反查）
+const topicId = computed(() => topicFromRoute(route.params))
 
 async function run(action: () => string) {
   message.value = action()
@@ -273,7 +271,7 @@ const btn =
             :disabled="!courseId"
             @click="run(() => addTopic(courseId))"
           >
-            在這門課新增一個問題
+            在這門課新增一個已發布的活動
           </button>
           <button
             type="button"
@@ -286,26 +284,26 @@ const btn =
           <button
             type="button"
             :class="btn"
-            :disabled="!isTeacherTopic"
+            :disabled="!topicId"
             @click="run(() => finishTopicForClass(topicId))"
           >
-            讓全班完成這一題（老師問題頁）
+            讓全班完成這一題（活動相關頁面）
           </button>
           <button
             type="button"
             :class="btn"
-            :disabled="!resultTopicId"
-            @click="run(() => addManyConclusions(resultTopicId))"
+            :disabled="!topicId"
+            @click="run(() => failReports(topicId))"
           >
-            這一題新增 5 個結論並重新分配作答（老師問題頁／學生結果頁）
+            讓這一題的報告都產生失敗
           </button>
           <button
             type="button"
             :class="btn"
-            :disabled="!isStudentChat"
+            :disabled="!topicId"
             @click="run(() => finishMyChat(topicId))"
           >
-            直接結束這段對話（學生對話頁）
+            直接結束我的這段對話（學生對話頁）
           </button>
           <fieldset class="space-y-2 rounded-md border border-border p-3">
             <legend class="px-1 text-xs text-muted-foreground">新增公告</legend>
