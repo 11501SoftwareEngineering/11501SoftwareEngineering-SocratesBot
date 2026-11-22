@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import CourseRole, SessionStatus, TopicStage
+from app.core.enums import CourseRole, SessionStatus, TaPermission, TopicStage, UserRole
 from app.crud import course as course_crud
 from app.crud import topic as topic_crud
 from app.models.topic import Topic
@@ -28,7 +28,7 @@ def _topic_not_found() -> HTTPException:
 
 
 async def get_instructed_topic(
-    db: AsyncSession, teacher: User, topic_id: UUID
+    db: AsyncSession, teacher: User, topic_id: UUID, *, allow_ta: bool = False
 ) -> Topic:
     """Return the topic if it exists and ``teacher`` instructs its course.
 
@@ -38,7 +38,12 @@ async def get_instructed_topic(
     topic = await topic_crud.get_topic_by_id(db, topic_id)
     if topic is None:
         raise _topic_not_found()
-    await courses_service.require_course_teacher(db, teacher, topic.course_id)
+    if allow_ta and teacher.role != UserRole.TEACHER.value:
+        await courses_service.require_course_teacher_or_ta(
+            db, teacher, topic.course_id, TaPermission.EDIT_TOPICS
+        )
+    else:
+        await courses_service.require_course_teacher(db, teacher, topic.course_id)
     return topic
 
 
