@@ -26,6 +26,10 @@ class DialogueHistoryResponse(BaseModel):
     completed_turns: int
     goal_reached: bool
     awaiting_end_consent: bool
+    current_progress: dict | None = Field(
+        default=None,
+        description="Latest progress snapshot; milestones can regress independently of historical goal_reached.",
+    )
 
 
 class StreamMessageRequest(BaseModel):

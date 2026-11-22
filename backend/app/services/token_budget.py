@@ -26,6 +26,10 @@ _SCHEMA_OVERHEAD = 32
 _SAFETY_MARGIN = 64
 
 
+class ContextWindowExceeded(ValueError):
+    """A model request exceeds the configured dialogue budget."""
+
+
 class UnsupportedModelTokenizerError(ValueError):
     """The selected provider model has no reviewed tokenizer mapping."""
 

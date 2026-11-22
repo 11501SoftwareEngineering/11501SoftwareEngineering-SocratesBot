@@ -8,20 +8,17 @@ from app.core.config import settings
 from app.core.prompts import PromptDefinition
 from app.models.message import DialogueMessage
 from app.models.topic import Topic
+from app.services.dialogue_turn import PLANNING_SCHEMA, planning_material
 from app.services.model_client import (
-    _REPLY_SCHEMA,
     CONTEXT_SUMMARY_SCHEMA,
     ModelCallError,
     ModelClient,
 )
 from app.services.token_budget import (
+    ContextWindowExceeded,
     UnsupportedModelTokenizerError,
     estimate_total_request_tokens,
 )
-
-
-class ContextWindowExceeded(ValueError):
-    """The fixed prompt, newest student message, and retained turns do not fit."""
 
 
 @dataclass(frozen=True)
@@ -170,8 +167,8 @@ async def build_bounded_context(
     if not _fits(
         model_id=model_id,
         prompt=prompts.reply,
-        material=fixed_material,
-        schema=_REPLY_SCHEMA,
+        material=planning_material(topic, fixed_material),
+        schema=PLANNING_SCHEMA,
         budget=budget,
     ):
         raise ContextWindowExceeded(
@@ -188,8 +185,8 @@ async def build_bounded_context(
         if _fits(
             model_id=model_id,
             prompt=prompts.reply,
-            material=material,
-            schema=_REPLY_SCHEMA,
+            material=planning_material(topic, material),
+            schema=PLANNING_SCHEMA,
             budget=budget,
         ):
             return BoundedDialogueContext(
