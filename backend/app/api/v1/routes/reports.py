@@ -90,7 +90,7 @@ async def retry_teaching_report(
 ) -> StudentReportResponse:
     """Retry or reuse a completed dialogue report under the same rules as student POST.
 
-    This does not force regeneration of a ready report. A new progress snapshot
+    An incompatible legacy/native-evidence ready report is regenerated; a valid native ready report is reused. A new progress snapshot
     is taken only when a new attempt is inserted.
     """
     return await report_service.start_teacher_retry(

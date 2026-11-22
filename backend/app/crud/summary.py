@@ -5,7 +5,7 @@ from sqlalchemy import func, literal, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.enums import DialogueOutcome, GenerationStatus
+from app.core.enums import GenerationStatus
 from app.models.class_summary import ClassSummaryVersion, SummaryAttempt
 from app.models.report_attempt import ReportAttempt
 from app.models.session import Session
@@ -31,6 +31,53 @@ async def ready_report_bodies(
     for row in rows:
         latest[row.session_id] = row
     return [(str(row.id), row.result_json or {}) for row in latest.values()]
+
+
+async def has_open_dialogues(db: AsyncSession, topic_id: UUID) -> bool:
+    return (
+        await db.scalar(
+            select(Session.id)
+            .where(Session.topic_id == topic_id, Session.outcome == "open")
+            .limit(1)
+        )
+        is not None
+    )
+
+
+async def ready_native_reports(db: AsyncSession, topic_id: UUID) -> list[dict]:
+    sessions = list(
+        await db.scalars(
+            select(Session.id).where(
+                Session.topic_id == topic_id,
+                Session.outcome.in_(("completed", "ended")),
+            )
+        )
+    )
+    rows = list(
+        await db.scalars(
+            select(ReportAttempt)
+            .where(ReportAttempt.session_id.in_(sessions))
+            .order_by(ReportAttempt.created_at, ReportAttempt.id)
+        )
+    )
+    latest = {row.session_id: row for row in rows}
+    if any(
+        sid not in latest
+        or latest[sid].status != "ready"
+        or not latest[sid].result_json
+        for sid in sessions
+    ):
+        raise ValueError(
+            "Wait for every eligible personal report to be ready; retry failed reports"
+        )
+    return [
+        {
+            "report_id": str(latest[sid].id),
+            "session_id": str(sid),
+            "metadata": latest[sid].generation_meta or {},
+        }
+        for sid in sessions
+    ]
 
 
 async def insert_attempt(
@@ -61,8 +108,8 @@ async def latest_attempt(db: AsyncSession, topic_id: UUID) -> SummaryAttempt | N
     return await db.scalar(statement)
 
 
-async def mark_processing(db: AsyncSession, attempt_id: UUID) -> None:
-    await db.execute(
+async def mark_processing(db: AsyncSession, attempt_id: UUID) -> bool:
+    result = await db.execute(
         update(SummaryAttempt)
         .where(
             SummaryAttempt.id == attempt_id,
@@ -72,7 +119,9 @@ async def mark_processing(db: AsyncSession, attempt_id: UUID) -> None:
             status=GenerationStatus.PROCESSING.value,
             lease_expires_at=datetime.now(UTC) + LEASE,
         )
+        .returning(SummaryAttempt.id)
     )
+    return result.scalar_one_or_none() is not None
 
 
 async def extend_lease(db: AsyncSession, attempt_id: UUID) -> None:
@@ -100,7 +149,9 @@ async def mark_failed(db: AsyncSession, attempt_id: UUID) -> None:
         update(SummaryAttempt)
         .where(
             SummaryAttempt.id == attempt_id,
-            SummaryAttempt.status == GenerationStatus.PROCESSING.value,
+            SummaryAttempt.status.in_(
+                (GenerationStatus.PENDING.value, GenerationStatus.PROCESSING.value)
+            ),
         )
         .values(status=GenerationStatus.FAILED.value)
     )
@@ -115,23 +166,20 @@ def _document(draft: dict, previous: dict | None) -> dict:
         "denominator": draft["denominator"],
         "groups": draft["groups"],
         "ungrouped_report_ids": draft["ungrouped_report_ids"],
+        **(
+            {"native_synthesis": draft["native_synthesis"]}
+            if "native_synthesis" in draft
+            else {}
+        ),
         "published": kept.get("published"),
         "published_version": kept.get("published_version"),
     }
 
 
-async def _close_open_dialogues(db: AsyncSession, topic: Topic) -> None:
+async def _advance_to_summary(db: AsyncSession, topic: Topic) -> None:
     if topic.stage != "conversation":
         return
     topic.stage = "summary"
-    await db.execute(
-        update(Session)
-        .where(
-            Session.topic_id == topic.id,
-            Session.outcome == DialogueOutcome.OPEN.value,
-        )
-        .values(outcome=DialogueOutcome.CLOSED_BY_SUMMARY.value)
-    )
 
 
 async def _mark_ready(
@@ -174,6 +222,22 @@ async def store_ready_summary(
     prompt_stage: str,
     prompt_version: str,
 ) -> None:
+    topic = (
+        await db.execute(select(Topic).where(Topic.id == topic_id).with_for_update())
+    ).scalar_one_or_none()
+    newest = await latest_attempt(db, topic_id)
+    if newest is None or newest.id != attempt_id:
+        await mark_failed(db, attempt_id)
+        return
+    if topic is None or await has_open_dialogues(db, topic_id):
+        raise ValueError("Dialogues must end before summary becomes ready")
+    if "native_synthesis" in draft:
+        current = await ready_native_reports(db, topic_id)
+        captured = draft["native_synthesis"]["sources"]
+        if {row["report_id"] for row in current} != {
+            row["report_id"] for row in captured
+        }:
+            raise ValueError("Report cohort changed while generating; retry synthesis")
     if not await _mark_ready(
         db,
         attempt_id,
@@ -182,16 +246,11 @@ async def store_ready_summary(
         prompt_version=prompt_version,
     ):
         return
-    topic = (
-        await db.execute(select(Topic).where(Topic.id == topic_id).with_for_update())
-    ).scalar_one_or_none()
-    if topic is None:
-        return
     row = await latest_summary(db, topic_id)
     version = 1 if row is None else row.version + 1
     body = _document(draft, None if row is None else row.body)
     await upsert_summary_version(db, topic_id=topic_id, version=version, body=body)
-    await _close_open_dialogues(db, topic)
+    await _advance_to_summary(db, topic)
 
 
 async def upsert_summary_version(

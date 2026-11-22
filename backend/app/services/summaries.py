@@ -18,19 +18,10 @@ from app.models.class_summary import ClassSummaryVersion
 from app.models.topic import Topic
 from app.models.user import User
 from app.services import summary_runner
+from app.services.central_synthesis import from_native, inquiry_key, validate_reports
+from app.services.dialogue_turn import brief_of
 from app.services.summary_text import leaked_identifier, public_summary
-
-
-def _request(bodies: list[tuple[str, dict]]) -> dict:
-    labels = {
-        f"r{index}": report_id
-        for index, (report_id, _body) in enumerate(bodies, start=1)
-    }
-    material = [
-        {"label": label, "report": body}
-        for label, (_report_id, body) in zip(labels, bodies, strict=True)
-    ]
-    return {"labels": labels, "material": material}
+from app.services.token_budget import UnsupportedModelTokenizerError
 
 
 def _attempt_running(latest) -> bool:
@@ -43,20 +34,19 @@ def _attempt_running(latest) -> bool:
     return lease is not None and lease >= datetime.now(UTC)
 
 
-async def _enqueue(
-    db: AsyncSession, topic_id: UUID, bodies: list[tuple[str, dict]]
-) -> None:
+async def _enqueue(db: AsyncSession, topic_id: UUID) -> None:
     topic = await topic_crud.lock_topic(db, topic_id)
     if topic is None:
         raise HTTPException(status_code=404, detail="Topic not found")
+    if await summary_crud.has_open_dialogues(db, topic_id):
+        raise HTTPException(
+            status_code=409,
+            detail="End all dialogues before generating a class summary",
+        )
     latest = await summary_crud.latest_attempt(db, topic_id)
     if _attempt_running(latest):
         return
-    request = _request(bodies)
-    request["model_id"] = topic.model_id or settings.OPENAI_MODEL
-    request["content_language"] = (
-        topic.content_language or settings.DEFAULT_LANGUAGE_CODE
-    )
+    request = await native_request(db, topic)
     created = await summary_crud.insert_attempt(
         db, topic_id=topic_id, request_json=request
     )
@@ -86,12 +76,7 @@ async def start_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) -> d
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Topic is still in setup"
         )
-    bodies = await summary_crud.ready_report_bodies(db, topic.id)
-    if not bodies:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="No ready reports"
-        )
-    await _enqueue(db, topic.id, bodies)
+    await _enqueue(db, topic.id)
     return _started(topic, await summary_crud.published_version(db, topic.id))
 
 
@@ -206,6 +191,7 @@ async def publish_summary(db: AsyncSession, *, teacher: User, topic_id: UUID) ->
     if previous is not None and previous is not row:
         previous.body = {**previous.body, "status": "withdrawn"}
     row.body = {
+        **row.body,
         **draft,
         "published": public_summary(draft),
         "published_version": row.version,
@@ -439,3 +425,68 @@ async def _instructor_topic(db: AsyncSession, teacher: User, topic_id: UUID) -> 
             status_code=status.HTTP_403_FORBIDDEN, detail="Course instructor required"
         )
     return topic
+
+
+async def native_request(
+    db: AsyncSession,
+    topic: Topic,
+    *,
+    allow_empty: bool = False,
+    model_id: str | None = None,
+    language: str | None = None,
+) -> dict:
+    """Freeze ready native evidence; caller owns topic lock and lifecycle checks."""
+    topic_id = topic.id
+    try:
+        rows = await summary_crud.ready_native_reports(db, topic_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not rows and not allow_empty:
+        raise HTTPException(status_code=400, detail="No ready reports")
+    if len(rows) > 50:
+        raise HTTPException(
+            status_code=413, detail="Stage3 supports at most 50 reports per topic"
+        )
+    try:
+        reports = [
+            from_native(row["report_id"], row["metadata"]).model_dump() for row in rows
+        ]
+        validated = validate_reports(reports) if reports else []
+        if validated and validated[0].topicKey != inquiry_key(brief_of(topic)):
+            raise ValueError("Inquiry revision mismatch")
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Regenerate personal reports with matching native evidence before class synthesis",
+        ) from exc
+    request = {
+        "schema_version": "native-central-request-v1",
+        "reports": reports,
+        "sources": [
+            {
+                "report_id": row["report_id"],
+                "session_id": row["session_id"],
+                "source_digest": row["metadata"]["source_digest"],
+            }
+            for row in rows
+        ],
+        "model_id": model_id or topic.model_id or settings.OPENAI_MODEL,
+        "content_language": language
+        or topic.content_language
+        or settings.DEFAULT_LANGUAGE_CODE,
+    }
+    if allow_empty:
+        request["allow_empty_cohort"] = True
+        request["inquiry"] = brief_of(topic)
+    try:
+        summary_runner.prepare_request(request)
+    except UnsupportedModelTokenizerError as exc:
+        raise HTTPException(
+            status_code=503, detail="Configured model tokenizer is not supported"
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=413,
+            detail="Stage3 request exceeds supported size or model budget",
+        ) from exc
+    return request

@@ -19,6 +19,7 @@ from app.services.attempt_lease import refresh
 from app.services.model_client import ModelCallError, OpenAIChatClient
 from app.services.report_adapter import (
     NATIVE_SCHEMA,
+    no_responses_summary,
     project_summary,
     source_digest,
     source_snapshot,
@@ -63,27 +64,30 @@ async def run_report(attempt_id: UUID) -> None:
             source = await _source(attempt_id, session_id, progress)
             model_id = source["model_id"]
             material = json.dumps(source["material"], ensure_ascii=False)
-            if (
-                estimate_total_request_tokens(
-                    model_id=model_id,
+            if not source["exchanges"]:
+                parsed = no_responses_summary(source["material"]["interfaceLanguage"])
+            else:
+                if (
+                    estimate_total_request_tokens(
+                        model_id=model_id,
+                        instructions=prompt.instructions,
+                        material=material,
+                        schema=_SCHEMA,
+                        output_tokens=prompt.max_output_tokens,
+                    )
+                    > settings.REPORT_CONTEXT_TOKEN_BUDGET
+                ):
+                    raise ValueError("Report source exceeds configured budget")
+                api_key = await _api_key(session_id)
+                parsed = await client.complete_object(
+                    name="personal_report",
+                    schema=_SCHEMA,
                     instructions=prompt.instructions,
                     material=material,
-                    schema=_SCHEMA,
-                    output_tokens=prompt.max_output_tokens,
+                    model=model_id,
+                    max_tokens=prompt.max_output_tokens,
+                    api_key=api_key,
                 )
-                > settings.REPORT_CONTEXT_TOKEN_BUDGET
-            ):
-                raise ValueError("Report source exceeds configured budget")
-            api_key = await _api_key(session_id)
-            parsed = await client.complete_object(
-                name="personal_report",
-                schema=_SCHEMA,
-                instructions=prompt.instructions,
-                material=material,
-                model=model_id,
-                max_tokens=prompt.max_output_tokens,
-                api_key=api_key,
-            )
             body, native = project_summary(parsed, source)
             body = validate_report(body, source=source)
         except (ModelCallError, HTTPException, ValueError, TypeError):
@@ -97,7 +101,10 @@ async def run_report(attempt_id: UUID) -> None:
             {
                 "native_summary": native,
                 "report_schema_version": "native-summary-v2",
-                "model_id": model_id,
+                "model_id": model_id if source["exchanges"] else None,
+                "generation_method": "model"
+                if source["exchanges"]
+                else "deterministic",
                 "source_digest": source_digest(source),
             },
         )

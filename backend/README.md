@@ -220,3 +220,12 @@ Prompt 和 tokenizer 在應用程式行程內載入；PostgreSQL 保存完整 tr
 - 客戶端中止回 499 尚未實作。FastAPI 不會因為客戶端斷線而取消 handler，需要另外設計。
 
 API transport, lifecycle and retry contracts: [integration guide](../docs/AI_BACKEND_CONTRACT.md).
+
+
+### Stage3 原生班級統整
+
+個人報告各自在對話結束後產生並供學生閱讀。班級摘要需等所有已建立對話結束、所有 completed/ended 對話的最新報告 ready，才可開始。缺少原生證據的舊報告須由教師重試端點重新產生。最多50份；超出輸入或token預算不會截斷資料。
+
+使用原生 CentralReport 與動態觀點分組，模型只輸出定性群組，後端驗證成員與計算比例。無法分類的報告仍列入分母；全無足夠證據時直接產生結構化結果，不呼叫模型。私有原生結果保存在既有 JSON 欄位；既有教師編輯／審核／發布／撤回及學生 DTO 不變。詳見 docs/AI_BACKEND_CONTRACT.md。無新增 migration。
+
+測試：`pytest tests/unit/test_central_synthesis.py tests/unit/test_stage3_jobs.py tests/api/v1/test_summary_routes.py -q`。真實資料庫測試為 `tests/integration/test_native_stage3_postgres.py`，需要 disposable `SESSION_TEST_DATABASE_URL`。httpyac 手動驗收見 `scenarios/user-journey/native-stage3/README.md`，不能將未執行的 scenario 視為測試通過。

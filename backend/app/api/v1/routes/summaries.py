@@ -8,8 +8,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ActiveUser, TeacherUser, get_db
-from app.api.openapi_responses import SUMMARY_PUBLISH_RESPONSES
+from app.api.openapi_responses import SUMMARY_PUBLISH_RESPONSES, json_detail_example
 from app.schemas.summary import (
+    ConversationStatusResponse,
+    EndConversationRequest,
     PublishedSummaryResponse,
     PublishSummaryResponse,
     ReviewSummaryResponse,
@@ -27,13 +29,52 @@ class SummaryTextRequest(BaseModel):
     viewpoint_summary: str = Field(min_length=1)
 
 
-@router.post("/topics/{topicId}/summary")
+@router.post(
+    "/topics/{topicId}/summary",
+    responses={
+        200: {
+            "description": "Queued or reused background synthesis; poll GET on the same path.",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "topic_status": "conversation",
+                        "published_version": None,
+                        "summary": None,
+                        "preparation_status": "pending",
+                    }
+                }
+            },
+        },
+        400: json_detail_example(
+            "Topic still in setup or no eligible ready cohort.",
+            "Topic is still in setup",
+        ),
+        403: {"description": "Teacher role and course instructor membership required."},
+        404: {"description": "Topic not found."},
+        409: {
+            "description": "End all dialogues, wait for every eligible report, or regenerate incompatible native reports before synthesis."
+        },
+        413: json_detail_example(
+            "Report count, payload or model request budget exceeded.",
+            "Stage3 supports at most 50 reports per topic",
+        ),
+        503: json_detail_example(
+            "Configured tokenizer unavailable.",
+            "Configured model tokenizer is not supported",
+        ),
+    },
+)
 async def start_summary(
     topicId: UUID,
     teacher: TeacherUser,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> TeacherSummaryResponse:
-    """Start a class-summary draft from the ready reports."""
+    """Queue native synthesis after all dialogues end and eligible reports are ready.
+
+    Returns pending before inference; GET exposes processing/ready/failed.
+    Provider or validation failures after enqueue are job failures, not a later
+    HTTP error on this POST. Existing published content remains available.
+    """
     return await summary_service.start_summary(db, teacher=teacher, topic_id=topicId)
 
 
@@ -122,3 +163,45 @@ async def read_published_summary(
 ) -> PublishedSummaryResponse:
     """Return the published summary for a member of the course."""
     return await summary_service.read_published(db, user=current_user, topic_id=topicId)
+
+
+@router.get(
+    "/topics/{topicId}/conversation-status", response_model=ConversationStatusResponse
+)
+async def read_conversation_status(
+    topicId: UUID, teacher: TeacherUser, db: Annotated[AsyncSession, Depends(get_db)]
+):
+    """Query open-dialogue count before showing the teacher confirmation."""
+    from app.services.conversation_closure import read_status
+
+    return await read_status(db, teacher=teacher, topic_id=topicId)
+
+
+@router.post(
+    "/topics/{topicId}/end-conversation",
+    response_model=ConversationStatusResponse,
+    responses={
+        400: {"description": "Activity still in setup."},
+        403: {"description": "Teacher role and course instructor membership required."},
+        404: {"description": "Topic not found."},
+        409: {
+            "description": "Confirmation required; detail contains code and current open_dialogue_count."
+        },
+    },
+)
+async def end_conversation(
+    topicId: UUID,
+    payload: EndConversationRequest,
+    teacher: TeacherUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Permanently end Stage2, queue personal reports, then automatically synthesize.
+
+    confirm_open_dialogues=true authorizes closing currently open dialogues.
+    Returns job status; use GET summary to poll the draft. No automatic publication.
+    """
+    from app.services.conversation_closure import close
+
+    return await close(
+        db, teacher=teacher, topic_id=topicId, confirm=payload.confirm_open_dialogues
+    )

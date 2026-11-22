@@ -1,5 +1,7 @@
 """Response shapes for the class summary draft and the published read."""
 
+from uuid import UUID
+
 from pydantic import BaseModel, ConfigDict, Field
 
 _STAGE = "setup | conversation | summary"
@@ -144,3 +146,17 @@ class PublishedSummaryResponse(BaseModel):
     model_config = ConfigDict(json_schema_extra={"example": {"summary": _PUBLISHED}})
 
     summary: PublicSummary | None = None
+
+
+class EndConversationRequest(BaseModel):
+    confirm_open_dialogues: bool = False
+
+
+class ConversationStatusResponse(BaseModel):
+    topic_id: UUID
+    topic_status: str
+    open_dialogue_count: int
+    stage2_closed: bool
+    confirmation_required: bool
+    ended_dialogue_count: int = 0
+    preparation_status: str | None = None
