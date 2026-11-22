@@ -1,0 +1,6 @@
+# Fixed student-facing copy for Stage 2. Kept out of Python so the wording can be
+# changed without touching code.
+
+[unrelated_response]
+zh-TW = "請針對問題進行回答，並在回應中說明你的理由。\n你的回答不應包含與題目無關的內容，且要說明你為何如此回答。"
+en = "Please answer the question and explain your reasons.\nYour answer should stay on the question and say why you answered that way."
