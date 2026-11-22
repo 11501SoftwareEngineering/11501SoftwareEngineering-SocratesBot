@@ -388,6 +388,7 @@ export default {
     endingTurnLimit: 'Tours terminés — préparation du rapport',
     endingGoal: 'Enquête terminée — préparation du rapport',
     endingEarly: 'Terminé plus tôt — préparation du rapport',
+    endingTeacher: 'Ton enseignant a terminé le dialogue — préparation du rapport',
     finishEarly: 'Terminer plus tôt',
     finishEarlyTitle: 'Terminer cette enquête plus tôt ?',
     finishEarlyDescription:

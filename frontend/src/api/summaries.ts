@@ -17,7 +17,6 @@ const enc = encodeURIComponent
 export type SummaryStatus = 'draft' | 'reviewed' | 'published' | 'withdrawn'
 
 export interface SummaryGroup {
-  group_id?: string
   name: string
   conditions: string
   count: number
@@ -95,7 +94,15 @@ export interface TopicReports extends Omit<TopicReportsResponse, 'reports'> {
   reports: TeachingReport[]
 }
 
-/** 學生報告分頁用來篩選的觀點群組：從摘要的 groups 來（後端沒有 group_id，用順序當代號） */
+/**
+ * 觀點群組的代號：後端的群組沒有 id，用順序當代號（g1、g2…）。
+ * 「檢視報告」連結（網址的 ?group=）和學生報告分頁的篩選都要用這個，兩邊才對得上
+ */
+export function groupCode(index: number) {
+  return `g${index + 1}`
+}
+
+/** 學生報告分頁用來篩選的觀點群組：從摘要的 groups 來 */
 export interface ReportGroup {
   group_id: string
   name: string
@@ -104,7 +111,7 @@ export interface ReportGroup {
 
 export function reportGroups(summary: ClassSummary | null | undefined): ReportGroup[] {
   return (summary?.groups ?? []).map((g, i) => ({
-    group_id: g.group_id ?? `g${i + 1}`,
+    group_id: groupCode(i),
     name: g.name,
     report_ids: g.report_ids,
   }))

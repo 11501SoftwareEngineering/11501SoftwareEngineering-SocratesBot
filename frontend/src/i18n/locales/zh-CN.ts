@@ -379,6 +379,7 @@ export default {
     endingTurnLimit: '回合结束，正在生成报告',
     endingGoal: '探究完成，正在生成报告',
     endingEarly: '提前结束，正在生成报告',
+    endingTeacher: '老师结束了对话，正在生成报告',
     finishEarly: '提前结束',
     finishEarlyTitle: '提前结束这次探究？',
     finishEarlyDescription:

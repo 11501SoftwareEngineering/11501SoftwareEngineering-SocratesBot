@@ -322,7 +322,8 @@ function summaryJson(s: DbSummary) {
     overview: s.overview,
     viewpoint_summary: s.viewpoint_summary,
     denominator: s.denominator,
-    groups: s.groups,
+    // 跟後端一樣不回傳群組 id（前端用順序當代號）
+    groups: s.groups.map(({ group_id: _id, ...group }) => group),
     ungrouped_report_ids: s.ungrouped_report_ids,
     created_at: s.created_at,
     updated_at: s.updated_at,

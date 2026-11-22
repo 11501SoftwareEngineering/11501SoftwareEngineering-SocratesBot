@@ -16,6 +16,7 @@ import LongTextField from '@/components/form/LongTextField.vue'
 import { computed, ref, watch } from 'vue'
 import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import {
+  groupCode,
   summariesApi,
   summaryKeys,
   type SummaryStatus,
@@ -169,14 +170,14 @@ const date = computed(() =>
     <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
       <GroupCard
         v-for="(group, i) in summary.groups"
-        :key="group.group_id ?? group.name"
+        :key="groupCode(i)"
         :index="i"
         :name="group.name"
         :conditions="group.conditions"
         :count="group.count"
         :total="summary.denominator"
         :percentage="group.percentage"
-        :to="{ query: { tab: 'reports', group: group.group_id ?? group.name } }"
+        :to="{ query: { tab: 'reports', group: groupCode(i) } }"
       />
     </div>
 

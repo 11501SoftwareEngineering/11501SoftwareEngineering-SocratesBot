@@ -182,11 +182,13 @@ function markFinished(animate = true) {
   endingTimer = setTimeout(() => void router.replace(reportLink.value), ENDING_DELAY_MS)
 }
 const endingText = computed(() =>
-  endingReason.value === 'turn_limit'
-    ? t('chat.endingTurnLimit')
-    : endingReason.value === 'student_requested_stop'
-      ? t('chat.endingEarly')
-      : t('chat.endingGoal'),
+  endingReason.value === 'teacher_ended_stage2'
+    ? t('chat.endingTeacher')
+    : endingReason.value === 'turn_limit'
+      ? t('chat.endingTurnLimit')
+      : endingReason.value === 'student_requested_stop'
+        ? t('chat.endingEarly')
+        : t('chat.endingGoal'),
 )
 
 async function handleSend(text: string) {
@@ -236,11 +238,21 @@ async function handleSend(text: string) {
     pendingRequest = null
     if (finished.value) markFinished()
   } catch (err) {
-    // 斷線或失敗：用後端的紀錄校準（回覆可能其實已經存好了）
+    // 斷線或失敗：用後端的紀錄校準
+    // - 回合數增加：回覆其實已經存好了
+    // - 狀態變了：例如老師結束了對話（ended，回合數不變），或對話被關閉 → 照後端的狀態，不能再回答
     const fresh = await sessionsApi.messages(sessionId.value).catch(() => null)
-    if (fresh && fresh.completed_turns > usedTurns.value) {
-      queryClient.setQueryData(sessionKeys.messages(sessionId.value), fresh)
+    if (
+      fresh &&
+      (fresh.completed_turns > usedTurns.value || fresh.session_status !== status.value)
+    ) {
       pendingRequest = null
+      if (fresh.session_status === 'completed' || fresh.session_status === 'ended') {
+        // 先開始結束流程（顯示分隔線、3 秒後到報告頁），再換成後端的紀錄
+        endingReason.value = fresh.ending_reason ?? null
+        markFinished()
+      }
+      queryClient.setQueryData(sessionKeys.messages(sessionId.value), fresh)
       return
     }
     messages.value = messages.value.filter((m) => !m.message_id.endsWith(`-${stamp}`))

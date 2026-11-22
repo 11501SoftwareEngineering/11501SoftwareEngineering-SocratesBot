@@ -4,7 +4,7 @@ import { setupServer } from 'msw/node'
 import { createPinia, setActivePinia } from 'pinia'
 import { AxiosError, AxiosHeaders } from 'axios'
 import { API_BASE_URL } from '@/api/client'
-import { summariesApi } from '@/api/summaries'
+import { groupCode, reportGroups, summariesApi } from '@/api/summaries'
 import { topicsApi } from '@/api/topics'
 import { useChatStream } from '@/composables/useChatStream'
 import { useAuthStore } from '@/stores/auth'
@@ -61,6 +61,28 @@ describe('後端格式整理', () => {
     const data = await summariesApi.reports('t1')
     expect(data.ready_count).toBe(1)
     expect(data.reports).toEqual([{ ...report('r1'), student_display_name: '王小明' }])
+  })
+
+  it('觀點群組：後端沒有群組 id，篩選和「檢視報告」連結都用順序當代號', () => {
+    const group = (name: string) => ({
+      name,
+      conditions: '',
+      count: 1,
+      percentage: 50,
+      report_ids: [name],
+    })
+    const groups = reportGroups({
+      summary_id: 's',
+      version: 1,
+      summary_status: 'draft',
+      overview: '',
+      viewpoint_summary: '',
+      denominator: 2,
+      groups: [group('重視公平'), group('重視誠實')],
+      ungrouped_report_ids: [],
+    } as never)
+    expect(groups.map((g) => g.group_id)).toEqual([groupCode(0), groupCode(1)])
+    expect(groups[1]).toMatchObject({ group_id: 'g2', report_ids: ['重視誠實'] })
   })
 
   it('活動設定：null 的文字欄位換成空字串', async () => {

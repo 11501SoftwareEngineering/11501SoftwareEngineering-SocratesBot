@@ -392,6 +392,7 @@ export default {
     endingTurnLimit: 'Runden verbraucht – Bericht wird erstellt',
     endingGoal: 'Untersuchung abgeschlossen – Bericht wird erstellt',
     endingEarly: 'Vorzeitig beendet – Bericht wird erstellt',
+    endingTeacher: 'Deine Lehrkraft hat den Dialog beendet – Bericht wird erstellt',
     finishEarly: 'Vorzeitig beenden',
     finishEarlyTitle: 'Diese Untersuchung vorzeitig beenden?',
     finishEarlyDescription:
