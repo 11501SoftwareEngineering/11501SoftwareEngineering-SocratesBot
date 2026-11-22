@@ -208,6 +208,7 @@ class ModelClient(Protocol):
         instructions: str,
         material: str,
         model: str | None = None,
+        api_key: str | None = None,
         max_tokens: int | None = None,
     ) -> dict: ...
 
@@ -217,6 +218,7 @@ class ModelClient(Protocol):
         instructions: str,
         material: str,
         model: str | None = None,
+        api_key: str | None = None,
         max_tokens: int | None = None,
     ) -> tuple[str, bool]: ...
 
@@ -228,6 +230,7 @@ class ModelClient(Protocol):
         instructions: str,
         material: str,
         model: str | None = None,
+        api_key: str | None = None,
         max_tokens: int | None = None,
     ) -> dict: ...
 
@@ -303,6 +306,7 @@ class OpenAIChatClient:
         instructions: str,
         material: str,
         model: str | None = None,
+        api_key: str | None = None,
         max_tokens: int | None = None,
     ) -> dict:
         return await self._post(
@@ -311,6 +315,7 @@ class OpenAIChatClient:
             instructions=instructions,
             material=material,
             model=model,
+            api_key=api_key,
             max_tokens=max_tokens,
         )
 
@@ -320,6 +325,7 @@ class OpenAIChatClient:
         instructions: str,
         material: str,
         model: str | None = None,
+        api_key: str | None = None,
         max_tokens: int | None = None,
     ) -> tuple[str, bool]:
         parsed = await self._post(
@@ -328,6 +334,7 @@ class OpenAIChatClient:
             instructions=instructions,
             material=material,
             model=model,
+            api_key=api_key,
             max_tokens=max_tokens,
         )
         reply = parsed.get("reply")

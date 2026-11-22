@@ -679,3 +679,10 @@ version: 0.2
 History/end/SSE done add `report_eligible`, `ending_reason`, `can_finish_early`; SSE done also adds `session_status` and `goal_reached`. `ended` is a new outcome. Do not rely only on `is_completed` to navigate to reports. Report adds `ended_at`, `goal_reached`; teaching list adds `ended_count`. `completed_count` remains successful completions.
 
 Inconclusive reports retain the full report structure, with `evidence_status=insufficient`, observations and `limitations`. A useful partial summary is preferred; missing milestones alone are not inconclusive. `report_status=ready` means generation succeeded, not that learning goals were reached. GET polls automatically started reports; POST retries/reuses or starts legacy missing attempts. No report is created merely by closing the browser. Full sequence charts: [AI_BACKEND_CONTRACT.md](AI_BACKEND_CONTRACT.md).
+
+
+## 課程 AI 模型與憑證路由（Chunk07/08）
+
+各階段優先使用題目已儲存的模型；未設定時使用 `OPENAI_MODEL`，包含 validity、status、planning、context/catch-up、個人報告與班級摘要。Stage1 generate 的明確模型選擇仍只影響該次產生，需 Save/Publish 才儲存。報告來源快照與摘要請求保留非機密模型資訊；重試已捕捉的請求不改用其他模型。
+
+課程擁有者的個人 key 優先，無個人 key 才使用單一伺服器 `OPENAI_API_KEY`；助教／學生觸發不改變付費者。無法解密或個人 key 呼叫失敗不轉用伺服器額度。憑證不寫入報告、來源快照或摘要 JSON。沒有 key rotation，也沒有新增前端欄位或端點。完整順序圖見 [AI backend contract](AI_BACKEND_CONTRACT.md#model-and-credential-routing-combined-chunk0708)。

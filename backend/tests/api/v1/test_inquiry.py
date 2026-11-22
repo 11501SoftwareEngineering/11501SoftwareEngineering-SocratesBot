@@ -71,6 +71,11 @@ def _topic(**overrides) -> SimpleNamespace:
 
 def _ready(monkeypatch: pytest.MonkeyPatch, topic, *, instructor_id=None) -> AsyncMock:
     monkeypatch.setattr("app.crud.topic.get_topic_by_id", AsyncMock(return_value=topic))
+    monkeypatch.setattr(
+        course_crud,
+        "get_course_by_id",
+        AsyncMock(return_value=SimpleNamespace(created_by=instructor_id or uuid4())),
+    )
     recorded = AsyncMock()
     monkeypatch.setattr(topic_crud, "record_inquiry_change", recorded)
 

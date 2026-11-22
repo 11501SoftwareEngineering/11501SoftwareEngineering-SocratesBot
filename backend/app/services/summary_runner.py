@@ -12,9 +12,11 @@ from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.core.prompts import PromptStage, prompt_for
 from app.crud import summary as summary_crud
+from app.crud import topic as topic_crud
 from app.services.attempt_lease import refresh
 from app.services.model_client import ModelCallError, OpenAIChatClient
 from app.services.summary_text import validate_summary
+from app.services.teacher_ai_settings import course_api_key
 
 logger = logging.getLogger("app.model")
 client = OpenAIChatClient()
@@ -65,11 +67,11 @@ async def run_summary(attempt_id: UUID) -> None:
     _live.add(attempt_id)
     refresher: asyncio.Task[None] | None = None
     prompt = prompt_for(PromptStage.CLASS_SUMMARY)
-    model_id = settings.OPENAI_MODEL
     try:
         request = await _begin(attempt_id)
         if request is None:
             return
+        model_id = request["model_id"]
         refresher = asyncio.create_task(
             refresh(summary_crud.extend_lease, attempt_id, _live)
         )
@@ -81,6 +83,7 @@ async def run_summary(attempt_id: UUID) -> None:
                 material=json.dumps(request["material"], ensure_ascii=False),
                 model=model_id,
                 max_tokens=prompt.max_output_tokens,
+                api_key=await _api_key(request["topic_id"]),
             )
             draft = validate_summary(parsed, request["labels"])
         except (ModelCallError, ValueError, TypeError, KeyError):
@@ -110,10 +113,28 @@ async def _begin(attempt_id: UUID) -> dict | None:
         if attempt is None or attempt.status != "pending":
             return None
         request = dict(attempt.request_json or {})
+        if "model_id" not in request:
+            topic = await topic_crud.get_topic_by_id(db, attempt.topic_id)
+            if topic is None:
+                raise ValueError("Missing summary topic")
+            request["model_id"] = topic.model_id or settings.OPENAI_MODEL
+            request["content_language"] = (
+                topic.content_language or settings.DEFAULT_LANGUAGE_CODE
+            )
+            attempt.request_json = dict(request)
         request["topic_id"] = attempt.topic_id
         await summary_crud.mark_processing(db, attempt_id)
         await db.commit()
         return request
+
+
+async def _api_key(topic_id: UUID) -> str | None:
+    """The course teacher's key, or None for the single server key."""
+    async with AsyncSessionLocal() as db:
+        topic = await topic_crud.get_topic_by_id(db, topic_id)
+        if topic is None:
+            raise ValueError("Missing summary topic")
+        return await course_api_key(db, topic.course_id)
 
 
 async def _fail(attempt_id: UUID) -> None:

@@ -70,7 +70,7 @@ def test_setup_permissions(
     monkeypatch.setattr(
         course_crud,
         "get_course_by_id",
-        AsyncMock(return_value=SimpleNamespace(id=topic.course_id)),
+        AsyncMock(return_value=SimpleNamespace(id=topic.course_id, created_by=uuid4())),
     )
     db_role = (
         "TA" if role.startswith("TA") else ("STUDENT" if role == "STUDENT" else None)
@@ -97,6 +97,8 @@ def test_setup_permissions(
         "_model_json",
         AsyncMock(return_value={"opening_message": "A new opening"}),
     )
+    key_lookup = AsyncMock(return_value="course-owner-key")
+    monkeypatch.setattr(inquiry, "course_api_key", key_lookup)
     kwargs = {"headers": {"Authorization": bearer}}
     if payload is not None:
         kwargs["json"] = payload
@@ -104,6 +106,14 @@ def test_setup_permissions(
         f"/api/v1/topics/{topic.id}/{suffix}", **kwargs
     )
     assert response.status_code == (200 if allowed else 403), response.text
+    if allowed and suffix in {
+        "setup/generate",
+        "setup/refine",
+        "setup/opening-message",
+    }:
+        key_lookup.assert_awaited_once_with(course_route_db, topic.course_id)
+    else:
+        key_lookup.assert_not_awaited()
 
 
 def test_ta_cannot_publish(auth_client, store, course_route_db, monkeypatch):

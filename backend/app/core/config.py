@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: SecretStr
     ANTHROPIC_API_KEY: SecretStr
     OPENAI_MODEL: NonEmptyStr = "openai/gpt-6.1-sol"
-    # Fast model for the Stage 2 validity gate, which runs on every student turn.
+    # Legacy configuration compatibility; course validity uses the activity model.
     OPENAI_VALIDITY_MODEL: NonEmptyStr = "openai/gpt-6.1-sol"
     OPENAI_BASE_URL: NonEmptyStr = "https://openrouter.ai/api/v1"
     DIALOGUE_CONTEXT_TOKEN_BUDGET: int = Field(default=12_000, ge=1_024)

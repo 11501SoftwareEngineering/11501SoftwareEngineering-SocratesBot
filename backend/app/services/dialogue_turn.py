@@ -294,7 +294,9 @@ async def run_turn(
     exchange: int,
     model_id: str,
     validity_model: str,
+    api_key: str | None = None,
 ) -> TurnResult:
+    """Run validity, status, and planning. ``api_key`` None uses the single server key."""
     language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
     validity_raw = await _bounded_object(
         client,
@@ -307,6 +309,7 @@ async def run_turn(
         ),
         model=validity_model,
         max_tokens=prompts.validity.max_output_tokens,
+        api_key=api_key,
     )
     validity = _parse(ValidityOut, validity_raw)
     base_progress = previous_progress or empty_progress()
@@ -339,6 +342,7 @@ async def run_turn(
         ),
         model=model_id,
         max_tokens=prompts.status.max_output_tokens,
+        api_key=api_key,
     )
     status = _parse(StatusOut, status_raw)
     progress = status.progress.model_dump(by_alias=True)
@@ -354,6 +358,7 @@ async def run_turn(
         material=planning_material(topic, transcript_material),
         model=model_id,
         max_tokens=prompts.dialogue.max_output_tokens,
+        api_key=api_key,
     )
     planning = _parse(PlanningOut, planning_raw)
 
@@ -393,6 +398,7 @@ async def catch_up_progress(
     topic: Topic,
     messages: list[DialogueMessage],
     model_id: str,
+    api_key: str | None = None,
 ) -> dict[str, Any]:
     """Build the starting progress for a session that began before progress existed.
 
@@ -417,6 +423,7 @@ async def catch_up_progress(
         ),
         model=model_id,
         max_tokens=prompt.max_output_tokens,
+        api_key=api_key,
     )
     progress = _parse(StatusOut, raw).progress.model_dump(by_alias=True)
     exchanges = sum(message.sender == MessageSender.STUDENT for message in messages)
