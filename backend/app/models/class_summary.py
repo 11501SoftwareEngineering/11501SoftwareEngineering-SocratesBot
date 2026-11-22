@@ -26,6 +26,10 @@ class SummaryAttempt(Base):
             "status IN ('pending', 'processing', 'ready', 'failed')",
             name="status",
         ),
+        CheckConstraint(
+            "generation_meta IS NULL OR jsonb_typeof(generation_meta) = 'object'",
+            name="generation_meta_object",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -42,6 +46,7 @@ class SummaryAttempt(Base):
     )
     request_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     result_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    generation_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     lease_expires_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

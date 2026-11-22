@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import decrypt_api_key, encrypt_api_key
+from app.crud import course as course_crud
 from app.crud import teacher_ai_settings as settings_crud
 from app.models.inquiry_model import InquiryModel
 from app.models.teacher_ai_settings import TeacherAiSettings
@@ -19,6 +20,7 @@ from app.schemas.teacher_ai_settings import (
     DefaultModelResponse,
     DefaultModelUpdateResponse,
 )
+from app.services.ai_usage import AttributedKey
 
 _MIN_MASKED = 20
 
@@ -39,9 +41,12 @@ def _default_model(model: InquiryModel | None) -> DefaultModelResponse | None:
 async def _loaded_default(
     db: AsyncSession, row: TeacherAiSettings | None
 ) -> DefaultModelResponse | None:
-    if row is None or row.default_model_id is None:
-        return None
-    model = await settings_crud.get_inquiry_model(db, row.default_model_id)
+    model_id = (
+        settings.OPENAI_MODEL
+        if row is None or row.default_model_id is None
+        else row.default_model_id
+    )
+    model = await settings_crud.get_inquiry_model(db, model_id)
     return _default_model(model)
 
 
@@ -79,13 +84,15 @@ async def save_api_key(
 
 
 async def openrouter_api_key(db: AsyncSession, user_id: uuid.UUID) -> str:
-    """Return the teacher's OpenRouter key, or the server key when none is stored."""
+    """Return the teacher key or server-attributed credential (pool resolves at dispatch)."""
     row = await settings_crud.get_settings(db, user_id)
     stored = None if row is None else row.api_key_ciphertext
     if not isinstance(stored, str) or stored == "":
-        return settings.OPENAI_API_KEY.get_secret_value()
+        return AttributedKey(
+            settings.OPENAI_API_KEY.get_secret_value(), user_id, "server"
+        )
     try:
-        return decrypt_api_key(stored)
+        return AttributedKey(decrypt_api_key(stored), user_id, "teacher")
     except RuntimeError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -111,3 +118,28 @@ async def set_default_model(
         default_model=DefaultModelResponse(id=model.model_id, name=model.name),
         message="Default model updated",
     )
+
+
+async def effective_default_model(db: AsyncSession, teacher_id: uuid.UUID) -> str:
+    """Use the course owner's saved catalog model, otherwise the server default.
+
+    A stale saved selection fails explicitly instead of silently changing models.
+    Server fallback remains valid without a catalog row for legacy deployments.
+    """
+    row = await settings_crud.get_settings(db, teacher_id)
+    selected = None if row is None else row.default_model_id
+    if selected is None:
+        return settings.OPENAI_MODEL
+    if await settings_crud.get_inquiry_model(db, selected) is None:
+        raise HTTPException(
+            status_code=422, detail="Saved default model is unavailable"
+        )
+    return selected
+
+
+async def course_api_key(db: AsyncSession, course_id: uuid.UUID) -> str:
+    """Resolve the course owner's key, never the caller's billing identity."""
+    course = await course_crud.get_course_by_id(db, course_id)
+    if course is None:
+        raise HTTPException(status_code=503, detail="AI course is unavailable")
+    return await openrouter_api_key(db, course.created_by)
