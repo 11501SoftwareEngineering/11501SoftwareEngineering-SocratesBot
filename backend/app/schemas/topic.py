@@ -39,7 +39,7 @@ class TopicListItem(BaseModel):
     session_status: SessionStatus | None = Field(
         default=None,
         examples=[SessionStatus.IN_PROGRESS],
-        description="Student only; null until the student enters the topic",
+        description="Student only: legacy IN_PROGRESS/COMPLETED or null before entry. Not the lowercase dialogue outcome returned by session routes.",
     )
     session_id: UUID | None = Field(
         default=None,

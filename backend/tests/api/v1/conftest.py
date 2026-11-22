@@ -281,3 +281,28 @@ def course_route_db(auth_client: TestClient) -> AsyncMock:
 
     auth_client.app.dependency_overrides[get_db] = provide_db
     return db
+
+
+def stage1_output(fields: dict, **design: object) -> dict:
+    """Wrap eight flat setup fields in the Stage 1 output the model returns."""
+    brief = {
+        "learnerBand": fields["age_band"],
+        "targetExchanges": fields["max_turns"],
+        "theme": fields["topic"],
+        "inquiryQuestion": fields["core_question"],
+        "inquiryFocus": fields["inquiry_focus"],
+        "necessaryContext": fields["background_info"],
+        "exclusions": fields["exclusions"],
+        "openingMessage": fields["opening_message"],
+    }
+    return {
+        "inputCheck": {"status": "usable", "message": ""},
+        "design": {
+            "brief": brief,
+            "assessments": [],
+            "clarificationQuestions": [],
+            "suggestions": [],
+            "warnings": [],
+            **design,
+        },
+    }

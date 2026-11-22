@@ -17,7 +17,12 @@ from app.core.enums import UserRole
 from app.crud import course as course_crud
 from app.crud import topic as topic_crud
 from app.services.model_client import ModelCallError, OpenAIChatClient
-from tests.api.v1.conftest import FakeStore, bearer_from, seed_user
+from tests.api.v1.conftest import (
+    FakeStore,
+    bearer_from,
+    seed_user,
+    stage1_output,
+)
 
 KEY = "sk-test-do-not-leak"
 DIALOGUE = "dialogue-do-not-leak"
@@ -66,6 +71,11 @@ def _topic(**overrides) -> SimpleNamespace:
 
 def _ready(monkeypatch: pytest.MonkeyPatch, topic, *, instructor_id=None) -> AsyncMock:
     monkeypatch.setattr("app.crud.topic.get_topic_by_id", AsyncMock(return_value=topic))
+    monkeypatch.setattr(
+        course_crud,
+        "get_course_by_id",
+        AsyncMock(return_value=SimpleNamespace(created_by=instructor_id or uuid4())),
+    )
     recorded = AsyncMock()
     monkeypatch.setattr(topic_crud, "record_inquiry_change", recorded)
 
@@ -265,9 +275,9 @@ def test_refine_uses_the_screen_setup(
         self, *, instructions: str, material: str, model: str | None = None, **_extra
     ):
         seen["material"] = material
-        return GENERATED
+        return stage1_output(GENERATED)
 
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", complete)
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", complete)
 
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/refine",
@@ -298,7 +308,7 @@ def test_refine_uses_the_screen_setup(
     assert topic.inquiry_topic == "saved topic"
     assert topic.core_question == "saved question"
     recorded.assert_not_awaited()
-    course_route_db.commit.assert_not_awaited()
+    course_route_db.add.assert_not_called()
 
     saved = auth_client.get(
         f"/api/v1/topics/{topic.id}/setup",
@@ -325,7 +335,7 @@ def test_failed_regeneration_keeps_the_saved_inquiry(
     ):
         raise ModelCallError(503)
 
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", fail)
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", fail)
     caplog.set_level(logging.INFO)
 
     response = auth_client.post(
@@ -359,7 +369,7 @@ def test_opening_message_is_stored(
     ):
         return {**GENERATED, "topic": "  ", "core_question": ""}
 
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", complete)
+    monkeypatch.setattr(OpenAIChatClient, "complete_opening", complete)
 
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/opening-message",
@@ -388,7 +398,7 @@ def test_refine_rejects_a_topic_that_is_not_in_setup(
     )
     recorded = _ready(monkeypatch, topic)
     called = AsyncMock()
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", called)
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", called)
 
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/refine",
@@ -417,9 +427,9 @@ def test_overlong_model_text_is_not_stored(
     async def complete(
         self, *, instructions: str, material: str, model: str | None = None, **_extra
     ):
-        return {**GENERATED, "background_info": "x" * 8001}
+        return stage1_output({**GENERATED, "background_info": "x" * 8001})
 
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", complete)
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", complete)
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/refine",
         headers={"Authorization": bearer},
@@ -450,11 +460,11 @@ def test_generate_returns_a_suggestion_and_leaves_the_topic(
         self, *, instructions: str, material: str, model: str | None = None, **_extra
     ):
         assert model == "openai/gpt-6-luna"
-        assert "content_language: zh-TW\n" in material
-        assert "course_description:\ncourse notes" in material
-        return GENERATED
+        assert '"interfaceLanguage": "zh-TW"' in material
+        assert '"themeContext": "course notes"' in material
+        return stage1_output(GENERATED)
 
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", complete)
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", complete)
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/generate",
         headers={"Authorization": bearer},
@@ -480,7 +490,7 @@ def test_generate_returns_a_suggestion_and_leaves_the_topic(
     assert topic.model_id == "openai/gpt-4o-mini"
     assert topic.content_language is None
     recorded.assert_not_awaited()
-    course_route_db.commit.assert_not_awaited()
+    course_route_db.add.assert_not_called()
 
     saved = auth_client.get(
         f"/api/v1/topics/{topic.id}/setup",
@@ -504,7 +514,7 @@ def test_generate_rejects_an_unknown_model(
         "app.crud.inquiry_model.get_inquiry_model", AsyncMock(return_value=None)
     )
     called = AsyncMock()
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", called)
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", called)
 
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/generate",
@@ -542,7 +552,7 @@ def test_generate_missing_topic_is_not_found(
     bearer, _ = _login(auth_client, store)
     monkeypatch.setattr("app.crud.topic.get_topic_by_id", AsyncMock(return_value=None))
     called = AsyncMock()
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", called)
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", called)
 
     response = auth_client.post(
         f"/api/v1/topics/{uuid4()}/setup/generate",
@@ -565,7 +575,7 @@ def test_generate_is_instructor_only(
     topic = _topic(inquiry_topic="saved topic")
     _ready(monkeypatch, topic, instructor_id=teacher.id)
     called = AsyncMock()
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", called)
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", called)
 
     denied = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/generate",
@@ -588,7 +598,7 @@ def test_generate_rejects_a_topic_that_is_not_in_setup(
     topic = _topic(stage="conversation", inquiry_topic="saved topic")
     _ready(monkeypatch, topic)
     called = AsyncMock()
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", called)
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", called)
 
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/generate",
@@ -625,7 +635,7 @@ def test_generate_rejects_a_bad_body(
     topic = _topic(inquiry_topic="saved topic")
     _ready(monkeypatch, topic)
     called = AsyncMock()
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", called)
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", called)
 
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/generate",
@@ -658,10 +668,10 @@ def test_generate_maps_a_model_failure_and_leaves_the_topic(
         self, *, instructions: str, material: str, model: str | None = None, **_extra
     ):
         if status_code == 502:
-            return {**GENERATED, "background_info": "x" * 8001}
+            return stage1_output({**GENERATED, "background_info": "x" * 8001})
         raise ModelCallError(503)
 
-    monkeypatch.setattr(OpenAIChatClient, "complete_json", fail)
+    monkeypatch.setattr(OpenAIChatClient, "complete_design", fail)
     response = auth_client.post(
         f"/api/v1/topics/{topic.id}/setup/generate",
         headers={"Authorization": bearer},
@@ -672,7 +682,7 @@ def test_generate_maps_a_model_failure_and_leaves_the_topic(
     assert response.json()["detail"] == "Inquiry generation failed"
     assert topic.inquiry_topic == "saved topic"
     recorded.assert_not_awaited()
-    course_route_db.commit.assert_not_awaited()
+    course_route_db.add.assert_not_called()
 
 
 def _catalog(monkeypatch: pytest.MonkeyPatch, *, is_ta: bool) -> None:
@@ -746,3 +756,48 @@ def test_teacher_or_ta_lists_inquiry_models_as_a_json_array(
             "output_price_usd": 0.5,
         }
     ]
+
+
+@pytest.mark.parametrize("language", ["en", "zh-TW", None])
+def test_opening_receives_effective_language(
+    auth_client, store, course_route_db, monkeypatch, language
+):
+    from app.core.config import settings
+
+    bearer, _ = _login(auth_client, store)
+    topic = _topic(content_language=language)
+    _ready(monkeypatch, topic)
+    call = AsyncMock(return_value={"opening_message": "A new opening?"})
+    monkeypatch.setattr(OpenAIChatClient, "complete_opening", call)
+    response = auth_client.post(
+        f"/api/v1/topics/{topic.id}/setup/opening-message",
+        headers={"Authorization": bearer},
+        json={"setup": {"topic": "Cities"}},
+    )
+    assert response.status_code == 200
+    assert (
+        f"content_language: {language or settings.DEFAULT_LANGUAGE_CODE}\n"
+        in call.call_args.kwargs["material"]
+    )
+
+
+@pytest.mark.parametrize(
+    "raw", [{}, {"opening_message": "  "}, {"opening_message": None}]
+)
+def test_invalid_opening_does_not_overwrite_saved_text(
+    auth_client, store, course_route_db, monkeypatch, raw
+):
+    bearer, _ = _login(auth_client, store)
+    topic = _topic(opening_message="Existing opening")
+    recorded = _ready(monkeypatch, topic)
+    monkeypatch.setattr(
+        OpenAIChatClient, "complete_opening", AsyncMock(return_value=raw)
+    )
+    response = auth_client.post(
+        f"/api/v1/topics/{topic.id}/setup/opening-message",
+        headers={"Authorization": bearer},
+        json={"setup": {"topic": "Cities"}},
+    )
+    assert response.status_code == 502
+    assert topic.opening_message == "Existing opening"
+    recorded.assert_not_awaited()

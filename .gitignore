@@ -82,3 +82,5 @@ htmlcov/
 /docs/openapi/
 /backend/openapi.json
 /backend/openapi-site.*/
+# Local development AI response traces (never commit).
+/backend/.local/
