@@ -21,7 +21,7 @@ from app.services import summary_runner
 from app.services.summary_text import leaked_identifier, public_summary
 
 
-def _build_job_payload(bodies: list[tuple[str, dict]]) -> dict:
+def _request(bodies: list[tuple[str, dict]]) -> dict:
     labels = {
         f"r{index}": report_id
         for index, (report_id, _body) in enumerate(bodies, start=1)
@@ -52,13 +52,13 @@ async def _enqueue(
     latest = await summary_crud.latest_attempt(db, topic_id)
     if _attempt_running(latest):
         return
-    job_payload = _build_job_payload(bodies)
-    job_payload["model_id"] = topic.model_id or settings.OPENAI_MODEL
-    job_payload["content_language"] = (
+    request = _request(bodies)
+    request["model_id"] = topic.model_id or settings.OPENAI_MODEL
+    request["content_language"] = (
         topic.content_language or settings.DEFAULT_LANGUAGE_CODE
     )
     created = await summary_crud.insert_attempt(
-        db, topic_id=topic_id, request_json=job_payload
+        db, topic_id=topic_id, request_json=request
     )
     await db.commit()
     summary_runner.schedule(created.id)
