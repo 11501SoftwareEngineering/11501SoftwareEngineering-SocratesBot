@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field, field_validator
 from app.core.enums import DialogueAction, DialogueOutcome, MessageSender
 
 _SENDER = "ai | student"
-_OUTCOME = "open | completed | abandoned | closed_by_summary"
-_ACTION = "complete | continue | abandon"
+_OUTCOME = "open | completed | ended | abandoned | closed_by_summary"
+_ACTION = "complete | continue | abandon | finish"
 
 
 class DialogueMessageItem(BaseModel):
@@ -19,13 +19,23 @@ class DialogueMessageItem(BaseModel):
     created_at: datetime
 
 
-class DialogueHistoryResponse(BaseModel):
+class LifecycleFields(BaseModel):
+    report_eligible: bool = False
+    ending_reason: str | None = None
+    can_finish_early: bool = False
+
+
+class DialogueHistoryResponse(LifecycleFields):
     messages: list[DialogueMessageItem]
     session_status: DialogueOutcome = Field(description=_OUTCOME)
     max_turns: int | None
     completed_turns: int
     goal_reached: bool
     awaiting_end_consent: bool
+    current_progress: dict | None = Field(
+        default=None,
+        description="Latest progress snapshot; milestones can regress independently of historical goal_reached.",
+    )
 
 
 class StreamMessageRequest(BaseModel):
@@ -41,19 +51,33 @@ class StreamMessageRequest(BaseModel):
         return cleaned
 
 
-class StreamDone(BaseModel):
+class StreamDoneEvent(LifecycleFields):
+    """JSON data of the terminal SSE event; reply text is a separate event."""
+
+    session_status: DialogueOutcome = DialogueOutcome.OPEN
+    goal_reached: bool = False
     message_id: UUID
-    text: str
     completed_turns: int
-    is_completed: bool
-    awaiting_end_consent: bool
+    is_completed: bool = Field(
+        description="True only for a completed dialogue; readiness alone does not complete it."
+    )
+    awaiting_end_consent: bool = Field(
+        description="Whether the client should offer the ending choice. This is not report eligibility."
+    )
+
+
+class StreamDone(StreamDoneEvent):
+    """Internal service result, projected into text plus StreamDoneEvent on the wire."""
+
+    text: str
 
 
 class EndDialogueRequest(BaseModel):
     action: DialogueAction = Field(description=_ACTION)
 
 
-class EndDialogueResponse(BaseModel):
+class EndDialogueResponse(LifecycleFields):
     session_id: UUID
     session_status: DialogueOutcome = Field(description=_OUTCOME)
     message: str
+    goal_reached: bool = False
