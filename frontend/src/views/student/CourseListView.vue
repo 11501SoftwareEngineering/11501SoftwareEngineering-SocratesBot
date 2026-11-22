@@ -73,7 +73,7 @@ const leave = useConfirmAction((course: CourseSummary) => coursesApi.leave(cours
         {{ t('common.tryPrefix')
         }}<TextLink inline @click="joinOpen = true">{{ t('courses.join') }}</TextLink>
       </template>
-      <div class="grid gap-4 md:grid-cols-2">
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <CourseCard
           v-for="course in results"
           :key="course.course_id"

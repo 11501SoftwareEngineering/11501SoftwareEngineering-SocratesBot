@@ -51,7 +51,7 @@ const displayName = computed(
     </div>
 
     <div
-      class="w-full px-4 py-2.5 text-body break-words whitespace-pre-line text-foreground"
+      class="w-full px-4 py-2.5 text-body whitespace-pre-line text-foreground [overflow-wrap:anywhere]"
       :class="isAi ? 'rounded-2xl rounded-tl bg-border' : 'rounded-2xl rounded-tr bg-primary/80'"
     >
       <span

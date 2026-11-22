@@ -128,7 +128,7 @@ const gaps = computed(() => {
 </script>
 
 <template>
-  <article ref="article" class="flex flex-col gap-6">
+  <article ref="article" class="flex min-w-0 flex-col gap-6 [overflow-wrap:anywhere]">
     <div class="flex justify-end print:hidden" :class="inDialog && 'pr-10'">
       <Button variant="secondary" size="sm" :disabled="exporting" @click="exportPdf">
         <Download class="size-4" aria-hidden="true" />{{ t('report.exportPdf') }}
@@ -149,11 +149,12 @@ const gaps = computed(() => {
       <div class="flex flex-wrap items-center justify-between gap-3">
         <span
           v-if="report.final_viewpoint"
-          class="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-0.5 text-body text-foreground shadow-elevated"
+          class="inline-flex max-w-full items-start gap-2 rounded-2xl border border-border bg-card px-3 py-0.5 text-body text-foreground shadow-elevated"
         >
-          <span class="size-2.5 rounded-full bg-primary" aria-hidden="true" />{{
-            report.final_viewpoint
-          }}
+          <span
+            class="mt-[0.55em] size-2.5 shrink-0 rounded-full bg-primary"
+            aria-hidden="true"
+          />{{ report.final_viewpoint }}
         </span>
         <span class="flex flex-wrap items-center gap-2">
           <StatusTag v-if="evidenceTag" size="sm" tone="accent">{{ evidenceTag }}</StatusTag>
@@ -218,7 +219,7 @@ const gaps = computed(() => {
       </ol>
     </section>
 
-    <dl v-if="!noResponses" class="grid gap-x-4 sm:grid-cols-2">
+    <dl v-if="!noResponses" class="grid grid-cols-1 gap-x-4 sm:grid-cols-2">
       <div
         v-for="section in sections"
         :key="section.title"

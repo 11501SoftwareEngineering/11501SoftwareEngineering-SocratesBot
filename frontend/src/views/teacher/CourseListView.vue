@@ -59,7 +59,7 @@ const remove = useConfirmAction((course: CourseSummary) => coursesApi.remove(cou
 
 <template>
   <div
-    class="mx-auto grid w-full max-w-[1200px] items-start gap-[38px] px-4 pt-[30px] pb-12"
+    class="mx-auto grid grid-cols-1 w-full max-w-[1200px] items-start gap-[38px] px-4 pt-[30px] pb-12"
     :class="isTeacher && 'lg:grid-cols-[minmax(0,731px)_minmax(0,398px)]'"
   >
     <section class="flex min-w-0 flex-col gap-2" aria-labelledby="courses-title">

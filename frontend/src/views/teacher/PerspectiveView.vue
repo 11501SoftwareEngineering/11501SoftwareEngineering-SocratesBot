@@ -239,7 +239,7 @@ const closeDescription = computed(() =>
     }}</AppBanner>
     <AppBanner v-if="generateError" type="error" class="mt-2">{{ generateError }}</AppBanner>
 
-    <dl class="mt-4 grid gap-4 sm:grid-cols-3">
+    <dl class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
       <StatTile
         v-for="s in stats"
         :key="s.label"

@@ -90,7 +90,7 @@ function cardFor(topic: TopicListItem) {
         :error-text="t('activity.loadError')"
         @retry="refetch()"
       >
-        <div class="grid gap-4 md:grid-cols-2">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <ActivityCard
             v-for="topic in results"
             :key="topic.topic_id"

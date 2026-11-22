@@ -120,7 +120,7 @@ const date = computed(() =>
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="flex min-w-0 flex-col gap-4 [overflow-wrap:anywhere]">
     <div class="flex flex-wrap items-center gap-4 text-body-lg text-foreground">
       <StatusTag :tone="STATUS_TONE[summary.summary_status]">{{
         t(`perspective.versionStatus.${summary.summary_status}`)
@@ -166,7 +166,7 @@ const date = computed(() =>
       </template>
     </SummaryOverview>
 
-    <div class="grid gap-4 md:grid-cols-2">
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
       <GroupCard
         v-for="(group, i) in summary.groups"
         :key="group.group_id ?? group.name"

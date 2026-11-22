@@ -37,6 +37,7 @@ const meta = computed(() => {
 
 <template>
   <QueryState
+    class="min-w-0 [overflow-wrap:anywhere]"
     :loading="isPending"
     :error="error"
     :error-text="t('report.summaryError')"
@@ -52,7 +53,7 @@ const meta = computed(() => {
         :text="[data.overview, data.viewpoint_summary].filter(Boolean).join('\n')"
         :meta="meta"
       />
-      <div class="grid gap-4 md:grid-cols-2">
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <GroupCard
           v-for="(group, i) in data.groups"
           :key="group.name"

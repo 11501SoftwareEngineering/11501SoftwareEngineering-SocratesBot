@@ -192,7 +192,7 @@ const title = computed(() =>
         @submit.prevent="save.mutate()"
       >
         <AppBanner v-if="!editable" type="lock">{{ t('setup.locked') }}</AppBanner>
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <AppSelect
             v-model="form.age_band"
             :label="t('common.ageBand')"

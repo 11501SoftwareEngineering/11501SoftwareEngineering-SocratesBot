@@ -55,7 +55,11 @@ const open = computed({
 <template>
   <div class="flex flex-col gap-3">
     <div class="flex items-center gap-3">
-      <SearchInput v-model="keyword" :label="t('perspective.searchReports')" class="flex-1" />
+      <SearchInput
+        v-model="keyword"
+        :label="t('perspective.searchReports')"
+        class="min-w-0 flex-1"
+      />
       <Button variant="secondary" :disabled="!group" @click="group = ''"
         ><CloseRingIcon /> {{ t('perspective.clearTag') }}</Button
       >
