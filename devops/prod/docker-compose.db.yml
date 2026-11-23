@@ -38,6 +38,7 @@ services:
   redis:
     image: redis:8-alpine
     container_name: squicrates-redis-prod
+    user: "0:0"
     restart: always
     volumes:
       - redis_data_prod:/data
@@ -55,6 +56,8 @@ services:
     security_opt:
       - no-new-privileges:true
     read_only: true
+    tmpfs:
+      - /tmp
 
 volumes:
   postgres_data_prod:
