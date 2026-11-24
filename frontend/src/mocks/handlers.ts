@@ -209,6 +209,14 @@ function courseJson(course: DbCourse, access: { role: CourseRole; permissions: T
   }
 }
 
+/**
+ * 課程列表的 session_status 跟真後端一樣讀舊的 status 欄位：
+ * 只有達成目標結束才是 COMPLETED；提早結束、回合用完、老師結束（outcome 是 ended）都還是 IN_PROGRESS
+ */
+function legacyStatus(session: DbSession) {
+  return dialogueStatus(session) === 'completed' ? 'COMPLETED' : 'IN_PROGRESS'
+}
+
 function topicJson(topic: DbTopic, user: DbUser, role: CourseRole) {
   const base = {
     topic_id: topic.id,
@@ -220,7 +228,11 @@ function topicJson(topic: DbTopic, user: DbUser, role: CourseRole) {
   }
   if (role === 'student') {
     const session = sessionsOf(topic.id).find((s) => s.student_id === user.id)
-    return { ...base, session_status: session?.status ?? null, session_id: session?.id ?? null }
+    return {
+      ...base,
+      session_status: session ? legacyStatus(session) : null,
+      session_id: session?.id ?? null,
+    }
   }
   const completed = sessionsOf(topic.id).filter((s) => s.status === 'COMPLETED').length
   return { ...base, answered_count: completed, student_count: studentsOf(topic.course_id).length }

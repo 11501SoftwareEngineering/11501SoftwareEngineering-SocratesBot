@@ -360,6 +360,21 @@ describe('假後端（v0.2）', () => {
     expect(already.data.detail).toBe('Already a TA of this course')
   })
 
+  it('課程列表跟真後端一樣回傳舊的 status：老師結束對話後還是 IN_PROGRESS', async () => {
+    const student = await login('s004')
+    await call('/topics/t-ai/sessions', { method: 'POST', token: student.token })
+    const { token } = await login('wang')
+    await call('/topics/t-ai/end-conversation', {
+      method: 'POST',
+      token,
+      body: JSON.stringify({ confirm_open_dialogues: true }),
+    })
+    const { data } = await call('/courses/c-phil/topics', { token: student.token })
+    const topic = data.topics.find((t: { topic_id: string }) => t.topic_id === 't-ai')
+    expect(topic).toMatchObject({ topic_status: 'summary', session_status: 'IN_PROGRESS' })
+    expect(topic.session_id).toBeTruthy()
+  })
+
   it('Debug「讓全班完成」：每位學生都有完成的對話', async () => {
     finishTopicForClass('t-ai')
     const { token } = await login('wang')
