@@ -52,10 +52,24 @@ function cardFor(topic: TopicListItem) {
       },
     }
   }
+  // 摘要階段：老師已經結束對話。有對話紀錄的學生都有報告（後端 #267、#272：提早結束、回合用完、
+  // 老師結束、甚至一次都沒回答都會產生），所以也給「查看報告」。
+  // 課程列表的 session_status 讀的是舊的 status 欄位，只有達成目標才是 COMPLETED，
+  // 其他結束方式都還是 IN_PROGRESS，不能用它判斷有沒有報告。
+  // 報告還在產生、產生失敗、或真的沒有報告時，報告頁會顯示對應的說明。
   if (topic.topic_status === 'summary') {
     return {
       status: { label: t('activity.status.closed'), tone: 'secondary' as const },
-      link: undefined,
+      link: topic.session_id
+        ? {
+            label: t('activity.viewReport'),
+            arrow: '→' as const,
+            to: {
+              name: 'StudentReport',
+              params: { courseId: courseId.value, sessionId: topic.session_id, tab: 'personal' },
+            },
+          }
+        : undefined,
     }
   }
   if (topic.session_status === 'IN_PROGRESS') {
