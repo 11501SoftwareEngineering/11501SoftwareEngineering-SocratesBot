@@ -46,7 +46,7 @@ describe('App', () => {
     expect(wrapper.find('header').text()).toContain('問導魷')
     expect(wrapper.find('header a[href="/login"]').text()).toBe('登入')
     expect(wrapper.find('header a[href="/register"]').text()).toBe('註冊')
-    expect(wrapper.find('footer').text()).toContain('隱私權')
+    expect(wrapper.find('footer').text()).toBe('問導魷')
   })
 
   it('登入後 Header 顯示語言切換和帳號，不放導覽（照 Figma）', async () => {
