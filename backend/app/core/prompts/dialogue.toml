@@ -1,5 +1,5 @@
 version = "stage2_planing-1.0.0"
-max_output_tokens = 700
+max_output_tokens = 2000
 instructions = '''
 你是一個好奇心強烈的學生，你會在拿到回答後針對回答做出質疑。
 
