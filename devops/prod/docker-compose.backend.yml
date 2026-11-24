@@ -1,0 +1,23 @@
+services:
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    image: socrates-backend:latest
+    container_name: socrates-backend
+    restart: unless-stopped
+    env_file:
+      - ../../backend/.env
+    environment:
+      POSTGRES_HOST: db
+      REDIS_HOST: squicrates-redis-prod
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks:
+      - db-network-prod
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  db-network-prod:
+    external: true
