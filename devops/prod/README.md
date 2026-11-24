@@ -10,6 +10,13 @@ Please follow this order:
 sudo make -C devops db-prod
 ```
 
+3. One-time, only if the redis volume already exists and is owned by root (redis runs as uid 999). Confirm the volume name with `sudo docker volume ls` first (the project prefix is usually `prod_`):
+```
+sudo docker run --rm -v prod_redis_data_prod:/data alpine chown -R 999:999 /data
+```
+
+4. If `db-network-prod` already exists with a different subnet, stop the stack (`sudo make -C devops db-prod-down`), then bring it back up with `sudo make -C devops db-prod`. Restart nginx and the tunnel afterwards.
+
 ## Backend:
 1. At `/backend/.env`, followed by `/backend/.env.example`
    
@@ -31,6 +38,11 @@ sudo make -C devops backend-prod
 ```
 
 ## Frontend:
+0. Before the first build on a new host, create the bind-mount directory owned by the `node` user (uid 1000), so Docker does not create it as root (run from the repo root):
+```
+mkdir -p frontend/dist && sudo chown 1000:1000 frontend/dist
+```
+
 1.
 ```
 sudo make -C devops frontend-prod-build
