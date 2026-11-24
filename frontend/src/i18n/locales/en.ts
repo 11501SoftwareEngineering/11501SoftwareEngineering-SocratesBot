@@ -316,6 +316,7 @@ export default {
       draft: 'Draft',
       published: 'Published',
       summarizing: 'Summarizing',
+      summaryPublished: 'Summary published',
     },
     viewReport: 'View my report',
     continue: 'Continue',
