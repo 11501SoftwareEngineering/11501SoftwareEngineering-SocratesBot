@@ -35,6 +35,7 @@ services:
     image: redis:8-alpine
     container_name: squicrates-redis-dev
     restart: always
+    user: "0:0"
     volumes:
       - redis_data_dev:/data
     healthcheck:
@@ -51,6 +52,8 @@ services:
     security_opt:
       - no-new-privileges:true
     read_only: true
+    tmpfs:
+      - /tmp
 
 volumes:
   postgres_data_dev:

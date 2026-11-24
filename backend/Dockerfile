@@ -18,10 +18,10 @@ RUN apt-get update \
 
 COPY pyproject.toml uv.lock ./
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project
+    uv sync --frozen --no-build --no-install-project
 
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen
+    uv sync --frozen --no-build
 
 CMD ["uv", "run", "fastapi", "run", "app/main.py", "--port", "8000"]

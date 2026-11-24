@@ -2,10 +2,10 @@ services:
   db:
     image: postgres:18-alpine
     container_name: squicrates-postgres-prod
-    restart: always
+    restart: unless-stopped
     environment:
       POSTGRES_USER: "postgres"
-      POSTGRES_DB: "postgres"
+      POSTGRES_DB: "production"
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
     volumes:
       - postgres_data_prod:/var/lib/postgresql
@@ -55,6 +55,8 @@ services:
     security_opt:
       - no-new-privileges:true
     read_only: true
+    tmpfs:
+      - /tmp
 
 volumes:
   postgres_data_prod:
@@ -63,10 +65,16 @@ volumes:
 
 networks:
   db-network-prod:
+    name: db-network-prod
     driver: bridge
     driver_opts:
       com.docker.network.bridge.host_binding_ipv4: "127.0.0.1"
+    # 固定網段,供 nginx 的 set_real_ip_from 精準信任 cloudflared 所在網段
+    ipam:
+      config:
+        - subnet: 10.200.200.0/24
 
 secrets:
   db_password:
     file: ./db_default_user_password.txt
+    

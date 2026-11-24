@@ -1,0 +1,14 @@
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7
+    container_name: socrates-cloudflared
+    restart: unless-stopped
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN is required}
+    command: tunnel --no-autoupdate run
+    networks:
+      - db-network-prod
+
+networks:
+  db-network-prod:
+    external: true
