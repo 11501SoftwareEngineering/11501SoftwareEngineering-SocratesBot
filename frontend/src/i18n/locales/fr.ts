@@ -318,6 +318,7 @@ export default {
       draft: 'Brouillon',
       published: 'Publié',
       summarizing: 'Synthèse en cours',
+      summaryPublished: 'Synthèse publiée',
     },
     viewReport: 'Voir le rapport personnel',
     continue: 'Continuer',

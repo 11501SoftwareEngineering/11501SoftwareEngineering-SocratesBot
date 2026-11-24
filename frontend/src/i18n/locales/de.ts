@@ -321,6 +321,7 @@ export default {
       draft: 'Entwurf',
       published: 'Veröffentlicht',
       summarizing: 'Wird zusammengefasst',
+      summaryPublished: 'Zusammenfassung veröffentlicht',
     },
     viewReport: 'Persönlichen Bericht ansehen',
     continue: 'Fortsetzen',

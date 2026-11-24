@@ -314,6 +314,7 @@ export default {
       draft: '下書き',
       published: '公開中',
       summarizing: 'まとめ中',
+      summaryPublished: 'まとめ公開済み',
     },
     viewReport: '個人レポートを見る',
     continue: '続ける',

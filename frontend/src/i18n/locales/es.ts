@@ -317,6 +317,7 @@ export default {
       draft: 'Borrador',
       published: 'Publicada',
       summarizing: 'Resumiendo',
+      summaryPublished: 'Resumen publicado',
     },
     viewReport: 'Ver mi informe',
     continue: 'Continuar',

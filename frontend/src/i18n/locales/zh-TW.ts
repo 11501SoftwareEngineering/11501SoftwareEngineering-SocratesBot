@@ -314,6 +314,7 @@ export default {
       draft: '草稿',
       published: '已發布',
       summarizing: '整理摘要中',
+      summaryPublished: '摘要已發布',
     },
     viewReport: '檢視個人報告',
     continue: '繼續探究',
