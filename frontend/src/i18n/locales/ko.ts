@@ -315,6 +315,7 @@ export default {
       draft: '초안',
       published: '공개됨',
       summarizing: '정리 중',
+      summaryPublished: '요약 게시됨',
     },
     viewReport: '개인 보고서 보기',
     continue: '계속하기',

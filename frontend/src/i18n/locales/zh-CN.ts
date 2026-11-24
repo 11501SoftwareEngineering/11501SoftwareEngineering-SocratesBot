@@ -309,6 +309,7 @@ export default {
       draft: '草稿',
       published: '已发布',
       summarizing: '整理摘要中',
+      summaryPublished: '摘要已发布',
     },
     viewReport: '查看个人报告',
     continue: '继续探究',

@@ -12,7 +12,7 @@
  */
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/vue-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/vue-query'
 import {
   courseKeys,
   coursesApi,
@@ -21,6 +21,7 @@ import {
   type TaPermission,
   type TopicListItem,
 } from '@/api/courses'
+import { summariesApi, summaryKeys } from '@/api/summaries'
 import { topicsApi } from '@/api/topics'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import PageTitle from '@/components/common/PageTitle.vue'
@@ -65,6 +66,27 @@ const { keyword, results: topics } = useSearch(
   (t) => [t.title, t.description ?? ''],
 )
 
+// 摘要發布後 topic 還是 summary 階段，課程列表也沒有「是否已發布」的欄位，
+// 所以 summary 階段的活動各查一次已發布的摘要（課程成員都能查；還沒發布時 summary 是 null）。
+// 發布或撤回時全班觀點頁會讓 ['topics', id, 'summary'] 底下的快取失效，回到這頁就會更新。
+// TODO: 後端在 GET /courses/{id}/topics 加上發布狀態後，改用那個欄位，拿掉這些請求
+const summaryTopicIds = computed(() =>
+  (topicsQuery.data.value?.topics ?? [])
+    .filter((topic) => topic.topic_status === 'summary')
+    .map((topic) => topic.topic_id),
+)
+const publishedQueries = useQueries({
+  queries: computed(() =>
+    summaryTopicIds.value.map((topicId) => ({
+      queryKey: summaryKeys.published(topicId),
+      queryFn: () => summariesApi.published(topicId),
+    })),
+  ),
+})
+const publishedTopicIds = computed(
+  () => new Set(summaryTopicIds.value.filter((_, i) => !!publishedQueries.value[i]?.data)),
+)
+
 function cardFor(topic: TopicListItem) {
   const params = { courseId: courseId.value, topicId: topic.topic_id }
   if (topic.topic_status === 'setup') {
@@ -78,9 +100,11 @@ function cardFor(topic: TopicListItem) {
   }
   return {
     status:
-      topic.topic_status === 'summary'
-        ? { label: t('activity.status.summarizing'), tone: 'primary' as const }
-        : { label: t('activity.status.published'), tone: 'primary' as const },
+      topic.topic_status !== 'summary'
+        ? { label: t('activity.status.published'), tone: 'primary' as const }
+        : publishedTopicIds.value.has(topic.topic_id)
+          ? { label: t('activity.status.summaryPublished'), tone: 'primary' as const }
+          : { label: t('activity.status.summarizing'), tone: 'primary' as const },
     link:
       can('view_reports') || can('edit_summary')
         ? { label: t('activity.viewPerspective'), to: { name: 'TeacherPerspective', params } }
