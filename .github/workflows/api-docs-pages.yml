@@ -29,7 +29,7 @@ permissions:
 
 jobs:
   api-docs:
-    uses: dytsou/fastAPI-docs-pages/.github/workflows/publish.yml@27aa7448538ea1f3bfc51a78a7c6ae0f44ced3f7 # v1.3.2
+    uses: dytsou/fastAPI-docs-pages/.github/workflows/publish.yml@587ca3d8cc3bb07b525312dc6c7ddae35a183c28 # v1.3.3
     with:
       setup-command: |
         cd backend && uv python install 3.13 && uv sync --locked --no-build
