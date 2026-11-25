@@ -111,6 +111,7 @@ def test_usage_uses_actual_account_charge_not_upstream_or_catalog_estimates():
         ("dialogue_context_summary", "dialogue"),
         ("dialogue_validity", "dialogue"),
         ("dialogue_status", "dialogue"),
+        ("dialogue_ask_for_reason", "dialogue"),
         ("dialogue_planning", "dialogue"),
         ("personal_report", "report"),
         ("class_summary", "summary"),

@@ -2,5 +2,11 @@
 # changed without touching code.
 
 [unrelated_response]
-zh-TW = "請針對問題進行回答，並在回應中說明你的理由。\n你的回答不應包含與題目無關的內容，且要說明你為何如此回答。"
-en = "Please answer the question and explain your reasons.\nYour answer should stay on the question and say why you answered that way."
+zh-TW = "請先針對目前的問題回答。你也可以說明自己為何如此回答。"
+en = "Please respond to the current question. You can also explain why you answered that way."
+es = "Responde a la pregunta actual. También puedes explicar por qué respondiste así."
+
+[unrelated_response_reason]
+zh-TW = "判斷理由："
+en = "Reason: "
+es = "Motivo: "

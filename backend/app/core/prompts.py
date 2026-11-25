@@ -18,6 +18,7 @@ class PromptStage(StrEnum):
     OPENING = "opening"
     DIALOGUE = "dialogue"
     VALIDITY = "validity"
+    ASK_FOR_REASON = "ask_for_reason"
     STATUS = "status"
     PERSONAL_REPORT = "personal_report"
     CLASS_SUMMARY = "class_summary"

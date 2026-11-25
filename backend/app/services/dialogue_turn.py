@@ -2,10 +2,10 @@
 
 A turn makes up to three model calls:
 
-1. validity: YES or NO. NO ends the turn with a fixed "answer the question" reply
-   and makes no further calls.
-2. status: the full progress snapshot for this turn.
-3. planning: the visible reply, a counterexample or a changed condition.
+1. validity: off_topic, no_reason, or valid. Off-topic ends the turn with a
+   localized explanation and makes no further turn calls.
+2. no_reason: ask for a reason and return, without progress analysis.
+3. valid: status analysis followed by the ordinary planning reply.
 
 Readiness is decided by the server from the progress snapshot, not by the model.
 """
@@ -16,7 +16,7 @@ import json
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
@@ -123,7 +123,11 @@ class StatusOut(_Output):
 
 class ValidityOut(_Output):
     thinking_progress: str = Field(max_length=1000)
-    validity: Literal["YES", "NO"]
+    validity: Literal["off_topic", "no_reason", "valid"]
+
+
+class AskForReasonOut(_Output):
+    hint: str = Field(min_length=1, max_length=1000)
 
 
 class PlanningOut(_Output):
@@ -186,9 +190,10 @@ _PROGRESS = _obj(
 VALIDITY_SCHEMA = _obj(
     {
         "thinkingProgress": _STRING,
-        "validity": _enum(("YES", "NO")),
+        "validity": _enum(("off_topic", "no_reason", "valid")),
     }
 )
+ASK_FOR_REASON_SCHEMA = _obj({"hint": _STRING})
 STATUS_SCHEMA = _obj(
     {
         "progress": _PROGRESS,
@@ -209,6 +214,7 @@ class TurnPrompts:
     validity: PromptDefinition
     status: PromptDefinition
     dialogue: PromptDefinition
+    ask_for_reason: PromptDefinition
 
 
 @dataclass(frozen=True)
@@ -222,9 +228,19 @@ class TurnResult:
     prompt_versions: dict[str, str]
 
 
-def unrelated_reply(language: str) -> str:
+def unrelated_reply(language: str, reason: str = "") -> str:
     table = _MESSAGES["unrelated_response"]
-    return table.get(language, table["zh-TW"])
+    reply = table.get(language, table["zh-TW"])
+    # The model supplies only a student-facing explanation, not a reasoning trace.
+    reason = " ".join(reason.split())[:240]
+    if not reason:
+        return reply
+    labels = _MESSAGES["unrelated_response_reason"]
+    return f"{reply}\n{labels.get(language, labels['zh-TW'])}{reason}"
+
+
+def _move_of(message: DialogueMessage) -> str | None:
+    return ((message.generation_meta or {}).get("analysis") or {}).get("move")
 
 
 def question_before(messages: list[DialogueMessage], fallback: str) -> str:
@@ -232,9 +248,39 @@ def question_before(messages: list[DialogueMessage], fallback: str) -> str:
     for message in reversed(messages):
         if message.sender != MessageSender.AI:
             continue
+        if _move_of(message) in {"ask_for_reason", "unrelated_response"}:
+            continue
         if any(mark in message.content for mark in _QUESTION_MARKS):
             return message.content
     return fallback
+
+
+class ReasonAnswer(TypedDict):
+    exchange: int
+    answer: str
+
+
+def previous_reason_answers(messages: list[DialogueMessage]) -> list[ReasonAnswer]:
+    """Collect relevant answers waiting for reasons to the same tutor question.
+
+    The stored move identifies a clarification; question punctuation alone cannot
+    distinguish a new inquiry from a request to explain a previous answer.
+    """
+    answers: list[ReasonAnswer] = []
+    pending: ReasonAnswer | None = None
+    exchange = 0
+    for message in messages:
+        if message.sender == MessageSender.STUDENT:
+            exchange += 1
+            pending = {"exchange": exchange, "answer": message.content}
+            continue
+        move = _move_of(message)
+        if move == "ask_for_reason" and pending is not None:
+            answers.append(pending)
+        elif move != "unrelated_response":
+            answers.clear()
+        pending = None
+    return answers
 
 
 def brief_of(topic: Topic) -> dict[str, Any]:
@@ -298,18 +344,22 @@ async def run_turn(
     model_id: str,
     validity_model: str,
     api_key: str | None = None,
+    previous_answers: list[ReasonAnswer] | None = None,
 ) -> TurnResult:
-    """Run validity, status, and planning. ``api_key`` None uses the single server key."""
+    """Run validity, status, and the appropriate reply task."""
     language = topic.content_language or settings.DEFAULT_LANGUAGE_CODE
+    answer_material = {
+        "interfaceLanguage": language,
+        "question": question,
+        "previousAnswers": previous_answers or [],
+        "answer": latest,
+    }
     validity_raw = await _bounded_object(
         client,
         name="dialogue_validity",
         schema=VALIDITY_SCHEMA,
         instructions=prompts.validity.instructions,
-        material=json.dumps(
-            {"interfaceLanguage": language, "question": question, "answer": latest},
-            ensure_ascii=False,
-        ),
+        material=json.dumps(answer_material, ensure_ascii=False),
         model=validity_model,
         max_tokens=prompts.validity.max_output_tokens,
         api_key=api_key,
@@ -319,15 +369,44 @@ async def run_turn(
     ai_diagnostics.emit(
         "validity_decision", validity=validity.validity, exchange=exchange
     )
-    if validity.validity == "NO":
+    if validity.validity == "off_topic":
         return TurnResult(
-            reply=unrelated_reply(language),
+            reply=unrelated_reply(language, validity.thinking_progress),
             move="unrelated_response",
             status="continue",
             safety_level="normal",
             progress=reset_milestones(base_progress),
             goal_reached=False,
             prompt_versions={"validity": prompts.validity.version},
+        )
+
+    if validity.validity == "no_reason":
+        hint_raw = await _bounded_object(
+            client,
+            name="dialogue_ask_for_reason",
+            schema=ASK_FOR_REASON_SCHEMA,
+            instructions=prompts.ask_for_reason.instructions,
+            material=json.dumps(
+                {**answer_material, "learnerBand": topic.age_band}, ensure_ascii=False
+            ),
+            model=model_id,
+            max_tokens=prompts.ask_for_reason.max_output_tokens,
+            api_key=api_key,
+        )
+        hint = _parse(AskForReasonOut, hint_raw).hint.strip()
+        if not hint:
+            raise ModelCallError(200, reason="schema_validation")
+        return TurnResult(
+            reply=hint,
+            move="ask_for_reason",
+            status="continue",
+            safety_level="normal",
+            progress=reset_milestones(base_progress),
+            goal_reached=False,
+            prompt_versions={
+                "validity": prompts.validity.version,
+                "ask_for_reason": prompts.ask_for_reason.version,
+            },
         )
 
     status_raw = await _bounded_object(
@@ -342,6 +421,7 @@ async def run_turn(
                 "previousProgress": base_progress,
                 "currentExchange": exchange,
                 "question": question,
+                "previousAnswers": previous_answers or [],
                 "answer": latest,
             },
             ensure_ascii=False,
