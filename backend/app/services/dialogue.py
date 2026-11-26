@@ -35,6 +35,7 @@ from app.services.dialogue_lifecycle import (
 from app.services.dialogue_turn import (
     TurnPrompts,
     catch_up_progress,
+    previous_reason_answers,
     question_before,
     run_turn,
 )
@@ -305,6 +306,7 @@ async def _ask_and_store(
         validity=prompt_for(PromptStage.VALIDITY),
         status=prompt_for(PromptStage.STATUS),
         dialogue=reply_prompt,
+        ask_for_reason=prompt_for(PromptStage.ASK_FOR_REASON),
     )
     model_id = topic.model_id or settings.OPENAI_MODEL
     try:
@@ -338,8 +340,11 @@ async def _ask_and_store(
             client,
             prompts=turn_prompts,
             topic=topic,
-            question=question_before(messages, topic.core_question or ""),
+            question=question_before(
+                messages, topic.opening_message or topic.core_question or ""
+            ),
             latest=content,
+            previous_answers=previous_reason_answers(messages),
             transcript_material=bounded.material,
             previous_progress=previous_progress,
             exchange=_turn_count(messages) + 1,
@@ -387,8 +392,16 @@ async def _ask_and_store(
             request_id=request_id,
             reply=text,
             goal_reached=goal_reached,
-            prompt_stage=reply_prompt.stage.value,
-            prompt_version=reply_prompt.version,
+            prompt_stage=(
+                turn_prompts.ask_for_reason.stage.value
+                if turn.move == "ask_for_reason"
+                else reply_prompt.stage.value
+            ),
+            prompt_version=(
+                turn_prompts.ask_for_reason.version
+                if turn.move == "ask_for_reason"
+                else reply_prompt.version
+            ),
             analysis={
                 "move": turn.move,
                 "status": turn.status,

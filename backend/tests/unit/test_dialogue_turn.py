@@ -12,6 +12,8 @@ from app.services.dialogue_progress import empty_progress
 from app.services.dialogue_turn import (
     TurnPrompts,
     catch_up_progress,
+    previous_reason_answers,
+    question_before,
     run_turn,
     unrelated_reply,
 )
@@ -50,8 +52,10 @@ def _status(status: str = "ready") -> dict:
     return {"progress": _ready_progress(), "status": status, "safetyLevel": "normal"}
 
 
-VALIDITY_YES = {"thinkingProgress": "on topic", "validity": "YES"}
-VALIDITY_NO = {"thinkingProgress": "off topic", "validity": "NO"}
+VALIDITY_YES = {"thinkingProgress": "on topic", "validity": "valid"}
+VALIDITY_NO = {"thinkingProgress": "off topic", "validity": "off_topic"}
+VALIDITY_NO_REASON = {"thinkingProgress": "no reason", "validity": "no_reason"}
+HINT = {"hint": "What makes you think that?"}
 PLANNING = {"method": "present_counterexample", "content": "Consider a case where..."}
 
 
@@ -74,6 +78,7 @@ def _prompts() -> TurnPrompts:
         validity=prompt_for(PromptStage.VALIDITY),
         status=prompt_for(PromptStage.STATUS),
         dialogue=prompt_for(PromptStage.DIALOGUE),
+        ask_for_reason=prompt_for(PromptStage.ASK_FOR_REASON),
     )
 
 
@@ -98,8 +103,21 @@ async def test_off_topic_answer_stops_at_the_validity_gate() -> None:
     turn = await _run(client)
 
     assert client.calls == ["dialogue_validity"]
-    assert turn.reply == unrelated_reply("en")
+    assert turn.reply == unrelated_reply("en", "off topic")
+    assert turn.reply.endswith("Reason: off topic")
     assert turn.goal_reached is False
+
+
+@pytest.mark.parametrize(
+    ("language", "label"),
+    [("zh-TW", "判斷理由\uff1a"), ("en", "Reason: "), ("es", "Motivo: ")],
+)
+def test_unrelated_reply_uses_localized_reason_label(language, label):
+    assert unrelated_reply(language, "  Example\nreason  ").endswith(
+        f"{label}Example reason"
+    )
+    assert unrelated_reply(language, "  \n ") == unrelated_reply(language)
+    assert unrelated_reply(language, "a" * 300).endswith(f"{label}{'a' * 240}")
 
 
 async def test_on_topic_answer_runs_all_three_stages() -> None:
@@ -119,14 +137,9 @@ async def test_relevant_answer_without_reason_can_continue_without_reaching_goal
     # not whether a live model interprets the revised prompt correctly.
     progress = empty_progress()
     progress["position"] = {"met": True, "evidenceExchange": 3, "summary": "Allow it."}
-    reply = {
-        "method": "change_one_condition",
-        "content": "If the teacher were a substitute, would your answer change? Why?",
-    }
     client = ScriptedClient(
-        VALIDITY_YES,
-        {"progress": progress, "status": "continue", "safetyLevel": "normal"},
-        reply,
+        VALIDITY_NO_REASON,
+        HINT,
     )
     turn = await run_turn(
         client,
@@ -140,10 +153,142 @@ async def test_relevant_answer_without_reason_can_continue_without_reaching_goal
         model_id="openai/gpt-6-luna",
         validity_model="openai/gpt-6-luna",
     )
-    assert client.calls == ["dialogue_validity", "dialogue_status", "dialogue_planning"]
-    assert turn.reply == reply["content"]
+    assert client.calls == [
+        "dialogue_validity",
+        "dialogue_ask_for_reason",
+    ]
+    assert turn.reply == HINT["hint"]
+    assert turn.move == "ask_for_reason"
+    assert turn.progress["position"]["met"] is False
+    assert set(turn.prompt_versions) == {"validity", "ask_for_reason"}
     assert turn.progress["reason"]["met"] is False
     assert turn.goal_reached is False
+
+
+async def test_no_reason_cannot_award_new_goal_even_if_status_says_ready():
+    turn = await _run(ScriptedClient(VALIDITY_NO_REASON, HINT))
+    assert turn.move == "ask_for_reason"
+    assert turn.status == "continue"
+    assert turn.goal_reached is False
+
+
+async def test_reason_hint_must_be_nonblank():
+    with pytest.raises(ModelCallError):
+        await _run(ScriptedClient(VALIDITY_NO_REASON, {"hint": "  "}))
+
+
+async def test_no_reason_does_not_request_status_or_change_prior_summary():
+    prior = _ready_progress()
+    client = ScriptedClient(VALIDITY_NO_REASON, HINT)
+    turn = await run_turn(
+        client,
+        prompts=_prompts(),
+        topic=_topic(),
+        question="Why?",
+        latest="No.",
+        transcript_material="record",
+        previous_progress=prior,
+        exchange=4,
+        model_id="openai/gpt-6-luna",
+        validity_model="openai/gpt-6-luna",
+    )
+    assert client.calls == ["dialogue_validity", "dialogue_ask_for_reason"]
+    assert turn.progress["currentPosition"] == prior["currentPosition"]
+    for name in ("position", "reason", "examination", "response"):
+        assert turn.progress[name] == {
+            "met": False,
+            "evidenceExchange": None,
+            "summary": "",
+        }
+        assert prior[name]["met"] is True
+    assert not turn.goal_reached
+
+
+def _ai(content: str, move: str) -> DialogueMessage:
+    return DialogueMessage(
+        sender=MessageSender.AI,
+        content=content,
+        generation_meta={"analysis": {"move": move}},
+    )
+
+
+def test_clarification_keeps_original_question_and_relevant_answers():
+    messages = [
+        _ai("Should the teacher decide?", "change_one_condition"),
+        DialogueMessage(sender=MessageSender.STUDENT, content="No."),
+        _ai("Why not?", "ask_for_reason"),
+        DialogueMessage(sender=MessageSender.STUDENT, content="Weather."),
+        _ai("Please answer the question.", "unrelated_response"),
+        DialogueMessage(sender=MessageSender.STUDENT, content="Students should."),
+        _ai("What is your reason?", "ask_for_reason"),
+    ]
+    assert question_before(messages, "Fallback?") == "Should the teacher decide?"
+    assert previous_reason_answers(messages) == [
+        {"exchange": 1, "answer": "No."},
+        {"exchange": 3, "answer": "Students should."},
+    ]
+    messages.append(_ai("What if there is an emergency?", "present_counterexample"))
+    assert question_before(messages, "Fallback?") == "What if there is an emergency?"
+    assert previous_reason_answers(messages) == []
+
+
+async def test_reason_followup_receives_previous_answers_and_uses_course_model():
+    import json
+    from unittest.mock import AsyncMock
+
+    provider = AsyncMock(side_effect=[VALIDITY_NO_REASON, HINT])
+    await run_turn(
+        SimpleNamespace(complete_object=provider),
+        prompts=_prompts(),
+        topic=_topic(),
+        question="Should the teacher decide?",
+        latest="Students should.",
+        previous_answers=[{"exchange": 1, "answer": "No."}],
+        transcript_material="record",
+        previous_progress=None,
+        exchange=3,
+        model_id="openai/gpt-4o-mini",
+        validity_model="openai/gpt-4o-mini",
+        api_key="test-key",
+    )
+    validity, hint = [call.kwargs for call in provider.call_args_list]
+    for request in (validity, hint):
+        material = json.loads(request["material"])
+        assert material["previousAnswers"] == [{"exchange": 1, "answer": "No."}]
+        assert material["answer"] == "Students should."
+        assert material["interfaceLanguage"] == "en"
+    for request in (validity, hint):
+        assert request["model"] == "openai/gpt-4o-mini"
+        assert request["api_key"] == "test-key"
+
+
+async def test_supplied_reason_resumes_status_with_original_evidence_exchange():
+    import json
+    from unittest.mock import AsyncMock
+
+    provider = AsyncMock(side_effect=[VALIDITY_YES, _status("continue"), PLANNING])
+    await run_turn(
+        SimpleNamespace(complete_object=provider),
+        prompts=_prompts(),
+        topic=_topic(),
+        question="Should the teacher decide?",
+        latest="Because students are affected by the decision.",
+        previous_answers=[{"exchange": 1, "answer": "No."}],
+        transcript_material="record",
+        previous_progress=empty_progress(),
+        exchange=3,
+        model_id="openai/gpt-6-luna",
+        validity_model="openai/gpt-6-luna",
+    )
+    requests = [call.kwargs for call in provider.call_args_list]
+    assert [request["name"] for request in requests] == [
+        "dialogue_validity",
+        "dialogue_status",
+        "dialogue_planning",
+    ]
+    material = json.loads(requests[1]["material"])
+    assert material["currentExchange"] == 3
+    assert material["previousAnswers"] == [{"exchange": 1, "answer": "No."}]
 
 
 @pytest.mark.parametrize(
@@ -444,12 +589,69 @@ async def test_achieved_goal_survives_off_topic_turn(monkeypatch):
     assert done.awaiting_end_consent is True
 
 
+async def test_reason_hint_persists_its_prompt_stage_and_counts_one_turn(monkeypatch):
+    from unittest.mock import AsyncMock
+    from uuid import uuid4
+
+    from app.crud import message as message_crud
+    from app.services import dialogue
+    from app.services.dialogue_context import BoundedDialogueContext
+
+    topic = _topic()
+    topic.model_id = "openai/gpt-6-luna"
+    session = SimpleNamespace(
+        id=uuid4(),
+        outcome="open",
+        goal_reached=True,
+        generation_meta={"progress": empty_progress()},
+    )
+    messages = [
+        _ai("Should the teacher decide?", "change_one_condition"),
+        DialogueMessage(sender=MessageSender.STUDENT, content="No."),
+        _ai("Why not?", "ask_for_reason"),
+    ]
+    bounded = BoundedDialogueContext("transcript", None, 0, None, None)
+    monkeypatch.setattr(
+        dialogue, "build_bounded_context", AsyncMock(return_value=bounded)
+    )
+    monkeypatch.setattr(message_crud, "lock_session", AsyncMock(return_value=session))
+    monkeypatch.setattr(message_crud, "count_messages", AsyncMock(return_value=3))
+    monkeypatch.setattr(message_crud, "count_student_turns", AsyncMock(return_value=1))
+    monkeypatch.setattr(message_crud, "merge_session_meta", AsyncMock())
+    saved = AsyncMock(return_value=uuid4())
+    monkeypatch.setattr(message_crud, "save_exchange", saved)
+    progress = empty_progress()
+    progress["position"] = {"met": True, "evidenceExchange": 2, "summary": "No."}
+    client = ScriptedClient(
+        VALIDITY_NO_REASON,
+        HINT,
+    )
+    done = await dialogue._ask_and_store(
+        AsyncMock(),
+        client,
+        session=session,
+        topic=topic,
+        messages=messages,
+        content="Students should decide.",
+        request_id=uuid4(),
+    )
+    saved.assert_awaited_once()
+    values = saved.call_args.kwargs
+    assert values["prompt_stage"] == PromptStage.ASK_FOR_REASON.value
+    assert values["prompt_version"] == _prompts().ask_for_reason.version
+    assert values["analysis"]["move"] == "ask_for_reason"
+    assert values["goal_reached"] is True  # historical achievement is preserved
+    assert done.completed_turns == 2
+    assert done.text == HINT["hint"]
+
+
 @pytest.mark.parametrize(
     "blocked,expected_calls",
     [
         ("dialogue_validity", []),
         ("dialogue_status", ["dialogue_validity"]),
         ("dialogue_planning", ["dialogue_validity", "dialogue_status"]),
+        ("dialogue_ask_for_reason", ["dialogue_validity"]),
     ],
 )
 async def test_every_phase_checks_its_actual_schema(
@@ -463,6 +665,7 @@ async def test_every_phase_checks_its_actual_schema(
         "dialogue_validity": dialogue_turn.VALIDITY_SCHEMA,
         "dialogue_status": dialogue_turn.STATUS_SCHEMA,
         "dialogue_planning": dialogue_turn.PLANNING_SCHEMA,
+        "dialogue_ask_for_reason": dialogue_turn.ASK_FOR_REASON_SCHEMA,
     }
 
     def estimate(**request):
@@ -473,7 +676,10 @@ async def test_every_phase_checks_its_actual_schema(
         )
 
     monkeypatch.setattr(dialogue_turn, "estimate_total_request_tokens", estimate)
-    client = ScriptedClient(VALIDITY_YES, _status(), PLANNING)
+    client = ScriptedClient(
+        VALIDITY_NO_REASON if blocked == "dialogue_ask_for_reason" else VALIDITY_YES,
+        *([HINT] if blocked == "dialogue_ask_for_reason" else [_status(), PLANNING]),
+    )
     with pytest.raises(ContextWindowExceeded):
         await _run(client)
     assert client.calls == expected_calls

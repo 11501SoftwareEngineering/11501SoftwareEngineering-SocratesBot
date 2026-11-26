@@ -159,8 +159,10 @@ async def test_final_reply_atomically_ends_and_queues_even_without_goal(
         outcome="open",
         generation_meta={"progress": empty_progress()},
     )
-    topic = SimpleNamespace(model_id="openai/gpt-4o-mini", max_turns=5)
-    messages = [SimpleNamespace(sender="student") for _ in range(4)]
+    topic = SimpleNamespace(
+        model_id="openai/gpt-4o-mini", max_turns=5, opening_message=None
+    )
+    messages = [SimpleNamespace(sender="student", content="Answer") for _ in range(4)]
     bounded = SimpleNamespace(
         material="record",
         summary=None,
