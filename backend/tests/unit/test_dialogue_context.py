@@ -86,7 +86,7 @@ def _history(turns: int) -> list[DialogueMessage]:
 async def test_old_complete_turns_are_summarized_and_latest_input_is_kept(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "DIALOGUE_CONTEXT_TOKEN_BUDGET", 3_000)
+    monkeypatch.setattr(settings, "DIALOGUE_CONTEXT_TOKEN_BUDGET", 4_300)
     client = SummaryClient()
     topic = _topic()
     messages = _history(10)
@@ -130,7 +130,7 @@ async def test_old_complete_turns_are_summarized_and_latest_input_is_kept(
 async def test_oversized_latest_message_is_rejected_before_summary_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "DIALOGUE_CONTEXT_TOKEN_BUDGET", 3_000)
+    monkeypatch.setattr(settings, "DIALOGUE_CONTEXT_TOKEN_BUDGET", 4_300)
     client = SummaryClient()
 
     with pytest.raises(ContextWindowExceeded, match="Latest message"):
@@ -169,7 +169,7 @@ def test_unknown_model_fails_closed_before_any_estimate() -> None:
 async def test_invalid_summary_output_is_a_model_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "DIALOGUE_CONTEXT_TOKEN_BUDGET", 3_000)
+    monkeypatch.setattr(settings, "DIALOGUE_CONTEXT_TOKEN_BUDGET", 4_300)
 
     class InvalidSummaryClient(SummaryClient):
         async def complete_object(self, **kwargs):
@@ -201,7 +201,7 @@ async def test_default_model_builds_the_full_context(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     default_model = Settings.model_fields["OPENAI_MODEL"].default
-    monkeypatch.setattr(settings, "DIALOGUE_CONTEXT_TOKEN_BUDGET", 3_000)
+    monkeypatch.setattr(settings, "DIALOGUE_CONTEXT_TOKEN_BUDGET", 4_300)
     client = SummaryClient()
 
     context = await build_bounded_context(
