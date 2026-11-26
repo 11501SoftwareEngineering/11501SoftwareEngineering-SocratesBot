@@ -4,7 +4,6 @@ services:
       context: ../../backend
       dockerfile: Dockerfile
     image: socrates-backend:latest
-    container_name: socrates-backend
     restart: unless-stopped
     env_file:
       - ../../backend/.env
@@ -13,8 +12,14 @@ services:
       REDIS_HOST: squicrates-redis-prod
     ports:
       - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/v1/health"]
+      interval: 5s
+      start_period: 30s
     networks:
-      - db-network-prod
+      db-network-prod:
+        aliases:
+          - socrates-backend
     security_opt:
       - no-new-privileges:true
 
